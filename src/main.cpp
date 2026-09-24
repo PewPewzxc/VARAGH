@@ -1226,17 +1226,14 @@ void setup() {
   const bool cleanImageBaseOnEntry =
       snapshotTarget == SILENT_REBOOT_TARGET_READER && (snapshotPayload & SILENT_REBOOT_READER_CLEAN_IMAGE_BASE) != 0;
   const bool isNetworkResume = snapshotTarget >= static_cast<uint32_t>(NetworkBootTarget::OTA);
-  // KOReader Sync, OPDS, File Transfer, and Manage Fonts can render their
-  // parent screens while a deferred Wi-Fi child is completing. On S3 devices,
-  // keep the reader-sized render stack without loading the rest of the reader
-  // resources. C3 devices retain the smaller network stack to preserve their
-  // tighter internal-RAM budget.
-  const bool useReaderRenderStack =
-      !isNetworkResume ||
-      (FREEINK_MCU_S3 && (snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::KOREADER_SYNC) ||
-                          snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::OPDS) ||
-                          snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::FILE_TRANSFER) ||
-                          snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::MANAGE_FONTS)));
+  // Network targets render FreeInkUI screens (the Wi-Fi list, keyboard and
+  // progress views) on the render task. On S3 devices every network target
+  // keeps the reader-sized render stack, without loading the rest of the
+  // reader resources: Check for Updates and KOReader Authenticate were left on
+  // the 8 KB network stack and overflowed it on the X4 Pro (#762). C3 devices
+  // retain the smaller network stack to preserve their tighter internal-RAM
+  // budget.
+  const bool useReaderRenderStack = !isNetworkResume || FREEINK_MCU_S3;
   silentRebootMagic = 0;
   silentRebootTarget = 0;
   silentRebootPayload = 0;
