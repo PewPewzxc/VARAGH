@@ -2,6 +2,14 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.0.1] - 2026-09-24
+
+Based on CrossInk v1.6.0.
+
+### Fixed
+
+- X4 Pro: Settings → System → Check for Updates and KOReader Sync → Authenticate no longer crash and restart the reader. Both screens now get the same 16 KB drawing memory as the other Wi-Fi screens (CrossInk issue [#762](https://github.com/uxjulia/CrossInk/issues/762)).
+
 ## [VARAGH v1.0.0] - 2026-09-24
 
 Based on CrossInk v1.6.0.
