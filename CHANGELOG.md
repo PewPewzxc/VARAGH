@@ -1,3 +1,42 @@
+# VARAGH changelog
+
+VARAGH versions are listed first; the CrossInk history it builds on follows.
+
+## [VARAGH v1.0.0] - 2026-09-24
+
+Based on CrossInk v1.6.0.
+
+### Added
+
+- Persian/Arabic books switch to an installed font that covers Arabic script for that book.
+- On the X4 Pro, words the reader font cannot show (Persian, IPA) are drawn in an installed font that can (NotoVazir).
+- German → English lookup: German stemming and repair of broken apostrophes/hyphens before lookup.
+- Highlights hub on Home: Favorite Lines, Flashcards, custom categories, By Book; "Add to…" from the dictionary.
+- Flashcards with Leitner boxes, Again / Know it, and a Practice button.
+- Swipe a row left to delete it in files, recent books, highlights, bookmarks, lookup history and categories.
+- Settings → Reader → Hold to Select (Fast / Normal / Slow / Very slow) and iOS-style selection handles.
+- Settings → System → Device → Summer Time (Off / EU / US).
+- IPA letters in the built-in menu font.
+- Warning before any firmware update that a CrossInk release replaces VARAGH.
+
+### Changed
+
+- Name VARAGH and the AP logo on the boot screen, the sleep screen and the web portal.
+- Online updates come from github.com/PewPewzxc/varagh releases.
+- "Clippings" are called Highlights.
+- The last selected dictionary stays the default.
+- Word selection handles punctuation and hyphenated line breaks better.
+- X4 Pro: the display power stage turns off 5 s after the last screen update.
+- Faster glyph drawing and shared SD-font interval tables (CrossPoint #3633, #3616).
+- Book page caches are rebuilt once after updating (layout format v78).
+
+### Fixed
+
+- IPA and symbol characters in dictionary definitions showed as boxes.
+- Flashcards and saved entries showed boxes with SD-card reader fonts.
+
+# CrossInk changelog
+
 ## [v1.6.0] - 2026-09-21
 
 ### Added
