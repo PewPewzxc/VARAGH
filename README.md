@@ -6,6 +6,7 @@
 It is a fork of [CrossInk](https://github.com/uxjulia/crossink), which is itself a
 fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).
 All of their features are kept; VARAGH adds the changes listed below.
+Every feature is explained, with how to use it, in **[FEATURES.md](FEATURES.md)**.
 
 > VARAGH is an independent community project. It is not affiliated with or
 > endorsed by Xteink, CrossInk or CrossPoint. "Xteink" and "X4 Pro" are used
@@ -22,7 +23,7 @@ All of their features are kept; VARAGH adds the changes listed below.
 
 **German → English dictionary**
 - Word lookup in German books finds the dictionary form of inflected words
-  (plurals, verb forms, compounds) and repairs broken apostrophes and hyphens.
+  (plurals, verb forms, separable verbs) and repairs broken apostrophes and hyphens.
 - Pronunciation (IPA) and symbols display correctly; the last dictionary you
   picked stays the default.
 - Better word selection next to punctuation and across hyphenated line breaks.
