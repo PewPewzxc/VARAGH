@@ -8,6 +8,9 @@ see [CrossInk's README](docs/CROSSINK-README.md) for those.
 
 VARAGH is built for the **Xteink X4 Pro**.
 
+All photos on this page were taken on an X4 Pro running VARAGH 1.0.0, with the
+front light on.
+
 **The one setting to make after installing:**
 **Settings → Reader → Font Options → Font Family → NotoVazir.**
 With NotoVazir as the reader font, every English, German and Persian word,
@@ -34,6 +37,11 @@ pronunciation, dictionary entry, highlight and flashcard displays correctly.
 ---
 
 ## 1. Persian and Arabic
+
+<p align="center">
+  <img src="docs/images/varagh/persian-book.jpg" width="320" alt="Persian poetry displayed in NotoVazir"><br>
+  <sub>Khayyam's Rubaiyat in Persian, drawn in NotoVazir. Front light on.</sub>
+</p>
 
 ### NotoVazir font
 One reader font that contains every letter VARAGH needs:
@@ -88,6 +96,13 @@ German → English dictionary is FreeDict's `deu-eng`, prepared with Inky's
 dictionary tools; step-by-step instructions are in
 [docs/varagh/DICTIONARIES.md](docs/varagh/DICTIONARIES.md).
 
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/images/varagh/german-dictionary.jpg" width="300" alt="Dictionary entry for anfangen with pronunciation"><br><sub><b>anfangen</b>: German → English entry with its pronunciation and related forms. Front light on.</sub></td>
+    <td align="center" valign="top"><img src="docs/images/varagh/dictionary-add-to-buttons.jpg" width="300" alt="Dictionary entry for schließlich with Highlight and Add to buttons"><br><sub><b>schließlich</b>: pronunciation letters such as ʃ and ç display correctly; <b>Highlight</b> and <b>Add to…</b> at the bottom. Front light on.</sub></td>
+  </tr>
+</table>
+
 ### Finds the dictionary form of German words
 When a German word is not in the dictionary as written, VARAGH tries its base
 forms, most likely first:
@@ -138,6 +153,14 @@ out. It never draws a box.
 
 ## 3. Touch word selection
 
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/images/varagh/hold-to-select.jpg" width="250" alt="A finger holding a word in a book"><br><sub>Hold a word until it is selected. Front light on.</sub></td>
+    <td align="center" valign="top"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with handles at both ends"><br><sub>Slide to select more words; handles mark both ends. Front light on.</sub></td>
+    <td align="center" valign="top"><img src="docs/images/varagh/hold-to-select-setting.jpg" width="250" alt="Hold to Select setting with Fast, Normal, Slow and Very slow"><br><sub>Settings → Reader → <b>Hold to Select</b>. Front light on.</sub></td>
+  </tr>
+</table>
+
 ### Hold to Select (new setting)
 **Settings → Reader → Hold to Select** sets how long you hold a finger on a
 word before it is selected:
@@ -185,6 +208,12 @@ the knobs themselves cannot be dragged.
 - Up to 32 categories.
 
 ### Add to… from the dictionary
+
+<p align="center">
+  <img src="docs/images/varagh/add-to-category.jpg" width="300" alt="Add to menu with Favorite Lines, Flashcards and New Category"><br>
+  <sub><b>Add to…</b>: pick Favorite Lines, Flashcards or one of your categories, or create a new one. Front light on.</sub>
+</p>
+
 The dictionary popup has two buttons below the definition: **Highlight** and
 **Add to…**. **Add to…** lets you pick a category:
 
@@ -205,6 +234,14 @@ so they survive firmware updates and can be copied off the card.
 
 ## 5. Flashcards
 
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/images/varagh/flashcards-list.jpg" width="250" alt="Flashcards list with a Practice button"><br><sub>The Flashcards list with the <b>Practice</b> button and how many cards you know. Front light on.</sub></td>
+    <td align="center" valign="top"><img src="docs/images/varagh/flashcard-front.jpg" width="250" alt="Front of a flashcard showing a German word"><br><sub>Front of a card: the word. Tap to flip. Front light on.</sub></td>
+    <td align="center" valign="top"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><sub>Back of the card: the saved meaning, then <b>Again</b> or <b>Know it</b>. Front light on.</sub></td>
+  </tr>
+</table>
+
 The Flashcards category has a **Practice** button at the top that shows how
 many cards you already know.
 
@@ -221,6 +258,11 @@ many cards you already know.
 ---
 
 ## 6. Swipe to delete
+
+<p align="center">
+  <img src="docs/images/varagh/swipe-to-delete.jpg" width="300" alt="File list with a row swiped left showing a Delete button"><br>
+  <sub>A book swiped left in the File Browser, showing <b>Delete</b>. Front light on.</sub>
+</p>
 
 Swipe a row **left** to reveal a **Delete** button, then tap Delete. Tapping
 anywhere else, swiping right or pressing any button hides it again.
@@ -254,6 +296,11 @@ anywhere else, swiping right or pressing any button hides it again.
 
 ## 8. Summer time for the clock
 
+<p align="center">
+  <img src="docs/images/varagh/summer-time.jpg" width="300" alt="Summer Time setting with Off, EU (Germany) and US"><br>
+  <sub>Settings → System → Device → <b>Summer Time</b>. The VARAGH version is shown at the bottom. Front light on.</sub>
+</p>
+
 **Settings → System → Device → Summer Time**: Off, EU (Germany) or US. On
 readers with a clock, the time then changes automatically on the right dates.
 It applies to the clock, reading statistics, the dates saved with highlights,
@@ -266,6 +313,8 @@ and file dates on the SD card.
 The built-in menu font (Inter) now includes the IPA letters (U+0250–02FF) at
 sizes 8, 10 and 12. Pronunciations in lists and menus, such as the flashcard
 list, display correctly instead of as boxes.
+You can see it in the [Flashcards list photo](#5-flashcards): the line under
+*schließlich* shows `/ʃlˈiːslɪç/`.
 
 ---
 

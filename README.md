@@ -1,5 +1,9 @@
 # VARAGH
 
+<p align="center">
+  <img src="docs/images/varagh/cover.jpg" width="420" alt="VARAGH on the Xteink X4 Pro, with a Persian, a German and an English book on the Home screen">
+</p>
+
 **VARAGH** (ورق, Persian for "a sheet / a page") is e-reader firmware for the
 **Xteink X4 Pro**, built for reading and learning in **English, German and Persian**.
 
@@ -49,6 +53,25 @@ Every feature is explained, with how to use it, in **[FEATURES.md](FEATURES.md)*
 - Online updates come from VARAGH releases, and a warning appears before any
   firmware update: installing a CrossInk release replaces VARAGH and removes
   these features.
+
+## In pictures
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/varagh/persian-book.jpg" width="250" alt="A Persian book in NotoVazir"><br><b>Persian books</b> in NotoVazir</td>
+    <td align="center"><img src="docs/images/varagh/german-dictionary.jpg" width="250" alt="German to English dictionary entry with pronunciation"><br><b>German → English</b> with pronunciation</td>
+    <td align="center"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with a finger, with selection handles"><br><b>Hold to select</b>, slide for more words</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><b>Flashcards</b>: flip, then Again or Know it</td>
+    <td align="center"><img src="docs/images/varagh/add-to-category.jpg" width="250" alt="Add to menu with Favorite Lines, Flashcards and New Category"><br><b>Add to…</b> from the dictionary</td>
+    <td align="center"><img src="docs/images/varagh/swipe-to-delete.jpg" width="250" alt="File list with a row swiped left showing a Delete button"><br><b>Swipe left</b> to delete</td>
+  </tr>
+</table>
+
+Photos taken on the X4 Pro with the front light on (all except the cover photo at
+the top, taken with the front light off). More pictures, with an explanation of
+each feature, are in [FEATURES.md](FEATURES.md).
 
 ## Install
 
