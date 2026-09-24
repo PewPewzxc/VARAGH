@@ -25,22 +25,3 @@ with its meaning to Flashcards with **Add to…**.
 FreeDict's German-English dictionary is licensed GPL-3.0 / AGPL-3.0 (it comes
 from the Ding dictionary of TU Chemnitz). You may use it freely; if you share
 copies, share them under the same licence and point to the source.
-
-## Building your own dictionaries from Wiktionary
-
-Wiktionary has English, German and Persian entries with meanings, inflections and
-IPA. A practical source is the machine-readable Wiktionary extract at
-https://kaikki.org (made with wiktextract), which can be trimmed to the fields
-you want and converted to StarDict.
-
-Licence: Wiktionary text is **CC BY-SA 4.0** (also GFDL). A dictionary built from
-it must:
-
-- credit Wiktionary and its contributors (for example in the `.ifo` description
-  and in a README next to the files),
-- be shared under CC BY-SA 4.0 as well,
-- be published separately from the VARAGH firmware (for example as its own
-  release asset or repository), because CC BY-SA is not the MIT licence.
-
-Keep the conversion scripts in this repository (MIT) and publish the generated
-dictionary files with their CC BY-SA notice.
