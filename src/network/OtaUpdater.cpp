@@ -320,11 +320,17 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
     esp_http_client_cleanup(client_handle);
     return HTTP_ERROR;
   }
+  const int httpStatus = esp_http_client_get_status_code(client_handle);
 
   esp_err = esp_http_client_cleanup(client_handle);
   if (esp_err != ESP_OK) {
     LOG_ERR("OTA", "esp_http_client_cleanup Failed : %s", esp_err_to_name(esp_err));
     return INTERNAL_UPDATE_ERROR;
+  }
+  if (httpStatus == 404) {
+    // The repository has no published release yet: nothing to install.
+    LOG_INF("OTA", "No release published at %s", latestReleaseUrl);
+    return NO_UPDATE;
   }
 
   LOG_DBG("OTA", "Response received: %zu bytes total", totalBytesReceived);

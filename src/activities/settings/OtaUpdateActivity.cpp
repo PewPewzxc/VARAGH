@@ -59,6 +59,15 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   }
 
   const auto res = updater.checkForUpdate();
+  if (res == OtaUpdater::NO_UPDATE) {
+    // No release yet, or a release without firmware for this device.
+    {
+      RenderLock lock(*this);
+      state = NO_UPDATE;
+    }
+    requestUpdate(true);
+    return;
+  }
   if (res != OtaUpdater::OK) {
     LOG_DBG("OTA", "Update check failed: %d", res);
     {
