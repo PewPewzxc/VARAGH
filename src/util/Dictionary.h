@@ -91,6 +91,11 @@ class Dictionary {
   // Pass empty string to clear the global dictionary.
   static void saveGlobalDictPath(const char* folderPath);
 
+  // Keep a dictionary chosen with "Switch Dictionary" as the default for later
+  // lookups: in the book's own dictionary.bin when the book has one, otherwise
+  // in the global setting.
+  static void rememberSelectedDictPath(const char* folderPath, const char* cachePath);
+
   // Returns true when /.crosspoint/dictionary.bin exists, even if it is empty
   // because the user explicitly selected "None".
   static bool hasGlobalDictPathFile();
@@ -134,6 +139,10 @@ class Dictionary {
   // rendered as text.
   static DictDefinitionSlice resolveDefinitionSlice(const DictLocation& location, const DictInfo& info);
 
+  // Raw text of a located entry's definition field, at most maxBytes (used to
+  // save a meaning onto a flashcard). Empty when the entry cannot be read.
+  static std::string readLocatedDefinition(const DictLocation& location, uint32_t maxBytes);
+
   // Look up word in .syn (via .syn.oft if present).
   // Returns the canonical headword from .idx, or empty string if not found.
   static std::string resolveAltForm(const std::string& word, const char* cachePath = nullptr);
@@ -164,6 +173,8 @@ class Dictionary {
     uint32_t idxFileSize = 0;
     uint32_t qidxSampleCount = 0;
     uint8_t suffixBytes = 8;
+    // Headwords are German, so stem with German rules instead of English ones.
+    bool germanSource = false;
     LookupAccelerator acceleratorKind = LookupAccelerator::None;
   };
 

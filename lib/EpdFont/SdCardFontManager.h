@@ -35,8 +35,16 @@ class SdCardFontManager {
   // Add an exact extra-size file found by the fixed-buffer dictionary path.
   int loadFamilyExtraFile(const char* path, const char* familyName, uint8_t pointSize, GfxRenderer& renderer);
 
+  // Additively load another family's file (a script fallback font). It stays
+  // until unloadAll() or the next primary family load, and is never returned
+  // by getFontId() or reused as an extra size of the primary family.
+  int loadOtherFamilyFile(const char* path, const char* familyName, uint8_t pointSize, GfxRenderer& renderer);
+
   // Unload everything, unregister from renderer.
   void unloadAll(GfxRenderer& renderer);
+
+  // True while any file (primary family or other-family extra) is loaded.
+  bool hasLoadedFonts() const { return !loaded_.empty(); }
 
   // Look up the font ID for the loaded family. Returns 0 if nothing loaded
   // or familyName doesn't match.
@@ -54,6 +62,7 @@ class SdCardFontManager {
     SdCardFont* font;  // heap-allocated, owned
     int fontId;
     uint8_t size;
+    bool otherFamily = false;
   };
   static int computeFontId(uint32_t contentHash, const char* familyName, uint8_t pointSize);
 

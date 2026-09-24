@@ -66,6 +66,9 @@ class HalDisplay {
 
   // Power management
   void deepSleep();
+  // Let the panel controller drop its analog/clock domains between refreshes.
+  // Waits for any in-flight refresh first; the next refresh powers back up.
+  void controllerIdle();
 
   // Access to frame buffer
   uint8_t* getFrameBuffer() const;

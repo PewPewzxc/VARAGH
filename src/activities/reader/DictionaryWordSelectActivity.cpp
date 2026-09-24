@@ -1,3 +1,5 @@
+#include "activities/home/HighlightsHubActivity.h"
+#include "highlights/HighlightStore.h"
 #include "DictionaryWordSelectActivity.h"
 
 #include <BidiUtils.h>
@@ -679,6 +681,7 @@ bool DictionaryWordSelectActivity::extractWords() {
         word.isRtl = wordIsRtl;
         word.joinWithoutSpaceBefore = joinWithoutSpaceBefore;
         word.isTableText = line.isTableText;
+        word.hasSourceHyphen = !block->wordEndsWithInsertedHyphen(wordIndex);
         word.focusBoundary = focusBoundary;
         word.focusSuffixX = focusSuffixX;
         if (!appendWord(word)) return false;
@@ -733,6 +736,7 @@ bool DictionaryWordSelectActivity::extractWords() {
         word.isRtl = wordIsRtl;
         word.compoundSeparatorBefore = static_cast<uint8_t>(part.separatorBefore);
         word.isTableText = line.isTableText;
+        word.hasSourceHyphen = !block->wordEndsWithInsertedHyphen(wordIndex);
         if (!appendWord(word)) partSucceeded = false;
       });
       if (!partSucceeded) return false;
@@ -934,11 +938,16 @@ bool DictionaryWordSelectActivity::mergeHyphenatedWords() {
 
     const char* nextText = textPool + next.textOffset;
     const size_t nextSkip = next.textLen > 0 && nextText[0] == '-' ? 1 : 0;
+    // A layout-inserted hyphen is dropped ("exter-" + "nity" -> "externity");
+    // a hyphen from the book text is kept ("self-" + "aware" -> "self-aware").
+    // Dictionary lookup retries without it, so "Geschwin-" + "digkeit" typed
+    // with a hard hyphen still finds "Geschwindigkeit".
+    const size_t lastKeep = last.hasSourceHyphen ? last.textLen : last.textLen - 1;
     uint16_t mergedOffset = 0;
-    if (!appendMergedText(lastText, last.textLen - 1, nextText + nextSkip, next.textLen - nextSkip, mergedOffset)) {
+    if (!appendMergedText(lastText, lastKeep, nextText + nextSkip, next.textLen - nextSkip, mergedOffset)) {
       return false;
     }
-    const size_t mergedLength = last.textLen - 1 + next.textLen - nextSkip;
+    const size_t mergedLength = lastKeep + next.textLen - nextSkip;
     last.continuationIndex = static_cast<int>(nextWordIndex);
     next.continuationOf = static_cast<int>(lastWordIndex);
     last.lookupOffset = mergedOffset;
@@ -953,17 +962,45 @@ bool DictionaryWordSelectActivity::mergeHyphenatedWords() {
       auto& last = workingSet_.words[lastRow.firstWord + lastRow.wordCount - 1];
       const char* lastText = textPool + last.textOffset;
       if (!last.isTableText && utf8EndsWithHyphen(lastText, last.textLen) && lastText[0] != '-') {
+        const size_t lastKeep = last.hasSourceHyphen ? last.textLen : last.textLen - 1;
         uint16_t mergedOffset = 0;
-        if (!appendMergedText(lastText, last.textLen - 1, nextPageFirstWord.c_str(), nextPageFirstWord.size(),
+        if (!appendMergedText(lastText, lastKeep, nextPageFirstWord.c_str(), nextPageFirstWord.size(),
                               mergedOffset)) {
           return false;
         }
         last.lookupOffset = mergedOffset;
-        last.lookupLen = static_cast<uint16_t>(last.textLen - 1 + nextPageFirstWord.size());
+        last.lookupLen = static_cast<uint16_t>(lastKeep + nextPageFirstWord.size());
       }
     }
   }
   return true;
+}
+
+void DictionaryWordSelectActivity::openAddTo() {
+  // The word or phrase was not in the dictionary, so it is saved as text
+  // (typically a sentence for Favorite Lines). Back to the book afterwards.
+  const std::string text = controller.getLookupWord();
+  auto picker = makeUniqueNoThrow<HighlightsHubActivity>(renderer, mappedInput, /*pickerMode=*/true);
+  if (!picker) {
+    LOG_ERR("DICT", "OOM: HighlightsHubActivity picker");
+    requestUpdate();
+    return;
+  }
+  startActivityForResult(std::move(picker), [this, text](const ActivityResult& result) {
+    forceFullRepaintOnNextRender();
+    const auto* chosen = std::get_if<IntervalResult>(&result.data);
+    if (result.isCancelled || !chosen || text.empty()) {
+      requestUpdate();
+      return;
+    }
+    HighlightFormat::Entry entry;
+    entry.text = text;
+    if (!HighlightStore::addEntry(static_cast<uint16_t>(chosen->value), entry)) {
+      LOG_ERR("DICT", "Could not add to category %u", static_cast<unsigned>(chosen->value));
+    }
+    setResult(ActivityResult{});
+    finish();
+  });
 }
 
 void DictionaryWordSelectActivity::openDictionarySwitch() {
@@ -986,6 +1023,7 @@ void DictionaryWordSelectActivity::openDictionarySwitch() {
       return;
     }
     Dictionary::setLookupDictPathOverride(selection->path.c_str());
+    Dictionary::rememberSelectedDictPath(selection->path.c_str(), cachePath.c_str());
     controller.startLookup(controller.getLookupWord(), false);
   });
 }
@@ -1044,6 +1082,9 @@ void DictionaryWordSelectActivity::loop() {
         break;
       case DictionaryLookupController::LookupEvent::CreateClipping:
         finishWithClippingRequest();
+        break;
+      case DictionaryLookupController::LookupEvent::AddTo:
+        openAddTo();
         break;
       case DictionaryLookupController::LookupEvent::NotFoundDismissedDone:
         setResult(ActivityResult{});

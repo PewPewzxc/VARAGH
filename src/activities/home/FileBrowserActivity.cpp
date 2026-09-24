@@ -432,7 +432,24 @@ void FileBrowserActivity::promptDeleteFile(const std::string& fullPath, const st
     if (res.isCancelled) {
       return;
     }
+    deleteFileNow(fullPath);
+  };
 
+  const std::string heading = tr(STR_DELETE) + std::string("? ");
+  startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, heading, entry), handler);
+}
+
+bool FileBrowserActivity::swipedEntry(const int rowValue, std::string& entry) {
+  RenderLock lock(*this);
+  if (rowValue < 0) return false;
+  const size_t row = actionWindowFirst + static_cast<size_t>(rowValue);
+  if (row >= entryCount()) return false;
+  entry = entryNameAt(row);
+  return !entry.empty() && entry.back() != '/';
+}
+
+void FileBrowserActivity::deleteFileNow(const std::string& fullPath) {
+  {
     BookActions::clearFileMetadata(fullPath);
     if (!Storage.remove(fullPath.c_str())) {
       LOG_ERR("FileBrowser", "Failed to delete file: %s", fullPath.c_str());
@@ -460,10 +477,7 @@ void FileBrowserActivity::promptDeleteFile(const std::string& fullPath, const st
       }
     }
     requestUpdate(true);
-  };
-
-  const std::string heading = tr(STR_DELETE) + std::string("? ");
-  startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, heading, entry), handler);
+  }
 }
 
 void FileBrowserActivity::promptDeleteDirectory(const std::string& fullPath, const std::string& entry,
@@ -1128,6 +1142,22 @@ void FileBrowserActivity::loop() {
     }
   }
 
+  // Swipe a book row left to reveal Delete (files only; folders keep the
+  // confirm-first action menu).
+  if (uiReady && mode == Mode::Books) {
+    int swipedValue = -1;
+    const auto swipe = swipeActions.handleInput(app, mappedInput, ACTION_ROW, swipedValue);
+    if (swipe != SwipeRowActions::Result::None) {
+      std::string entry;
+      if (swipeActions.active() && !swipedEntry(swipeActions.index(), entry)) swipeActions.clear();
+      if (swipe == SwipeRowActions::Result::Delete && swipedEntry(swipedValue, entry)) {
+        deleteFileNow(buildFullPath(basepath, entry));
+      }
+      requestUpdate();
+      return;
+    }
+  }
+
   // Touch goes through the FreeInkApp: render() registered the row hit rects;
   // route the snapshot and let onRowEvent dispatch.
   if (uiReady) {
@@ -1490,6 +1520,7 @@ void FileBrowserActivity::render(RenderLock&&) {
     app.render();
     if (!listNav.consumeRebuildNeeded()) break;
   }
+  swipeActions.draw(renderer);
   uiReady = true;
 
   const size_t visibleEntries = entryCount();

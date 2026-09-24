@@ -34,7 +34,10 @@ class DictionaryLookupController {
     NotFoundDismissedBack,
     NotFoundDismissedDone,
     SwitchDictionary,
-    Cancelled
+    Cancelled,
+    // "Add to..." on the not-found popup (word selection only): the caller
+    // offers the Highlights categories for the looked-up text.
+    AddTo
   };
 
   // How the word was ultimately resolved when FoundDefinition fires.
@@ -137,6 +140,7 @@ class DictionaryLookupController {
   static constexpr freeink::ui::ActionId ACTION_ALT_FORM_YES = 2;
   static constexpr freeink::ui::ActionId ACTION_CREATE_CLIPPING = 3;
   static constexpr freeink::ui::ActionId ACTION_SWITCH_DICTIONARY = 4;
+  static constexpr freeink::ui::ActionId ACTION_ADD_TO = 5;
 
   static void altFormPromptScreen(AltFormUiApp::ScreenType& screen, void* user);
   void buildAltFormPromptScreen(AltFormUiApp::ScreenType& screen);

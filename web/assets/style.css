@@ -1,4 +1,4 @@
-/* Shared chrome for all CrossInk web portal pages.
+/* Shared chrome for all VARAGH web portal pages.
    Page-specific rules live in each page's own inline <style>. */
 :root {
   --font-color: #1f2933;
@@ -11,7 +11,7 @@
   --accent-hover-color: #5a8c73;
   --accent-soft: rgba(110, 154, 130, 0.12);
   --accent-color-10: rgba(110, 154, 130, 0.1);
-  --logo-filter: brightness(0);
+  --logo-filter: none;
   --success-color: #16a34a;
   --success-hover: #15803d;
   --danger-color: #dc2626;

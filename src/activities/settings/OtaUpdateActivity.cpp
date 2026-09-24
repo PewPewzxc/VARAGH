@@ -9,6 +9,7 @@
 #include "SdCardFontSystem.h"
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "activities/util/ConfirmationActivity.h"
 #include "components/CompactHeader.h"
 #include "components/TouchActionButtons.h"
 #include "components/TouchHeaderBackButton.h"
@@ -196,6 +197,16 @@ void OtaUpdateActivity::render(RenderLock&&) {
   renderer.displayBuffer(screenTransitionRefresh.modeFor(static_cast<uint8_t>(state)));
 }
 
+// Warn before anything is downloaded: a CrossInk release would replace VARAGH.
+void OtaUpdateActivity::confirmVaraghUpdate() {
+  const std::string heading = std::string(tr(STR_VARAGH_UPDATE_WARNING)) + " " + tr(STR_FIRMWARE_UPDATE_PROMPT);
+  startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, heading, ""),
+                         [this](const ActivityResult& result) {
+                           installAccepted = !result.isCancelled;
+                           requestUpdate(true);
+                         });
+}
+
 void OtaUpdateActivity::runUpdateInstall() {
   {
     RenderLock lock(*this);
@@ -256,13 +267,18 @@ void OtaUpdateActivity::loop() {
   }
 
   if (state == WAITING_CONFIRMATION) {
+    if (installAccepted) {
+      installAccepted = false;
+      runUpdateInstall();
+      return;
+    }
     int x = 0;
     int y = 0;
     if (mappedInput.wasScreenTapped(x, y)) {
       const auto actions = getOtaActionLayout(renderer);
       const int action = TouchActionButtons::indexAt(actions, x, y);
       if (action == 0) {
-        runUpdateInstall();
+        confirmVaraghUpdate();
         return;
       }
       if (action == 1) {
@@ -272,7 +288,7 @@ void OtaUpdateActivity::loop() {
     }
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      runUpdateInstall();
+      confirmVaraghUpdate();
       return;
     }
 

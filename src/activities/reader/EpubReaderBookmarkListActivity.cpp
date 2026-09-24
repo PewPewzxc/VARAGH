@@ -108,6 +108,16 @@ void EpubReaderBookmarkListActivity::loop() {
     return;
   }
   if (uiReady) {
+    int swipedIndex = -1;
+    const auto swipe = swipeActions.handleInput(app, mappedInput, ACTION_ROW, swipedIndex);
+    if (swipe != SwipeRowActions::Result::None) {
+      if (swipe == SwipeRowActions::Result::Delete) {
+        selectedIndex = swipedIndex;
+        deleteSelectedBookmark();
+      }
+      requestUpdate();
+      return;
+    }
     const fui::InputSnapshot snap = touchSnapshotFrom(mappedInput);
     if (snap.touchPressed || snap.touchReleased) {
       const auto event = app.route(snap);
@@ -205,6 +215,7 @@ void EpubReaderBookmarkListActivity::render(RenderLock&&) {
   }
   uiReady = false;
   app.render();
+  swipeActions.draw(renderer);
   uiReady = true;
   if (confirmPopup.processRender(renderer, mappedInput)) return;
   const auto labels = mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)),

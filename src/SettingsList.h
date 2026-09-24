@@ -671,6 +671,9 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           "imageRendering", StrId::STR_CAT_READER));
     add(SettingInfo::Toggle(StrId::STR_TOUCH_READER_CONTROLS, &CrossPointSettings::touchReaderControls,
                             "touchReaderControls", StrId::STR_CAT_READER));
+    add(SettingInfo::Enum(StrId::STR_WORD_SELECT_HOLD, &CrossPointSettings::wordSelectHold,
+                          {StrId::STR_HOLD_FAST, StrId::STR_HOLD_NORMAL, StrId::STR_HOLD_SLOW, StrId::STR_HOLD_VERY_SLOW},
+                          "wordSelectHold", StrId::STR_CAT_READER));
     add(SettingInfo::Toggle(StrId::STR_DISABLE_TOUCHSCREEN, &CrossPointSettings::disableReaderTouchscreen,
                             "disableReaderTouchscreen", StrId::STR_CAT_READER));
     add(SettingInfo::Toggle(StrId::STR_EXTRA_SPACING, &CrossPointSettings::extraParagraphSpacing,
@@ -905,6 +908,9 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
     // Range 0..104 = quarter-hour steps from UTC-12:00 to UTC+14:00, biased by 48.
     add(SettingInfo::Value(StrId::STR_CLOCK_UTC_OFFSET, &CrossPointSettings::clockUtcOffsetQ, {0, 104, 1},
                            "clockUtcOffsetQ", StrId::STR_CAT_SYSTEM));
+    add(SettingInfo::Enum(StrId::STR_CLOCK_DST, &CrossPointSettings::clockDstRule,
+                          {StrId::STR_STATE_OFF, StrId::STR_CLOCK_DST_EU, StrId::STR_CLOCK_DST_US}, "clockDstRule",
+                          StrId::STR_CAT_SYSTEM));
     add(SettingInfo::Enum(StrId::STR_CLOCK_FORMAT, &CrossPointSettings::clockFormat,
                           {StrId::STR_CLOCK_FORMAT_24H, StrId::STR_CLOCK_FORMAT_12H}, "clockFormat",
                           StrId::STR_CAT_SYSTEM));
@@ -977,6 +983,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     v.erase(std::remove_if(v.begin(), v.end(),
                            [](const SettingInfo& s) {
                              return s.nameId == StrId::STR_TOUCH_READER_CONTROLS ||
+                                    s.nameId == StrId::STR_WORD_SELECT_HOLD ||
                                     s.nameId == StrId::STR_DISABLE_TOUCHSCREEN || s.nameId == StrId::STR_NEXT_PAGE ||
                                     s.nameId == StrId::STR_PREV_PAGE || s.nameId == StrId::STR_TAP_HIDE_STATUS_BAR ||
                                     s.nameId == StrId::STR_PINCH_FONT_RESIZE ||
@@ -1121,6 +1128,7 @@ inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<
   addSettingByName(readerSettings, allSettings, StrId::STR_FOCUS_READING);
   addSettingByName(readerSettings, allSettings, StrId::STR_GUIDE_READING);
   addSettingByName(readerSettings, allSettings, StrId::STR_DICTIONARY);
+  addSettingByName(readerSettings, allSettings, StrId::STR_WORD_SELECT_HOLD);
   addSettingByName(readerSettings, allSettings, StrId::STR_INDEXING_METHOD);
   return readerSettings;
 }
@@ -1387,6 +1395,7 @@ inline std::vector<SettingInfo> buildSystemDeviceSettingsList(const std::vector<
   if (halClock.isAvailable()) {
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_FORMAT);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_UTC_OFFSET);
+    addSettingByName(settings, allSettings, StrId::STR_CLOCK_DST);
     addSettingByName(settings, allSettings, StrId::STR_DATE_FORMAT);
     addSettingByName(settings, allSettings, StrId::STR_DATE_SEPARATOR);
     settings.push_back(SettingInfo::Action(StrId::STR_CLOCK_SYNC_NOW, SettingAction::ClockSync));

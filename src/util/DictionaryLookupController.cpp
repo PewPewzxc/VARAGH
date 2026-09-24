@@ -230,6 +230,10 @@ DictionaryLookupController::LookupEvent DictionaryLookupController::handleInput(
       state = LookupState::Idle;
       return LookupEvent::CreateClipping;
     }
+    if (state == LookupState::NotFound && allowCreateClipping_ && touchAction == ACTION_ADD_TO) {
+      state = LookupState::Idle;
+      return LookupEvent::AddTo;
+    }
     if (state == LookupState::NotFound && touchAction == ACTION_SWITCH_DICTIONARY) {
       state = LookupState::Idle;
       return LookupEvent::SwitchDictionary;
@@ -314,7 +318,17 @@ void DictionaryLookupController::buildAltFormPromptScreen(AltFormUiApp::ScreenTy
     if (allowCreateClipping_) addButton(tr(STR_SAVE_CLIPPING), ACTION_CREATE_CLIPPING, true, 2);
   } else if (allowCreateClipping_) {
     addButton(tr(STR_SWITCH_DICTIONARY), ACTION_SWITCH_DICTIONARY, false, 0);
-    addButton(tr(STR_SAVE_CLIPPING), ACTION_CREATE_CLIPPING, false, 1);
+    // Second row: [Highlight | Add to...], so the popup keeps its height.
+    const int16_t rowY = static_cast<int16_t>(area.y + actionHeight + actionGap);
+    const int16_t half = static_cast<int16_t>((area.width - actionGap) / 2);
+    button.text.bold = false;
+    button.label = tr(STR_SAVE_CLIPPING);
+    button.action = ACTION_CREATE_CLIPPING;
+    screen.button(button, freeink::ui::Rect{area.x, rowY, half, actionHeight});
+    button.label = tr(STR_ADD_TO);
+    button.action = ACTION_ADD_TO;
+    screen.button(button, freeink::ui::Rect{static_cast<int16_t>(area.x + half + actionGap), rowY,
+                                            static_cast<int16_t>(area.width - half - actionGap), actionHeight});
   }
 }
 #endif

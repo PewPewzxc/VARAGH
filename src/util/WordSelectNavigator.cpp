@@ -503,13 +503,13 @@ void WordSelectNavigator::renderHighlight(const GfxRenderer& renderer, int lineH
       drawSingleHighlight(renderer, lineHeight, i, foregroundBlack);
       drawContinuationsIfOutside(renderer, lineHeight, getWordAt(i), lo, hi, foregroundBlack);
     }
-    drawTouchDragCursor(renderer, lineHeight, cursorIdx, foregroundBlack);
+    drawTouchDragCursor(renderer, lineHeight, lo, hi, foregroundBlack);
   } else {
     const int selIdx = getCurrentFlatIndex();
     if (selIdx < 0) return;
     drawSingleHighlight(renderer, lineHeight, selIdx, foregroundBlack);
     drawContinuationsIfOutside(renderer, lineHeight, getWordAt(selIdx), selIdx, selIdx, foregroundBlack);
-    drawTouchDragCursor(renderer, lineHeight, selIdx, foregroundBlack);
+    drawTouchDragCursor(renderer, lineHeight, selIdx, selIdx, foregroundBlack);
   }
 }
 
@@ -542,17 +542,25 @@ void WordSelectNavigator::drawSingleHighlight(const GfxRenderer& renderer, int l
   renderer.drawText(w->fontId, w->screenX, w->screenY, displayedText, !foregroundBlack, w->style, baseDir);
 }
 
-void WordSelectNavigator::drawTouchDragCursor(const GfxRenderer& renderer, int lineHeight, int wordIndex,
-                                              const bool foregroundBlack) const {
+void WordSelectNavigator::drawTouchDragCursor(const GfxRenderer& renderer, int lineHeight, int startIndex,
+                                              int endIndex, const bool foregroundBlack) const {
   if (!touchDragCursorVisible) return;
-  const auto* w = getWordAt(wordIndex);
-  if (!w) return;
-  const int x = w->screenX + w->width + 4;
-  const int top = w->screenY - 2;
-  const int bottom = w->screenY + lineHeight + 1;
-  renderer.drawLine(x, top, x, bottom, 2, foregroundBlack);
-  renderer.drawLine(x - 2, top, x + 3, top, 2, foregroundBlack);
-  renderer.drawLine(x - 2, bottom, x + 3, bottom, 2, foregroundBlack);
+  const auto* first = getWordAt(startIndex);
+  const auto* last = getWordAt(endIndex);
+  if (!first || !last) return;
+  constexpr int r = HANDLE_KNOB_RADIUS;
+  const Color knobColor = foregroundBlack ? Color::Black : Color::White;
+  // Bars sit just outside the highlight box (which extends 2 px past the word).
+  const int startX = first->screenX - 4;
+  const int startTop = first->screenY - 2;
+  const int startBottom = first->screenY + lineHeight + 1;
+  renderer.fillRect(startX, startTop, 2, startBottom - startTop + 1, foregroundBlack);
+  renderer.fillRoundedRect(startX + 1 - r, startTop - 2 * r, 2 * r, 2 * r, r, knobColor);
+  const int endX = last->screenX + last->width + 3;
+  const int endTop = last->screenY - 2;
+  const int endBottom = last->screenY + lineHeight + 1;
+  renderer.fillRect(endX, endTop, 2, endBottom - endTop + 1, foregroundBlack);
+  renderer.fillRoundedRect(endX + 1 - r, endBottom + 1, 2 * r, 2 * r, r, knobColor);
 }
 
 void WordSelectNavigator::drawContinuationsIfOutside(const GfxRenderer& renderer, int lineHeight, const WordInfo* w,
@@ -569,9 +577,11 @@ void WordSelectNavigator::drawContinuationsIfOutside(const GfxRenderer& renderer
 WordSelectNavigator::Rect WordSelectNavigator::boundsForWord(int wordIndex, int lineHeight) const {
   const auto* w = getWordAt(wordIndex);
   if (!w) return Rect{};
-  const int cursorWidth = touchDragCursorVisible ? 10 : 0;
-  return Rect{static_cast<int>(w->screenX) - 2, static_cast<int>(w->screenY) - 2,
-              static_cast<int>(w->width) + 4 + cursorWidth, lineHeight + 4};
+  // Handles add a bar plus knob on each side and a knob above and below.
+  const int side = touchDragCursorVisible ? HANDLE_KNOB_RADIUS + 3 : 0;
+  const int cap = touchDragCursorVisible ? 2 * HANDLE_KNOB_RADIUS + 1 : 0;
+  return Rect{static_cast<int>(w->screenX) - 2 - side, static_cast<int>(w->screenY) - 2 - cap,
+              static_cast<int>(w->width) + 4 + 2 * side, lineHeight + 4 + 2 * cap};
 }
 
 WordSelectNavigator::Rect WordSelectNavigator::computeDirtyRect(int prevWordIdx, int currWordIdx,
@@ -625,7 +635,7 @@ std::optional<WordSelectNavigator::Rect> WordSelectNavigator::renderHighlightDif
 
   // Step 3: draw the new highlight on top of the captured pixels.
   drawSingleHighlight(renderer, lineHeight, currWordIdx, foregroundBlack);
-  drawTouchDragCursor(renderer, lineHeight, currWordIdx, foregroundBlack);
+  drawTouchDragCursor(renderer, lineHeight, currWordIdx, currWordIdx, foregroundBlack);
 
   // Step 4: caller pushes the union region.
   return computeDirtyRect(prevWordIdx, currWordIdx, lineHeight);

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../Activity.h"
+#include "components/SwipeRowActions.h"
 #include "util/ButtonNavigator.h"
 #include "util/DictionaryLookupController.h"
 #include "util/LookupHistory.h"
@@ -45,6 +46,8 @@ class LookedUpWordsActivity final : public Activity {
   bool uiReady = false;
   int visibleRows = 1;
   int topIndex = 0;
+  SwipeRowActions swipeActions;
+  void deleteEntry(int index);
 
   bool skipLoopDelay() override { return controller.skipLoopDelay(); }
 

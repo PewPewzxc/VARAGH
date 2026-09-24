@@ -147,6 +147,15 @@ void LookedUpWordsActivity::showDeleteConfirmation(const bool ignoreInitialConfi
   });
 }
 
+void LookedUpWordsActivity::deleteEntry(const int index) {
+  if (index < 0 || index >= static_cast<int>(entries.size())) return;
+  LookupHistory::removeRecentAt(cachePath, index);
+  reloadEntries();
+  if (selectedIndex >= static_cast<int>(entries.size())) {
+    selectedIndex = std::max(0, static_cast<int>(entries.size()) - 1);
+  }
+}
+
 void LookedUpWordsActivity::loop() {
   if (controller.isActive()) {
     switch (controller.handleInput()) {
@@ -210,6 +219,13 @@ void LookedUpWordsActivity::loop() {
   }
 
   if (uiReady) {
+    int swipedIndex = -1;
+    const auto swipe = swipeActions.handleInput(app, mappedInput, ACTION_ROW, swipedIndex);
+    if (swipe != SwipeRowActions::Result::None) {
+      if (swipe == SwipeRowActions::Result::Delete) deleteEntry(swipedIndex);
+      requestUpdate();
+      return;
+    }
     const fui::InputSnapshot snap = touchSnapshotFrom(mappedInput);
     if (snap.touchPressed || snap.touchReleased) {
       const auto event = app.route(snap);
@@ -293,6 +309,7 @@ void LookedUpWordsActivity::render(RenderLock&&) {
 
   uiReady = false;
   app.render();
+  swipeActions.draw(renderer);
   uiReady = true;
 
   const auto buttonLabels =

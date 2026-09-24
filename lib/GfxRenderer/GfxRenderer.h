@@ -25,6 +25,10 @@ class SdCardFont;
 
 #include "Bitmap.h"
 
+namespace glyphBitmap {
+struct Frame;
+}
+
 // Color representation: uint8_t mapped to 4x4 Bayer matrix dithering levels
 // 0 = transparent, 1-16 = gray levels (white to black)
 enum Color : uint8_t { Clear = 0x00, White = 0x01, LightGray = 0x05, DarkGray = 0x0A, Black = 0x10 };
@@ -113,6 +117,15 @@ class GfxRenderer {
   // app-level SD font setup when an SD family is loaded. See resolveTextFontId().
   std::map<int, int> fallbackFontMap_;
 
+  // Script fallback map: reader font id -> installed SD font id that carries
+  // the Arabic-script and IPA glyphs the reader font lacks. A string drawn or
+  // measured with the reader font that contains such a character is routed to
+  // the fallback as a whole (one word per call in book text), so Persian words
+  // and pronunciations render in any reader font. Populated by SdCardFontSystem.
+  std::map<int, int> scriptFallbackFontMap_;
+  int resolveCjkFallbackFontId(int fontId, const char* text, EpdFontFamily::Style style) const;
+  int resolveScriptFallbackFontId(int fontId, const char* text, EpdFontFamily::Style style) const;
+
   // If `text` contains a CJK codepoint that `fontId` cannot render and `fontId`
   // has a registered fallback, returns the fallback id; otherwise returns
   // fontId unchanged. The whole string is routed as a unit so each draw/measure
@@ -180,7 +193,17 @@ class GfxRenderer {
   // Register/clear size-matched CJK UI fallbacks (see fallbackFontMap_).
   // setFallbackFont maps a primary UI font id to an SD font id of the same size.
   void setFallbackFont(int primaryFontId, int fallbackFontId) { fallbackFontMap_[primaryFontId] = fallbackFontId; }
-  void clearFallbackFonts() { fallbackFontMap_.clear(); }
+  void clearFallbackFonts() {
+    fallbackFontMap_.clear();
+    scriptFallbackFontMap_.clear();
+  }
+  // Register a script fallback for a reader font (see scriptFallbackFontMap_).
+  void setScriptFallbackFont(int primaryFontId, int fallbackFontId) {
+    scriptFallbackFontMap_[primaryFontId] = fallbackFontId;
+  }
+  bool hasScriptFallback(int fontId) const { return scriptFallbackFontMap_.count(fontId) > 0; }
+  // True when `fontId` lacks `cp` but its script fallback will draw it.
+  bool scriptFallbackCovers(int fontId, uint32_t cp, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   // Ensure SD card font glyph data is loaded for the given text. Called from layout code
   // (which holds a const GfxRenderer&) before measuring word widths. Safe to call on non-SD fonts (no-op).
   // styleMask: bitmask of styles to prepare (bit 0=regular, 1=bold, 2=italic, 3=bold-italic).
@@ -239,6 +262,9 @@ class GfxRenderer {
   // Drawing
   bool isPixelBlack(int x, int y) const;
   void drawPixel(int x, int y, bool state = true) const;
+  // Fast path for unrotated glyphs: same result as drawPixel() per ink pixel, clipped and rotated once per glyph.
+  void drawGlyphBitmap(const uint8_t* bitmap, int width, int height, const glyphBitmap::Frame& frame, bool twoBit,
+                       RenderMode mode, bool state) const;
   void drawLine(int x1, int y1, int x2, int y2, bool state = true) const;
   void drawLine(int x1, int y1, int x2, int y2, int lineWidth, bool state) const;
   void drawArc(int maxRadius, int cx, int cy, int xDir, int yDir, int lineWidth, bool state) const;

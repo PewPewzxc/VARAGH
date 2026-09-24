@@ -129,6 +129,19 @@ void RecentBooksActivity::loop() {
   // Touch goes through the FreeInkApp: render() registered the row hit rects;
   // route the snapshot and let onRowEvent dispatch.
   if (uiReady) {
+    // Swipe left reveals Delete; in Recent Books it only removes the entry
+    // from the list (the book file stays), same as "Remove from Recents".
+    int swipedIndex = -1;
+    const auto swipe = swipeActions.handleInput(app, mappedInput, ACTION_ROW, swipedIndex);
+    if (swipe != SwipeRowActions::Result::None) {
+      if (swipe == SwipeRowActions::Result::Delete && swipedIndex >= 0 &&
+          swipedIndex < static_cast<int>(recentBooks.size())) {
+        const std::string path = recentBooks[static_cast<size_t>(swipedIndex)].path;
+        if (RECENT_BOOKS.removeByPath(path)) reloadAfterBookAction();
+      }
+      requestUpdate();
+      return;
+    }
     const fui::InputSnapshot snap = touchSnapshotFrom(mappedInput);
     if (snap.touchPressed || snap.touchReleased) {
       const auto event = app.route(snap);
@@ -426,6 +439,7 @@ void RecentBooksActivity::render(RenderLock&&) {
 
   uiReady = false;
   app.render();
+  swipeActions.draw(renderer);
   uiReady = true;
 
   const auto labels =

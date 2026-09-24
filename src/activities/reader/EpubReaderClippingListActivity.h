@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "components/SwipeRowActions.h"
 #include "ClippingStore.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
@@ -38,6 +39,7 @@ class EpubReaderClippingListActivity final : public Activity {
   freeink::ui::GfxRendererTarget uiTarget;
   UiApp app;
   std::atomic<bool> uiReady{false};
+  SwipeRowActions swipeActions;
   int visibleRows = 1;
   int topIndex = 0;
   std::vector<freeink::ui::ListItem> uiItems;

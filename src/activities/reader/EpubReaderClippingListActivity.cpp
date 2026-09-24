@@ -429,6 +429,16 @@ void EpubReaderClippingListActivity::loop() {
   }
 
   if (uiReady) {
+    int swipedIndex = -1;
+    const auto swipe = swipeActions.handleInput(app, mappedInput, ACTION_ROW, swipedIndex);
+    if (swipe != SwipeRowActions::Result::None) {
+      if (swipe == SwipeRowActions::Result::Delete) {
+        selectedIndex = swipedIndex;
+        deleteSelectedClipping();
+      }
+      requestUpdate();
+      return;
+    }
     const fui::InputSnapshot snap = touchSnapshotFrom(mappedInput);
     if (snap.touchPressed || snap.touchReleased) {
       const auto event = app.route(snap);
@@ -640,6 +650,7 @@ void EpubReaderClippingListActivity::render(RenderLock&&) {
   }
   uiReady = false;
   app.render();
+  swipeActions.draw(renderer);
   uiReady = true;
 
   const auto labels =

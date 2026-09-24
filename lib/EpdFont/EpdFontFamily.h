@@ -26,6 +26,15 @@ class EpdFontFamily {
                          const EpdFont* boldItalic = nullptr, const EpdFont* fallback = nullptr)
       : regular(regular), bold(bold), italic(italic), boldItalic(boldItalic), fallback(fallback) {}
   ~EpdFontFamily() = default;
+  /// Copy of this family that also looks in `regular`/`bold` supplement fonts
+  /// (same size and style as the family) for glyphs the main fonts lack, before
+  /// the shared fallback. Used to add IPA pronunciation letters to the UI font.
+  EpdFontFamily withSupplement(const EpdFont* supplementRegularFont, const EpdFont* supplementBoldFont) const {
+    EpdFontFamily copy(*this);
+    copy.supplementRegular = supplementRegularFont;
+    copy.supplementBold = supplementBoldFont;
+    return copy;
+  }
   void getTextDimensions(const char* string, int* w, int* h, Style style = REGULAR) const;
   const EpdFontData* getData(Style style = REGULAR) const;
   GlyphData findGlyphData(uint32_t cp, Style style = REGULAR) const;
@@ -45,6 +54,9 @@ class EpdFontFamily {
   const EpdFont* boldItalic;
   // Optional shared glyphs keep their own bitmap size across font sizes/styles.
   const EpdFont* fallback;
+  const EpdFont* supplementRegular = nullptr;
+  const EpdFont* supplementBold = nullptr;
 
   const EpdFont* getFont(Style style) const;
+  const EpdFont* getSupplement(Style style) const;
 };

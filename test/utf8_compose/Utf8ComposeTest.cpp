@@ -181,6 +181,32 @@ TEST(Utf8LookupWord, TrimsUnicodePunctuationWithoutDamagingWords) {
   EXPECT_EQ(utf8CleanLookupWord("..."), "");
 }
 
+TEST(Utf8LookupWord, EndsWordAtInternalPunctuation) {
+  EXPECT_EQ(utf8CleanLookupWord("word,another"), "word");
+  EXPECT_EQ(utf8CleanLookupWord("Wort...Wort"), "Wort");
+  EXPECT_EQ(utf8CleanLookupWord("Wort/Wort,"), "Wort");
+  EXPECT_EQ(utf8CleanLookupWord("\xE2\x80\x9E"
+                                "Hallo"
+                                "\xE2\x80\x9C"
+                                ","),
+            "Hallo");  // „Hallo“,
+  EXPECT_EQ(utf8CleanLookupWord("\xC2\xAB"
+                                "Wort"
+                                "\xC2\xBB"),
+            "Wort");  // «Wort»
+}
+
+TEST(Utf8LookupWord, KeepsSingleJoinersBetweenLetters) {
+  EXPECT_EQ(utf8CleanLookupWord("don\xE2\x80\x99t,"), "don\xE2\x80\x99t");
+  EXPECT_EQ(utf8CleanLookupWord("z.B."), "z.B");
+  EXPECT_EQ(utf8CleanLookupWord("self-aware."), "self-aware");
+  EXPECT_EQ(utf8CleanLookupWord("col\xC2\xB7legi"), "col\xC2\xB7legi");
+  // Persian "mi-khaham" with a zero-width non-joiner between prefix and verb.
+  const std::string persian = "\xD9\x85\xDB\x8C\xE2\x80\x8C\xD8\xAE\xD9\x88\xD8\xA7\xD9\x87\xD9\x85";
+  EXPECT_EQ(utf8CleanLookupWord(persian + "\xD8\x8C"), persian);  // trailing Arabic comma
+  EXPECT_EQ(utf8CleanLookupWord("mother--in-law"), "mother");
+}
+
 TEST(Utf8LookupWord, ComposesRetainedCombiningMarks) {
   EXPECT_EQ(utf8CleanLookupWord("(cafe" + kCombAcute + ")"), "caf\xC3\xA9");
 }

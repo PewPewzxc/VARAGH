@@ -38,7 +38,7 @@
 #include "components/themes/dashboard/DashboardTheme.h"
 #include "components/themes/minimal/MinimalTheme.h"
 #include "fontIds.h"
-#include "images/Logo120.h"
+#include "images/BootLogo192.h"
 #include "images/MoonIcon.h"
 
 namespace {
@@ -643,13 +643,21 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
 
-  renderer.clearScreen();
-  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSINK), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_SLEEPING));
-
   // Make sleep screen dark unless light is selected in settings
   const bool lightSleepScreen = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT;
+
+  renderer.clearScreen();
+  // The dark screen is inverted below, so draw the logo pre-inverted there:
+  // it then keeps its black square with light letters in both modes.
+  const int logoX = (pageWidth - 192) / 2;
+  const int logoY = (pageHeight - 192) / 2;
+  if (lightSleepScreen) {
+    renderer.drawImage(BootLogo192, logoX, logoY, 192, 192);
+  } else {
+    renderer.drawImageInverted(BootLogo192, logoX, logoY, 192, 192);
+  }
+  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 + 116, tr(STR_CROSSINK), true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 148, tr(STR_SLEEPING));
   if (!lightSleepScreen) {
     renderer.invertScreen();
   }

@@ -178,6 +178,7 @@ class DictionaryWordSelectActivity final : public Activity {
 
   void clearFrontButtonHintArea();
   void openDictionarySwitch();
+  void openAddTo();
   void renderDefinitionBackground();
   static void renderDefinitionBackgroundCallback(void* context);
   bool buildWorkingSet(bool consumeInitialConfirm);

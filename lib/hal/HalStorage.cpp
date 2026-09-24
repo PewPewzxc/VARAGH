@@ -94,7 +94,7 @@ void storageDateTimeCallback(uint16_t* date, uint16_t* time) {
   uint8_t minute = kFallbackMinute;
 
   if (halClock.getDateTime(year, month, day, hour, minute) && isValidFatDateTime(year, month, day, hour, minute)) {
-    const uint8_t configuredOffsetQ = clockUtcOffsetQ ? *clockUtcOffsetQ : 48;
+    const uint8_t configuredOffsetQ = halClock.effectiveOffsetQ(clockUtcOffsetQ ? *clockUtcOffsetQ : 48);
     const uint8_t offsetQ = configuredOffsetQ > 104 ? 104 : configuredOffsetQ;
     const int offsetQuarterHours = static_cast<int>(offsetQ) - 48;
     int localMinutes = static_cast<int>(hour) * 60 + static_cast<int>(minute) + offsetQuarterHours * 15;

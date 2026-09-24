@@ -244,9 +244,34 @@ void ActivityManager::renderTaskTrampoline(void* param) {
   self->renderTaskLoop();
 }
 
+// X4 Pro panels keep the controller's booster running after a fast page-turn
+// waveform. Power it down once the screen has been still for a while; the next
+// refresh powers it back up. Limited to the X4 Pro, where it was reviewed
+// against all three panel controllers (SSD1677, UC8179, UC8279).
+#if !defined(SIMULATOR) && defined(FREEINK_DEVICE_X4PRO) && FREEINK_DEVICE_X4PRO
+static constexpr TickType_t PANEL_IDLE_POWER_OFF_TICKS = pdMS_TO_TICKS(5000);
+#define CROSSINK_PANEL_IDLE_POWER_OFF 1
+#else
+#define CROSSINK_PANEL_IDLE_POWER_OFF 0
+#endif
+
 void ActivityManager::renderTaskLoop() {
+#if CROSSINK_PANEL_IDLE_POWER_OFF
+  bool panelIdlePowerOffArmed = false;
+#endif
   while (true) {
+#if CROSSINK_PANEL_IDLE_POWER_OFF
+    // Wake once, 5 s after the last render, then block indefinitely again.
+    if (ulTaskNotifyTake(pdTRUE, panelIdlePowerOffArmed ? PANEL_IDLE_POWER_OFF_TICKS : portMAX_DELAY) == 0) {
+      panelIdlePowerOffArmed = false;
+      RenderLock lock;
+      display.controllerIdle();
+      continue;
+    }
+    panelIdlePowerOffArmed = true;
+#else
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+#endif
     // Acquire the lock before reading currentActivity to avoid a TOCTOU race
     // where the main task deletes the activity between the null-check and render().
     RenderLock lock;

@@ -4,6 +4,9 @@
 #include <SdCardFontRegistry.h>
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <string>
 
 #include "ReaderFontSizeStep.h"
 
@@ -32,6 +35,15 @@ class SdCardFontSystem {
   /// Call before entering the reader or after settings change.
   /// Also re-discovers if the registry has been marked dirty (e.g. by web upload).
   void ensureLoaded(GfxRenderer& renderer);
+
+  /// When `primaryFontId` cannot draw Persian/Arabic script or IPA, load an
+  /// installed SD family that can (NotoVazir, for example) at `pointSize`
+  /// (0 = the active reader size) and register it as the renderer's script
+  /// fallback for that font. Words the primary cannot draw are then drawn in
+  /// the fallback. X4 Pro only (it needs a second resident font). No-op when
+  /// already attached, when the font covers those scripts, or when no
+  /// installed family does.
+  void attachScriptFallback(GfxRenderer& renderer, int primaryFontId, uint8_t pointSize = 0);
 
   // An EPUB can own a temporary per-book settings snapshot while this system
   // repairs a missing font selection. Let that reader persist its own state.
@@ -77,6 +89,15 @@ class SdCardFontSystem {
   // Restore the saved reader font after a dictionary lookup and return its ID.
   int restoreReaderFont(GfxRenderer& renderer);
 
+  /// True when the installed family's regular style has a glyph for every
+  /// codepoint in `probes` (at most 32). Reads only one file's header and
+  /// interval table; no glyph data is loaded and no font is activated.
+  bool familyCovers(const char* familyName, const uint32_t* probes, size_t probeCount);
+
+  /// First installed family (alphabetical) that covers every probe, or an
+  /// empty string. Used to pick a script-capable font for a book automatically.
+  std::string findFamilyCovering(const uint32_t* probes, size_t probeCount);
+
   /// Access the registry (e.g. for settings UI to enumerate available fonts).
   const SdCardFontRegistry& registry() const { return registry_; }
 
@@ -87,6 +108,7 @@ class SdCardFontSystem {
   /// Thread-safe: can be called from the web server task.
   void markRegistryDirty() {
     registryDirty_.store(true, std::memory_order_release);
+    scriptFallbackLookupDone_.store(false, std::memory_order_release);
     SdCardFontRegistry::invalidateIndex();
   }
   void markRegistryDirtyForPath(const char* path);
@@ -106,6 +128,15 @@ class SdCardFontSystem {
   // loaded are reused).
   void setupUiFallbacks(GfxRenderer& renderer);
   void setupUiFallbacksDirect(GfxRenderer& renderer, const char* familyName);
+  void ensureLoadedImpl(GfxRenderer& renderer);
+  DictionaryFontActivation activateDictionaryFontImpl(GfxRenderer& renderer, const char* familyName,
+                                                      uint8_t targetPointSize);
+  int restoreReaderFontImpl(GfxRenderer& renderer);
+
+  // Installed family used as the script fallback; looked up once per font
+  // catalog change (empty when no installed family covers the scripts).
+  std::string scriptFallbackFamily_;
+  std::atomic<bool> scriptFallbackLookupDone_{false};
 
   SdCardFontRegistry registry_;
   SdCardFontManager manager_;

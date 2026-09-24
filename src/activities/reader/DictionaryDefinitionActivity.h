@@ -210,10 +210,14 @@ class DictionaryDefinitionActivity final : public Activity {
   static void collectSpanForAdvances(void* ctx, const StyledSpan& span);
   void extractWordsFromLayout();
   void openDictionarySwitch();
+  void openAddTo();
+  // Shown in place of the dictionary name after Add to ("Added to Flashcards").
+  std::string footerNotice_;
 #if CROSSINK_APP_CAP_TOUCH
   bool showTouchDictionarySwitch() const;
   bool dictionarySwitchButtonContains(int x, int y) const;
   bool dictionaryCreateClippingButtonContains(int x, int y) const;
+  bool dictionaryAddToButtonContains(int x, int y) const;
   bool modalContains(int x, int y) const;
 #endif
   int dictionaryFooterHeight() const;

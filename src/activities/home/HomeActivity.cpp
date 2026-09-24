@@ -35,6 +35,7 @@
 #include "OpdsServerStore.h"
 #include "RecentBookProgress.h"
 #include "RecentBooksStore.h"
+#include "HighlightsHubActivity.h"
 #include "SavedItemsHomeActivity.h"
 #include "components/UITheme.h"
 #include "components/themes/dashboard/DashboardTheme.h"
@@ -257,11 +258,9 @@ bool ensureReusableCoverPath(RecentBook& book) {
   return true;
 }
 
-const char* savedItemsLabel(bool hasBookmarks, bool hasClippings) {
-  if (hasBookmarks && hasClippings) return tr(STR_BOOKMARKS_AND_CLIPPINGS);
-  if (hasClippings) return tr(STR_CLIPPINGS);
-  return tr(STR_BOOKMARKS);
-}
+// Home > Highlights opens the categories hub (Favorite Lines, Flashcards, ...,
+// and "By Book" for per-book bookmarks and highlights), so it is always shown.
+const char* savedItemsLabel(bool /*hasBookmarks*/, bool /*hasClippings*/) { return tr(STR_HIGHLIGHTS_HUB); }
 
 void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasReadingStats, bool hasBookmarks,
                          bool hasClippings) {
@@ -274,9 +273,7 @@ void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasRe
   if (hasReadingStats) {
     items.push({tr(STR_READING_STATS), Chart, HomeMenuAction::ReadingStats});
   }
-  if (hasBookmarks || hasClippings) {
-    items.push({savedItemsLabel(hasBookmarks, hasClippings), BookmarkIcon, HomeMenuAction::Bookmarks});
-  }
+  items.push({savedItemsLabel(hasBookmarks, hasClippings), BookmarkIcon, HomeMenuAction::Bookmarks});
 
   items.push({tr(STR_FILE_TRANSFER), Transfer, HomeMenuAction::FileTransfer});
   items.push({tr(STR_SETTINGS_TITLE), Settings, HomeMenuAction::Settings});
@@ -295,9 +292,7 @@ HomeMenuEntries buildMinimalMenuItems(bool hasOpdsServers, bool hasReadingStats,
   if (hasOpdsServers) {
     items.push({tr(STR_OPDS_BROWSER), Library, HomeMenuAction::OpdsBrowser});
   }
-  if (hasBookmarks || hasClippings) {
-    items.push({savedItemsLabel(hasBookmarks, hasClippings), BookmarkIcon, HomeMenuAction::Bookmarks});
-  }
+  items.push({savedItemsLabel(hasBookmarks, hasClippings), BookmarkIcon, HomeMenuAction::Bookmarks});
   if (hasReadingStats) {
     items.push({tr(STR_READING_STATS), Chart, HomeMenuAction::ReadingStats});
   }
@@ -616,9 +611,7 @@ int HomeActivity::getMenuItemCount() const {
   if (hasReadingStats) {
     count++;
   }
-  if (hasBookmarks || hasClippings) {
-    count++;
-  }
+  count++;  // Highlights hub is always listed
   return count;
 }
 
@@ -2417,6 +2410,6 @@ void HomeActivity::onReadingStatsOpen() {
 }
 
 void HomeActivity::onSavedItemsOpen() {
-  startActivityForResult(std::make_unique<SavedItemsHomeActivity>(renderer, mappedInput),
+  startActivityForResult(std::make_unique<HighlightsHubActivity>(renderer, mappedInput),
                          [this](const ActivityResult&) { requestUpdate(); });
 }

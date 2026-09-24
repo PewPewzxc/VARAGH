@@ -396,6 +396,7 @@ class EpubReaderActivity final : public Activity {
   void captureGlobalReaderSettings();
   void restoreGlobalReaderSettings();
   void loadBookReaderSettings();
+  void ensureScriptCapableFont();
   void saveCurrentBookReaderSettings();
   void saveDictionaryFontForBook(const char* familyName, uint8_t pointSize);
   void persistReaderSdFontSettings();

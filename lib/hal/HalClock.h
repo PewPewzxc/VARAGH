@@ -17,10 +17,21 @@ class HalClock {
   mutable bool _hasCachedTime = false;
   mutable bool _hasCachedDate = false;
   mutable unsigned long _lastPollMs = 0;
+  // Daylight-saving rule (dst::Rule), read live so a settings change applies
+  // immediately. Null = none.
+  const uint8_t* _dstRule = nullptr;
 
   static constexpr unsigned long CLOCK_POLL_MS = 10000;  // 10 seconds
 
  public:
+  // Point at the persisted dst::Rule setting. formatTime()/formatDate() and
+  // effectiveOffsetQ() then add an hour while summer time is in effect.
+  void setDaylightSavingRuleSource(const uint8_t* rule) { _dstRule = rule; }
+
+  // The user's standard biased quarter-hour offset plus one hour while the
+  // configured daylight-saving rule is active at the current RTC time.
+  uint8_t effectiveOffsetQ(uint8_t standardOffsetQ) const;
+
   enum DateFormat : uint8_t {
     MONTH_DAY_YEAR_LONG = 0,
     DAY_MONTH_YEAR_LONG = 1,

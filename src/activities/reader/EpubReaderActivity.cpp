@@ -43,6 +43,7 @@
 #endif
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
+#include "util/ScriptDetect.h"
 #include "FocusReadingText.h"
 #include "GlobalActions.h"
 #include "KOReaderCredentialStore.h"
@@ -77,7 +78,6 @@
 #include "util/ScreenshotUtil.h"
 
 namespace {
-constexpr unsigned long TOUCH_DICTIONARY_LOOKUP_HOLD_MS = 1000;
 // pagesPerRefresh now comes from SETTINGS.getRefreshFrequency()
 constexpr unsigned long longPressMenuMs = 600;
 constexpr uint16_t DEFAULT_AUTO_PAGE_TURN_INTERVAL_S = 30;
@@ -1976,6 +1976,37 @@ void EpubReaderActivity::loadBookReaderSettings() {
                                                        : static_cast<uint8_t>(EpubRenderMode::CrossInkDefault);
 }
 
+// Persian/Arabic books need Arabic-script glyphs, which the built-in fonts and
+// most SD fonts lack. When the font this book would open with cannot draw them,
+// use an installed family that can for this reading session only. SETTINGS was
+// captured by captureGlobalReaderSettings() first, so the global font (and any
+// saved per-book font) is restored on exit and never overwritten on disk.
+void EpubReaderActivity::ensureScriptCapableFont() {
+  if (!epub) return;
+  if (!ScriptDetect::isArabicScriptLanguage(epub->getLanguage()) &&
+      !ScriptDetect::containsArabicScript(epub->getTitle())) {
+    return;
+  }
+
+  // Base letters plus the shaped presentation forms the renderer actually draws.
+  static constexpr uint32_t kArabicProbes[] = {0x0627, 0x0644, 0xFE8E, 0xFEDF};
+  constexpr size_t probeCount = sizeof(kArabicProbes) / sizeof(kArabicProbes[0]);
+  if (SETTINGS.sdFontFamilyName[0] != '\0' &&
+      sdFontSystem.familyCovers(SETTINGS.sdFontFamilyName, kArabicProbes, probeCount)) {
+    return;
+  }
+
+  const std::string family = sdFontSystem.findFamilyCovering(kArabicProbes, probeCount);
+  if (family.empty()) {
+    LOG_INF("ERS", "Arabic-script book, but no installed SD font covers Arabic script");
+    return;
+  }
+  LOG_INF("ERS", "Arabic-script book: using SD font '%s' instead of '%s'", family.c_str(),
+          SETTINGS.sdFontFamilyName[0] != '\0' ? SETTINGS.sdFontFamilyName : "built-in");
+  std::strncpy(SETTINGS.sdFontFamilyName, family.c_str(), sizeof(SETTINGS.sdFontFamilyName) - 1);
+  SETTINGS.sdFontFamilyName[sizeof(SETTINGS.sdFontFamilyName) - 1] = '\0';
+}
+
 void EpubReaderActivity::saveCurrentBookReaderSettings() {
   if (!epub) {
     return;
@@ -2143,6 +2174,7 @@ void EpubReaderActivity::onEnter() {
     epub->ensureOptimizerImageIndex();
   }
   loadBookReaderSettings();
+  ensureScriptCapableFont();
   sdFontSystem.setSettingsPersistenceCallback(persistReaderSdFontSettingsForBook, this);
   ensureReaderSdFontLoaded(renderer);
   ImageBlock::clearSessionRenderFailures();
@@ -3460,7 +3492,7 @@ bool EpubReaderActivity::handleTouchDictionaryLookup() {
     touchDictionaryLookupHandled = false;
     return false;
   }
-  if (touchDictionaryLookupHandled || heldMs < TOUCH_DICTIONARY_LOOKUP_HOLD_MS) {
+  if (touchDictionaryLookupHandled || heldMs < SETTINGS.getWordSelectHoldMs()) {
     return false;
   }
 

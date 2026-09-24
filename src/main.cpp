@@ -117,6 +117,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "util/Dictionary.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FrontlightSchedule.h"
+#include "util/LocalClockOffset.h"
 #include "util/ScreenshotUtil.h"
 #include "util/SleepWakePolicy.h"
 
@@ -221,18 +222,28 @@ EpdFont bitter16ItalicFont(&bitter_16_italic);
 EpdFont bitter16BoldItalicFont(&bitter_16_bolditalic);
 EpdFontFamily bitter16FontFamily(&bitter16RegularFont, &bitter16BoldFont, &bitter16ItalicFont, &bitter16BoldItalicFont);
 
+// IPA pronunciation letters (U+0250-U+02FF) for the UI fonts, so dictionary
+// meanings shown in lists and menus draw /ˈkœnən/ instead of boxes.
+EpdFont ipa8RegularFont(&inter_ipa_8_regular);
+EpdFont ipa10RegularFont(&inter_ipa_10_regular);
+EpdFont ipa10BoldFont(&inter_ipa_10_bold);
+EpdFont ipa12RegularFont(&inter_ipa_12_regular);
+EpdFont ipa12BoldFont(&inter_ipa_12_bold);
+
 EpdFont smallFont(&inter_8_regular);
-EpdFontFamily smallFontFamily(&smallFont);
+EpdFontFamily smallFontFamily = EpdFontFamily(&smallFont).withSupplement(&ipa8RegularFont, nullptr);
 
 const EpdFont uiSymbols10Font(&ui_symbols_10);
 
 EpdFont ui10RegularFont(&inter_10_regular);
 EpdFont ui10BoldFont(&inter_10_bold);
-EpdFontFamily ui10FontFamily(&ui10RegularFont, &ui10BoldFont, nullptr, nullptr, &uiSymbols10Font);
+EpdFontFamily ui10FontFamily = EpdFontFamily(&ui10RegularFont, &ui10BoldFont, nullptr, nullptr, &uiSymbols10Font)
+                                   .withSupplement(&ipa10RegularFont, &ipa10BoldFont);
 
 EpdFont ui12RegularFont(&inter_12_regular);
 EpdFont ui12BoldFont(&inter_12_bold);
-EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont, nullptr, nullptr, &uiSymbols10Font);
+EpdFontFamily ui12FontFamily = EpdFontFamily(&ui12RegularFont, &ui12BoldFont, nullptr, nullptr, &uiSymbols10Font)
+                                   .withSupplement(&ipa12RegularFont, &ipa12BoldFont);
 
 const char* resetReasonName(const esp_reset_reason_t reason) {
   switch (reason) {
@@ -1311,6 +1322,7 @@ void setup() {
   HalSystem::checkPanic();
 
   SETTINGS.loadFromFile();
+  halClock.setDaylightSavingRuleSource(&SETTINGS.clockDstRule);
   Storage.installDateTimeCallback(&SETTINGS.clockUtcOffsetQ);
   APP_STATE.loadFromFile();
   mirrorWakeShortPressToNvs();
@@ -1345,7 +1357,7 @@ void setup() {
     uint8_t utcHour = 0;
     uint8_t utcMinute = 0;
     if (halClock.getTime(utcHour, utcMinute)) {
-      const uint16_t localTimeOfDay = FrontlightSchedule::localTimeOfDay(utcHour, utcMinute, SETTINGS.clockUtcOffsetQ);
+      const uint16_t localTimeOfDay = FrontlightSchedule::localTimeOfDay(utcHour, utcMinute, localClockOffsetQ());
       restoreLightOn = FrontlightSchedule::containsTimeOfDay(SETTINGS.frontlightScheduleStart,
                                                              SETTINGS.frontlightScheduleEnd, localTimeOfDay);
     } else {
@@ -1359,7 +1371,7 @@ void setup() {
             (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) ? "DOWN" : "UP");
   }
 
-  LOG_DBG("MAIN", "Starting CrossInk version " CROSSINK_VERSION);
+  LOG_DBG("MAIN", "Starting VARAGH version " CROSSINK_VERSION);
   logMemoryStats("Boot");
 
   // Resolve the single boot-presentation decision. Skipping the splash also

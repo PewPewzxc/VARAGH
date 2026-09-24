@@ -57,10 +57,14 @@ class WordSelectNavigator {
     // not participate in the body-text hyphen continuation heuristic.
     uint8_t isTableText : 1;
     uint8_t compoundSeparatorBefore : 2;
+    // A trailing '-' that was in the book text ("self-" + "aware"), not one the
+    // layout inserted at a hyphenation point. Line-end merges keep it.
+    uint8_t hasSourceHyphen : 1;
     uint8_t focusBoundary = 0;
     uint16_t focusSuffixX = 0;
 
-    WordInfo() : isRtl(0), joinWithoutSpaceBefore(0), isTableText(0), compoundSeparatorBefore(0) {}
+    WordInfo()
+        : isRtl(0), joinWithoutSpaceBefore(0), isTableText(0), compoundSeparatorBefore(0), hasSourceHyphen(0) {}
   };
 
   struct Row {
@@ -315,7 +319,11 @@ class WordSelectNavigator {
   // Single-word highlight draw. Used by both renderHighlight (for each word it
   // chooses to highlight) and renderHighlightDifferential.
   void drawSingleHighlight(const GfxRenderer& renderer, int lineHeight, int wordIndex, bool foregroundBlack) const;
-  void drawTouchDragCursor(const GfxRenderer& renderer, int lineHeight, int wordIndex, bool foregroundBlack) const;
+  // iOS-style selection handles while a touch selection is being dragged: a bar
+  // at each end of the selection, knob above the start and below the end.
+  void drawTouchDragCursor(const GfxRenderer& renderer, int lineHeight, int startIndex, int endIndex,
+                           bool foregroundBlack) const;
+  static constexpr int HANDLE_KNOB_RADIUS = 5;
 
   // Draw the hyphenated continuation partner(s) of w when they fall outside [lo, hi].
   // No-op when w is nullptr or w has no continuation links.

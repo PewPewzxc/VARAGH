@@ -1,7 +1,7 @@
 [submodule "freeink-sdk"]
 	path = freeink-sdk
-	url = https://github.com/Free-Ink/freeink-sdk.git
-	branch = main
+	url = https://github.com/PewPewzxc/freeink-sdk.git
+	branch = varagh
 [submodule "assets/tabler-icons"]
 	path = assets/tabler-icons
 	url = https://github.com/tabler/tabler-icons.git

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <vector>
 
+#include "components/SwipeRowActions.h"
 #include "../Activity.h"
 #include "BookmarkStore.h"
 #include "components/OptionPopup.h"
@@ -33,6 +34,7 @@ class EpubReaderBookmarkListActivity final : public Activity {
   freeink::ui::GfxRendererTarget uiTarget;
   UiApp app;
   std::atomic<bool> uiReady{false};
+  SwipeRowActions swipeActions;
   int visibleRows = 1;
   int topIndex = 0;
 

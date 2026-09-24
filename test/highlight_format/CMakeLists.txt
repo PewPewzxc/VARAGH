@@ -1,0 +1,4 @@
+add_executable(HighlightFormatTest HighlightFormatTest.cpp)
+target_include_directories(HighlightFormatTest PRIVATE ${REPO_ROOT}/src/highlights)
+target_link_libraries(HighlightFormatTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(HighlightFormatTest)

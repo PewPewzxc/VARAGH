@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include "CrossPointSettings.h"
+#include "util/LocalClockOffset.h"
 
 namespace {
 constexpr const char* WEEKDAY_NAMES[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
@@ -84,7 +85,7 @@ bool formatKindleAddedOn(char* buf, const size_t bufSize) {
   uint8_t minute = 0;
   if (!halClock.getDateTime(year, month, day, hour, minute) || !isValidDate(year, month, day)) return false;
 
-  const uint8_t offsetQ = std::min<uint8_t>(SETTINGS.clockUtcOffsetQ, 104);
+  const uint8_t offsetQ = std::min<uint8_t>(localClockOffsetQ(), 104);
   const int offsetMinutes = (static_cast<int>(offsetQ) - 48) * 15;
   int localMinutes = static_cast<int>(hour) * 60 + static_cast<int>(minute) + offsetMinutes;
   while (localMinutes < 0) {

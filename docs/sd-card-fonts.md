@@ -135,6 +135,7 @@ To convert your own TrueType/OpenType fonts use CrossPoint's [Font Builder](http
 | `greek`       | Greek + Extended Greek                                                                                               |
 | `cyrillic`    | Cyrillic + Supplement                                                                                                |
 | `hebrew`      | Hebrew + Alphabetic Presentation Forms                                                                               |
+| `arabic`      | Arabic, Persian, Urdu + Presentation Forms-A/B (required: the renderer draws shaped presentation forms)              |
 | `georgian`    | Georgian + Georgian Supplement                                                                                       |
 | `armenian`    | Armenian                                                                                                             |
 | `ethiopic`    | Ethiopic + Extended                                                                                                  |

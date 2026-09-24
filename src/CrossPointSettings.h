@@ -441,6 +441,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t clockUtcOffsetQ = 48;
   // Clock display format: 0 = 24-hour, 1 = 12-hour
   uint8_t clockFormat = 0;
+  // Summer time rule applied on top of clockUtcOffsetQ (dst::Rule: 0 off, 1 EU, 2 US). Append-only.
+  uint8_t clockDstRule = 0;
   // Date display format. Values match HalClock::DateFormat; 0 preserves the existing "Jan 01, 2026" default.
   uint8_t dateFormat = DATE_FORMAT_MONTH_DAY_YEAR_LONG;
   // Separator for numeric dates. Text-based date formats do not use it.
@@ -457,6 +459,22 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t textAntiAliasing = 1;
   // Touch screen reader zones/gestures on boards with a touch controller.
   uint8_t touchReaderControls = TOUCH_READER_ON;
+  // How long a finger must rest on a word before word selection opens.
+  // Persisted by index: append only.
+  enum WORD_SELECT_HOLD : uint8_t { HOLD_FAST = 0, HOLD_NORMAL = 1, HOLD_SLOW = 2, HOLD_VERY_SLOW = 3, HOLD_COUNT };
+  uint8_t wordSelectHold = HOLD_NORMAL;
+  unsigned long getWordSelectHoldMs() const {
+    switch (wordSelectHold) {
+      case HOLD_FAST:
+        return 350;
+      case HOLD_SLOW:
+        return 700;
+      case HOLD_VERY_SLOW:
+        return 1000;
+      default:
+        return 450;
+    }
+  }
   // Page-turn gestures remain independently configurable while touch reader controls stay enabled.
   uint8_t pageTurnGesture = TAP_AND_SWIPE;
   uint8_t previousPageGesture = TAP_AND_SWIPE;

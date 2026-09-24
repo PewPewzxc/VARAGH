@@ -1,3 +1,5 @@
+#include "activities/home/HighlightsHubActivity.h"
+#include "highlights/HighlightStore.h"
 #include "DictionaryDefinitionActivity.h"
 
 #include <BidiUtils.h>
@@ -34,7 +36,6 @@ static constexpr char kBullet[] = "- ";
 static constexpr const char kEtymologyTreeMarker[] = "Etymology tree";
 static constexpr int kDictionarySwitchTouchHeight = 56;
 #if CROSSINK_APP_CAP_TOUCH
-static constexpr unsigned long kTouchDefinitionLookupHoldMs = 1000;
 #endif
 
 class DictionaryDefinitionActivity;
@@ -199,6 +200,7 @@ static void appendDictionaryApproximation(uint32_t cp, std::string& out) {
     case 0x0153:
       out += "oe";
       break;      // oe
+    case 0x0250:  // turned a (German "-er" ending)
     case 0x0251:  // script a
     case 0x0252:
       out += 'a';
@@ -213,9 +215,10 @@ static void appendDictionaryApproximation(uint32_t cp, std::string& out) {
     case 0x025D:
       out += "er";
       break;  // reversed epsilon hook
-    case 0x025B:
+    case 0x025B:  // open e
+    case 0x025C:
       out += 'e';
-      break;  // open e
+      break;  // reversed open e
     case 0x0261:
       out += 'g';
       break;  // script g
@@ -240,6 +243,9 @@ static void appendDictionaryApproximation(uint32_t cp, std::string& out) {
     case 0x0280:
       out += 'R';
       break;  // small capital r
+    case 0x0281:
+      out += 'r';
+      break;  // inverted small capital r (German uvular r)
     case 0x0283:
       out += "sh";
       break;  // esh
@@ -249,6 +255,9 @@ static void appendDictionaryApproximation(uint32_t cp, std::string& out) {
     case 0x028C:
       out += 'u';
       break;  // turned v
+    case 0x028F:
+      out += "\xC3\xBC";
+      break;  // small capital y (German short ü)
     case 0x0292:
       out += "zh";
       break;  // ezh
@@ -304,10 +313,73 @@ static void appendDictionaryApproximation(uint32_t cp, std::string& out) {
     case 0x2026:
       out += "...";
       break;  // ellipsis
+    // Symbols common in English and bilingual dictionaries. Callers only get
+    // here when the definition font cannot draw the original codepoint.
+    case 0x2010:  // hyphen
+    case 0x2011:  // non-breaking hyphen
+    case 0x2012:
+      out += '-';
+      break;  // figure dash
+    case 0x2032:
+      out += '\'';
+      break;  // prime
+    case 0x2033:
+      out += '"';
+      break;  // double prime
+    case 0x2022:  // bullet
+    case 0x2023:  // triangular bullet
+    case 0x25AA:  // small black square
+    case 0x25CF:
+      out += "\xC2\xB7";
+      break;  // black circle -> middle dot
+    case 0x2190:
+      out += "<-";
+      break;  // leftwards arrow
+    case 0x2192:  // rightwards arrow
+    case 0x21D2:
+      out += "->";
+      break;  // rightwards double arrow
+    case 0x2194:
+      out += "<->";
+      break;  // left right arrow
+    case 0x2248:
+      out += '~';
+      break;  // almost equal
+    case 0x2260:
+      out += "!=";
+      break;  // not equal
+    case 0x2264:
+      out += "<=";
+      break;  // less or equal
+    case 0x2265:
+      out += ">=";
+      break;  // greater or equal
+    case 0x27E8:  // mathematical left angle bracket
+    case 0x2039:
+      out += '<';
+      break;  // single left-pointing angle quote
+    case 0x27E9:  // mathematical right angle bracket
+    case 0x203A:
+      out += '>';
+      break;  // single right-pointing angle quote
+    case 0x2122:
+      out += "(TM)";
+      break;  // trade mark
+    case 0x2116:
+      out += "No.";
+      break;  // numero sign
+    case 0x2715:  // multiplication x
+    case 0x2717:
+      out += 'x';
+      break;  // ballot x
+    case 0x2713:  // check mark
+    case 0x2714:
+      out += 'v';
+      break;  // heavy check mark
     default:
-      if (!isIpaCodepoint(cp) && !isGreekCodepoint(cp) && !utf8IsCombiningMark(cp) && cp != REPLACEMENT_GLYPH) {
-        utf8AppendCodepoint(cp, out);
-      }
+      // Nothing close enough exists in the font: drop the symbol rather than
+      // draw a replacement box. IPA, Greek and combining marks were always
+      // dropped here; other symbols now follow the same rule.
       break;
   }
 }
@@ -439,14 +511,29 @@ void DictionaryDefinitionActivity::displayModalBuffer() {
 }
 
 bool DictionaryDefinitionActivity::shouldApproximateDefinitionCodepoint(const uint32_t cp) const {
-  if (!shouldSanitizeDefinitionCodepoint(cp)) return false;
+  if (cp < 0x80) return false;
 
   const int fontId = getDefinitionFontId();
-  // SD fonts own their coverage. Do not replace pronunciation, Greek, or combining
-  // characters before the active .cpfont gets a chance to draw them.
-  if (renderer.isSdCardFont(fontId)) return false;
+  // Persian and IPA the definition font lacks are drawn by its script
+  // fallback font, so keep them exactly as written.
+  if (renderer.scriptFallbackCovers(fontId, cp)) return false;
+  const auto& fonts = renderer.getFontMap();
+  const auto font = fonts.find(fontId);
+  // hasCodepoint() answers from RAM (the interval table, or an SD font's
+  // resident coverage index), never from storage.
+  const bool fontHasGlyph = font != fonts.end() && font->second.hasCodepoint(cp);
 
-  return !builtinDefinitionFontSupportsCandidate(cp);
+  // SD fonts own their coverage: keep every character the active .cpfont can
+  // draw and approximate only what it lacks. Regular (non-dictionary) .cpfont
+  // builds carry no IPA, which otherwise renders pronunciations as U+FFFD boxes.
+  if (renderer.isSdCardFont(fontId)) return !fontHasGlyph;
+
+  // Built-in fonts: the audited candidate list includes the renderer's
+  // synthetic Greek fallbacks, which hasCodepoint() does not report.
+  if (shouldSanitizeDefinitionCodepoint(cp)) return !builtinDefinitionFontSupportsCandidate(cp);
+  // Any other symbol the font cannot draw (arrows, bullets, math signs, ...)
+  // would otherwise render as a U+FFFD box.
+  return !fontHasGlyph;
 }
 
 bool DictionaryDefinitionActivity::definitionTextNeedsApproximation(const char* text) const {
@@ -495,7 +582,7 @@ int DictionaryDefinitionActivity::dictionaryFooterHeight() const {
   const int dictionaryNameHeight = renderer.getLineHeight(UI_10_FONT_ID) + metrics.optionPopupTitleGap;
 #if CROSSINK_APP_CAP_TOUCH
   return dictionaryNameHeight +
-         (showTouchDictionarySwitch() ? kDictionarySwitchTouchHeight * (hasClippingRequest_ ? 2 : 1) : 0);
+         (showTouchDictionarySwitch() ? kDictionarySwitchTouchHeight * 2 : 0);
 #else
   return dictionaryNameHeight;
 #endif
@@ -503,14 +590,20 @@ int DictionaryDefinitionActivity::dictionaryFooterHeight() const {
 
 #if CROSSINK_APP_CAP_TOUCH
 bool DictionaryDefinitionActivity::dictionarySwitchButtonContains(const int x, const int y) const {
-  const int buttonY = modalY_ + modalHeight_ - kDictionarySwitchTouchHeight * (hasClippingRequest_ ? 2 : 1);
+  const int buttonY = modalY_ + modalHeight_ - kDictionarySwitchTouchHeight * 2;
   return x >= modalX_ && x < modalX_ + modalWidth_ && y >= buttonY && y < buttonY + kDictionarySwitchTouchHeight;
 }
 
 bool DictionaryDefinitionActivity::dictionaryCreateClippingButtonContains(const int x, const int y) const {
   const int buttonY = modalY_ + modalHeight_ - kDictionarySwitchTouchHeight;
-  return hasClippingRequest_ && x >= modalX_ && x < modalX_ + modalWidth_ && y >= buttonY &&
+  return hasClippingRequest_ && x >= modalX_ && x < modalX_ + modalWidth_ / 2 && y >= buttonY &&
          y < buttonY + kDictionarySwitchTouchHeight;
+}
+
+bool DictionaryDefinitionActivity::dictionaryAddToButtonContains(const int x, const int y) const {
+  const int buttonY = modalY_ + modalHeight_ - kDictionarySwitchTouchHeight;
+  const int left = hasClippingRequest_ ? modalX_ + modalWidth_ / 2 : modalX_;
+  return x >= left && x < modalX_ + modalWidth_ && y >= buttonY && y < buttonY + kDictionarySwitchTouchHeight;
 }
 
 bool DictionaryDefinitionActivity::modalContains(const int x, const int y) const {
@@ -1055,6 +1148,49 @@ void DictionaryDefinitionActivity::extractWordsFromLayout() {
   navigator.load(std::move(words), std::move(rows), std::move(textPool));
 }
 
+void DictionaryDefinitionActivity::openAddTo() {
+  footerNotice_.clear();
+  auto picker = makeUniqueNoThrow<HighlightsHubActivity>(renderer, mappedInput, /*pickerMode=*/true);
+  if (!picker) {
+    LOG_ERR("DICT", "OOM: HighlightsHubActivity picker");
+    return;
+  }
+  startActivityForResult(std::move(picker), [this](const ActivityResult& result) {
+    modalBackgroundNeedsRedraw_ = true;
+    modalCleanRefreshNeeded_ = true;
+    const auto* chosen = std::get_if<IntervalResult>(&result.data);
+    if (result.isCancelled || !chosen) {
+      requestUpdate();
+      return;
+    }
+    const uint16_t categoryId = static_cast<uint16_t>(chosen->value);
+    HighlightStore::CategoryInfo category;
+    if (!HighlightStore::findCategory(categoryId, category)) {
+      requestUpdate();
+      return;
+    }
+    HighlightFormat::Entry entry;
+    entry.text = historyWord.empty() ? headword : historyWord;
+    if (category.type == HighlightFormat::CategoryType::Flashcards) {
+      // Save the meaning now, from the dictionary currently shown, so the card
+      // works offline and keeps it if dictionaries change later.
+      std::string meaning;
+      {
+        const std::string raw = Dictionary::readLocatedDefinition(foundLocation, 8192);
+        meaning = HighlightFormat::plainTextFromDefinition(raw, HighlightStore::MAX_MEANING_BYTES);
+      }
+      if (!headword.empty() && headword != entry.text) meaning = headword + '\n' + meaning;
+      entry.meaning = std::move(meaning);
+    }
+    if (HighlightStore::addEntry(categoryId, entry)) {
+      footerNotice_ = std::string(tr(STR_ADDED_TO)) + " " + category.name;
+    } else {
+      LOG_ERR("DICT", "Could not add to category %u", categoryId);
+    }
+    requestUpdate();
+  });
+}
+
 void DictionaryDefinitionActivity::openDictionarySwitch() {
   if (hasModalBackground()) {
     // Capture the exact frame currently on the panel before the picker covers
@@ -1086,6 +1222,7 @@ void DictionaryDefinitionActivity::openDictionarySwitch() {
       return;
     }
     Dictionary::setLookupDictPathOverride(selection->path.c_str());
+    Dictionary::rememberSelectedDictPath(selection->path.c_str(), cachePath.c_str());
     dictionaryName_ = dictionaryNameFromPath(selection->path);
     dictionarySwitchLookupInProgress = true;
     controller.startLookup(headword, false);
@@ -1147,7 +1284,7 @@ bool DictionaryDefinitionActivity::handleTouchDictionaryLookup() {
     touchDictionaryLookupHandled_ = false;
     return false;
   }
-  if (touchDictionaryLookupHandled_ || heldMs < kTouchDefinitionLookupHoldMs) {
+  if (touchDictionaryLookupHandled_ || heldMs < SETTINGS.getWordSelectHoldMs()) {
     return false;
   }
   touchDictionaryLookupHandled_ = true;
@@ -1318,6 +1455,11 @@ void DictionaryDefinitionActivity::loop() {
       dictionaryCreateClippingButtonContains(touchX, touchY)) {
     setResult(ActivityResult{clippingRequest_});
     finish();
+    return;
+  }
+  if (showTouchDictionarySwitch() && mappedInput.wasScreenTapped(touchX, touchY) &&
+      dictionaryAddToButtonContains(touchX, touchY)) {
+    openAddTo();
     return;
   }
   if (showTouchDictionarySwitch() && mappedInput.wasScreenTapped(touchX, touchY) &&
@@ -1555,7 +1697,7 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   // title and definition page before drawing them. The .dict reader was closed
   // by loadPage(), keeping font and dictionary SD access serialized.
   bool definitionTextRendered = false;
-  if (renderer.isSdCardFont(bodyFontId)) {
+  if (renderer.isSdCardFont(bodyFontId) || renderer.hasScriptFallback(bodyFontId)) {
     if (auto* fcm = renderer.getFontCacheManager()) {
       // Keep this alive through the word-select overlay below. Its destructor
       // clears SD glyph bitmaps, and that overlay redraws the selected word.
@@ -1617,7 +1759,7 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
     const int footerLineHeight = renderer.getLineHeight(UI_10_FONT_ID);
 #if CROSSINK_APP_CAP_TOUCH
     const int switchButtonHeight =
-        showTouchDictionarySwitch() ? kDictionarySwitchTouchHeight * (hasClippingRequest_ ? 2 : 1) : 0;
+        showTouchDictionarySwitch() ? kDictionarySwitchTouchHeight * 2 : 0;
 #else
     constexpr int switchButtonHeight = 0;
 #endif
@@ -1626,15 +1768,16 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
     const int footerBottom = modalY_ + modalHeight_ - switchButtonHeight;
     const int dictionaryNameY = separatorY + (footerBottom - separatorY - footerLineHeight) / 2;
     renderer.drawLine(modalX_, separatorY, modalX_ + modalWidth_, separatorY, true);
+    const std::string& footerText = footerNotice_.empty() ? dictionaryName_ : footerNotice_;
     const auto visibleName =
-        renderer.truncatedText(UI_10_FONT_ID, dictionaryName_.c_str(), modalWidth_ - innerPadding * 2);
+        renderer.truncatedText(UI_10_FONT_ID, footerText.c_str(), modalWidth_ - innerPadding * 2);
     renderer.drawText(UI_10_FONT_ID, modalX_ + innerPadding, dictionaryNameY, visibleName.c_str());
   }
 
 #if CROSSINK_APP_CAP_TOUCH
   if (!isWordSelectMode && showTouchDictionarySwitch()) {
     const Rect buttonRect{modalX_,
-                          modalY_ + modalHeight_ - kDictionarySwitchTouchHeight * (hasClippingRequest_ ? 2 : 1),
+                          modalY_ + modalHeight_ - kDictionarySwitchTouchHeight * 2,
                           modalWidth_, kDictionarySwitchTouchHeight};
     renderer.drawLine(buttonRect.x, buttonRect.y, buttonRect.x + buttonRect.width, buttonRect.y, true);
     const char* label = tr(STR_SWITCH_DICTIONARY);
@@ -1642,16 +1785,21 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
         buttonRect.x + (buttonRect.width - renderer.getTextWidth(UI_10_FONT_ID, label, EpdFontFamily::BOLD)) / 2;
     const int labelY = buttonRect.y + (buttonRect.height - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
     renderer.drawText(UI_10_FONT_ID, labelX, labelY, label, true, EpdFontFamily::BOLD);
+    // Bottom row: [Highlight | Add to...] (Add to alone when no highlight is possible).
+    const int rowY = modalY_ + modalHeight_ - kDictionarySwitchTouchHeight;
+    renderer.drawLine(modalX_, rowY, modalX_ + modalWidth_, rowY, true);
+    const auto drawRowLabel = [&](const int x, const int width, const char* rowLabel) {
+      const int textX = x + (width - renderer.getTextWidth(UI_10_FONT_ID, rowLabel, EpdFontFamily::BOLD)) / 2;
+      const int textY = rowY + (kDictionarySwitchTouchHeight - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
+      renderer.drawText(UI_10_FONT_ID, textX, textY, rowLabel, true, EpdFontFamily::BOLD);
+    };
     if (hasClippingRequest_) {
-      const Rect clippingRect{modalX_, modalY_ + modalHeight_ - kDictionarySwitchTouchHeight, modalWidth_,
-                              kDictionarySwitchTouchHeight};
-      renderer.drawLine(clippingRect.x, clippingRect.y, clippingRect.x + clippingRect.width, clippingRect.y, true);
-      const char* clippingLabel = tr(STR_SAVE_CLIPPING);
-      const int clippingLabelX =
-          clippingRect.x +
-          (clippingRect.width - renderer.getTextWidth(UI_10_FONT_ID, clippingLabel, EpdFontFamily::BOLD)) / 2;
-      const int clippingLabelY = clippingRect.y + (clippingRect.height - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
-      renderer.drawText(UI_10_FONT_ID, clippingLabelX, clippingLabelY, clippingLabel, true, EpdFontFamily::BOLD);
+      const int half = modalWidth_ / 2;
+      renderer.drawLine(modalX_ + half, rowY, modalX_ + half, rowY + kDictionarySwitchTouchHeight - 1, true);
+      drawRowLabel(modalX_, half, tr(STR_SAVE_CLIPPING));
+      drawRowLabel(modalX_ + half, modalWidth_ - half, tr(STR_ADD_TO));
+    } else {
+      drawRowLabel(modalX_, modalWidth_, tr(STR_ADD_TO));
     }
   }
 #endif

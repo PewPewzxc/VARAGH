@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "components/SwipeRowActions.h"
 #include "RecentBooksStore.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
@@ -27,6 +28,11 @@ class FileBrowserActivity final : public Activity {
 
   // Deletion
   void promptDeleteFile(const std::string& fullPath, const std::string& entry);
+  // Remove a book file and refresh the list; shared by the confirm popup and swipe-to-delete.
+  void deleteFileNow(const std::string& fullPath);
+  // Swipe-to-delete: row value -> file entry (directories are never swipe-deleted).
+  bool swipedEntry(int rowValue, std::string& entry);
+  SwipeRowActions swipeActions;
   void promptDeleteDirectory(const std::string& fullPath, const std::string& entry,
                              bool ignoreInitialConfirmRelease = false);
   void showDirectoryActionMenu(const std::string& entry, bool ignoreInitialConfirmRelease = false);

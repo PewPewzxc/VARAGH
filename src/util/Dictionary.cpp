@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstring>
 
+#include "GermanStemmer.h"
 #include "TextPool.h"
 
 // Static member definitions
@@ -198,6 +199,31 @@ bool Dictionary::hasGlobalDictPathFile() {
   char binPath[128];
   snprintf(binPath, sizeof(binPath), "%s/%s", GLOBAL_DICT_DIR, DICT_BIN);
   return Storage.exists(binPath);
+}
+
+void Dictionary::rememberSelectedDictPath(const char* folderPath, const char* cachePath) {
+  if (!folderPath || folderPath[0] == '\0') return;
+
+  if (cachePath && cachePath[0] != '\0') {
+    char binPath[128];
+    snprintf(binPath, sizeof(binPath), "%s/%s", cachePath, DICT_BIN);
+    HalFile f;
+    bool bookHasOwnDictionary = false;
+    if (Storage.openFileForRead("DICT", binPath, f)) {
+      bookHasOwnDictionary = f.fileSize() > 0;  // empty file means "Use Global"
+      f.close();
+    }
+    if (bookHasOwnDictionary) {
+      if (!Storage.openFileForWrite("DICT", binPath, f)) {
+        LOG_ERR("DICT", "Could not save per-book dictionary path");
+        return;
+      }
+      f.write(reinterpret_cast<const uint8_t*>(folderPath), strlen(folderPath));
+      f.close();
+      return;
+    }
+  }
+  saveGlobalDictPath(folderPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -692,6 +718,14 @@ void Dictionary::findPageBounds(HalFile& oft, HalFile& src, uint32_t srcFileSize
 // Reading helpers
 // ---------------------------------------------------------------------------
 
+std::string Dictionary::readLocatedDefinition(const DictLocation& location, const uint32_t maxBytes) {
+  if (!location.found || location.folderPath.empty()) return "";
+  const DictInfo info = readInfo(location.folderPath.c_str());
+  const DictDefinitionSlice slice = resolveDefinitionSlice(location, info);
+  if (!slice.found) return "";
+  return readDefinition(slice.folderPath, slice.offset, std::min(slice.size, maxBytes));
+}
+
 std::string Dictionary::readDefinition(const std::string& folderPath, uint32_t offset, uint32_t size) {
   HalFile dict;
   if (!Storage.openFileForRead("DICT", DictPaths(folderPath).dict().c_str(), dict)) return "";
@@ -776,7 +810,9 @@ bool Dictionary::openLookupSession(LookupSession& session, const char* cachePath
   if (session.folderPath.empty()) return false;
 
   const DictPaths paths(session.folderPath);
-  session.suffixBytes = idxEntrySuffixBytes(readInfo(session.folderPath.c_str()));
+  const DictInfo info = readInfo(session.folderPath.c_str());
+  session.suffixBytes = idxEntrySuffixBytes(info);
+  session.germanSource = GermanStemmer::isGermanSource(info.lang, info.bookname, session.folderPath.c_str());
   const std::string idxPath = paths.idx();
   if (!Storage.openFileForRead("DICT", idxPath.c_str(), session.idx)) {
     LOG_ERR("DICT", "Failed to open index %s", idxPath.c_str());
@@ -951,7 +987,26 @@ DictLocation Dictionary::locateWithStemVariants(const std::string& word, bool* m
 
   DictLocation result = locateInSession(session, word, cbs);
   if (!result.found && !result.readError && !(cbs.shouldCancel && cbs.shouldCancel(cbs.ctx))) {
-    const auto stems = getStemVariants(word);
+    const auto stemsOf = [&session](const std::string& w) {
+      return session.germanSource ? GermanStemmer::variants(w) : getStemVariants(w);
+    };
+
+    // Spelling repairs tried before stemming:
+    //  - "don’t" -> "don't": headwords use the ASCII apostrophe.
+    //  - "Geschwin-digkeit" -> "Geschwindigkeit": a word split across lines
+    //    with a hyphen typed into the book text (common in converted PDFs).
+    std::string repaired = word;
+    for (size_t pos = 0; (pos = repaired.find("\xE2\x80\x99", pos)) != std::string::npos;) {
+      repaired.replace(pos, 3, 1, '\'');
+    }
+    repaired.erase(std::remove(repaired.begin(), repaired.end(), '-'), repaired.end());
+
+    std::vector<std::string> stems;
+    if (repaired != word && !repaired.empty()) stems.push_back(repaired);
+    for (auto& stem : stemsOf(word)) stems.push_back(std::move(stem));
+    if (repaired != word && !repaired.empty()) {
+      for (auto& stem : stemsOf(repaired)) stems.push_back(std::move(stem));
+    }
     for (const auto& stem : stems) {
       result = locateInSession(session, stem, cbs);
       if (result.found) {

@@ -9,6 +9,8 @@
 
 #include <cassert>
 
+#include "DaylightSaving.h"
+
 HalClock halClock;  // Singleton instance
 
 namespace {
@@ -110,6 +112,7 @@ bool HalClock::formatTime(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHou
   if (bufSize < (use12Hour ? 9u : 6u)) return false;
   uint8_t h, m;
   if (!getTime(h, m)) return false;
+  utcOffsetQuarterHoursBiased = effectiveOffsetQ(utcOffsetQuarterHoursBiased);
 
   // Apply UTC offset: convert biased value to signed quarter-hours.
   // Clamp against corrupted persisted values so display time can't drift outside [-12:00, +14:00].
@@ -130,6 +133,15 @@ bool HalClock::formatTime(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHou
     snprintf(buf, bufSize, "%02d:%02d", hour24, min);
   }
   return true;
+}
+
+uint8_t HalClock::effectiveOffsetQ(const uint8_t standardOffsetQ) const {
+  if (!_dstRule || *_dstRule == dst::OFF || *_dstRule >= dst::RULE_COUNT) return standardOffsetQ;
+  uint16_t year;
+  uint8_t month, day, hour, minute;
+  // Without a valid RTC date the rule cannot be evaluated; keep standard time.
+  if (!getDate(year, month, day, hour, minute)) return standardOffsetQ;
+  return dst::effectiveOffsetQ(*_dstRule, year, month, day, hour, minute, standardOffsetQ);
 }
 
 bool HalClock::getDate(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute) const {
@@ -183,6 +195,7 @@ bool HalClock::formatDate(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHou
   uint8_t month, day, hour, minute;
   if (!getDate(year, month, day, hour, minute)) return false;
 
+  utcOffsetQuarterHoursBiased = effectiveOffsetQ(utcOffsetQuarterHoursBiased);
   if (utcOffsetQuarterHoursBiased > 104) utcOffsetQuarterHoursBiased = 104;
   const int offsetQuarterHours = static_cast<int>(utcOffsetQuarterHoursBiased) - 48;
   const int localMinutes = static_cast<int>(hour) * 60 + static_cast<int>(minute) + offsetQuarterHours * 15;

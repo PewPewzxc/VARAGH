@@ -183,7 +183,32 @@ std::string utf8CleanLookupWord(const std::string& text) {
   }
 
   if (firstCore == std::string::npos) return {};
-  return utf8ComposeNfc(text.substr(firstCore, lastKeptEnd - firstCore));
+
+  // Punctuation inside the kept range is part of the word only when it is a
+  // single joiner between letters: apostrophes ("l'ete", "don’t"), hyphens
+  // ("mother-in-law"), abbreviation dots ("z.B"), the Catalan middle dot and
+  // the Persian zero-width (non-)joiner. Anything else ("word,another",
+  // "Wort...Wort", "Wort/Wort") ends the word there.
+  const auto isWordJoiner = [](const uint32_t cp) {
+    return cp == '\'' || cp == '-' || cp == '.' || cp == 0x00B7 || cp == 0x2010 || cp == 0x2011 || cp == 0x2019 ||
+           cp == 0x200C || cp == 0x200D;
+  };
+  size_t keptEnd = lastKeptEnd;
+  const auto* scan = begin + firstCore;
+  const auto* const scanEnd = begin + lastKeptEnd;
+  while (scan < scanEnd) {
+    const auto* cpStart = scan;
+    const uint32_t cp = utf8NextCodepoint(&scan);
+    if (isLookupCoreCharacter(cp) || utf8IsCombiningMark(cp)) continue;
+    // cp starts a run of non-letters; a lone joiner followed by a letter stays.
+    const auto* afterRun = scan;
+    const uint32_t next = afterRun < scanEnd ? utf8NextCodepoint(&afterRun) : 0;
+    if (isWordJoiner(cp) && isLookupCoreCharacter(next)) continue;
+    keptEnd = static_cast<size_t>(cpStart - begin);
+    break;
+  }
+
+  return utf8ComposeNfc(text.substr(firstCore, keptEnd - firstCore));
 }
 
 int utf8CodepointLen(const unsigned char c) {
