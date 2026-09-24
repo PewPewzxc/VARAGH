@@ -98,8 +98,8 @@ dictionary tools; step-by-step instructions are in
 
 <table>
   <tr>
-    <td align="center" valign="top"><img src="docs/images/varagh/german-dictionary.jpg" width="300" alt="Dictionary entry for anfangen with pronunciation"><br><sub><b>anfangen</b>: German → English entry with its pronunciation and related forms. Front light on.</sub></td>
-    <td align="center" valign="top"><img src="docs/images/varagh/dictionary-add-to-buttons.jpg" width="300" alt="Dictionary entry for schließlich with Highlight and Add to buttons"><br><sub><b>schließlich</b>: pronunciation letters such as ʃ and ç display correctly; <b>Highlight</b> and <b>Add to…</b> at the bottom. Front light on.</sub></td>
+    <td align="center" width="50%" valign="top"><img src="docs/images/varagh/german-dictionary.jpg" width="300" alt="Dictionary entry for anfangen with pronunciation"><br><sub><b>anfangen</b>: German → English entry with its pronunciation and related forms. Front light on.</sub></td>
+    <td align="center" width="50%" valign="top"><img src="docs/images/varagh/dictionary-add-to-buttons.jpg" width="300" alt="Dictionary entry for schließlich with Highlight and Add to buttons"><br><sub><b>schließlich</b>: pronunciation letters such as ʃ and ç display correctly; <b>Highlight</b> and <b>Add to…</b> at the bottom. Front light on.</sub></td>
   </tr>
 </table>
 
@@ -155,9 +155,9 @@ out. It never draws a box.
 
 <table>
   <tr>
-    <td align="center" valign="top"><img src="docs/images/varagh/hold-to-select.jpg" width="250" alt="A finger holding a word in a book"><br><sub>Hold a word until it is selected. Front light on.</sub></td>
-    <td align="center" valign="top"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with handles at both ends"><br><sub>Slide to select more words; handles mark both ends. Front light on.</sub></td>
-    <td align="center" valign="top"><img src="docs/images/varagh/hold-to-select-setting.jpg" width="250" alt="Hold to Select setting with Fast, Normal, Slow and Very slow"><br><sub>Settings → Reader → <b>Hold to Select</b>. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/hold-to-select.jpg" width="250" alt="A finger holding a word in a book"><br><sub>Hold a word until it is selected. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with handles at both ends"><br><sub>Slide to select more words; handles mark both ends. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/hold-to-select-setting.jpg" width="250" alt="Hold to Select setting with Fast, Normal, Slow and Very slow"><br><sub>Settings → Reader → <b>Hold to Select</b>. Front light on.</sub></td>
   </tr>
 </table>
 
@@ -236,9 +236,9 @@ so they survive firmware updates and can be copied off the card.
 
 <table>
   <tr>
-    <td align="center" valign="top"><img src="docs/images/varagh/flashcards-list.jpg" width="250" alt="Flashcards list with a Practice button"><br><sub>The Flashcards list with the <b>Practice</b> button and how many cards you know. Front light on.</sub></td>
-    <td align="center" valign="top"><img src="docs/images/varagh/flashcard-front.jpg" width="250" alt="Front of a flashcard showing a German word"><br><sub>Front of a card: the word. Tap to flip. Front light on.</sub></td>
-    <td align="center" valign="top"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><sub>Back of the card: the saved meaning, then <b>Again</b> or <b>Know it</b>. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/flashcards-list.jpg" width="250" alt="Flashcards list with a Practice button"><br><sub>The Flashcards list with the <b>Practice</b> button and how many cards you know. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/flashcard-front.jpg" width="250" alt="Front of a flashcard showing a German word"><br><sub>Front of a card: the word. Tap to flip. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><sub>Back of the card: the saved meaning, then <b>Again</b> or <b>Know it</b>. Front light on.</sub></td>
   </tr>
 </table>
 

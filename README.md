@@ -58,14 +58,14 @@ Every feature is explained, with how to use it, in **[FEATURES.md](FEATURES.md)*
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/varagh/persian-book.jpg" width="250" alt="A Persian book in NotoVazir"><br><b>Persian books</b> in NotoVazir</td>
-    <td align="center"><img src="docs/images/varagh/german-dictionary.jpg" width="250" alt="German to English dictionary entry with pronunciation"><br><b>German → English</b> with pronunciation</td>
-    <td align="center"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with a finger, with selection handles"><br><b>Hold to select</b>, slide for more words</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/persian-book.jpg" width="250" alt="A Persian book in NotoVazir"><br><b>Persian books</b> in NotoVazir</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/german-dictionary.jpg" width="250" alt="German to English dictionary entry with pronunciation"><br><b>German → English</b> with pronunciation</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with a finger, with selection handles"><br><b>Hold to select</b>, slide for more words</td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><b>Flashcards</b>: flip, then Again or Know it</td>
-    <td align="center"><img src="docs/images/varagh/add-to-category.jpg" width="250" alt="Add to menu with Favorite Lines, Flashcards and New Category"><br><b>Add to…</b> from the dictionary</td>
-    <td align="center"><img src="docs/images/varagh/swipe-to-delete.jpg" width="250" alt="File list with a row swiped left showing a Delete button"><br><b>Swipe left</b> to delete</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><b>Flashcards</b>: flip, then Again or Know it</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/add-to-category.jpg" width="250" alt="Add to menu with Favorite Lines, Flashcards and New Category"><br><b>Add to…</b> from the dictionary</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/swipe-to-delete.jpg" width="250" alt="File list with a row swiped left showing a Delete button"><br><b>Swipe left</b> to delete</td>
   </tr>
 </table>
 
