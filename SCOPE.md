@@ -1,3 +1,10 @@
+> **VARAGH:** this is CrossInk's scope document, kept unchanged so VARAGH can keep
+> merging CrossInk's updates. VARAGH follows the same principles and adds reading
+> and learning in English, German and Persian: Persian fonts, German → English
+> lookup, highlights and flashcards (see [FEATURES.md](FEATURES.md)). Ideas for
+> VARAGH go to [VARAGH's Discussions](https://github.com/PewPewzxc/VARAGH/discussions);
+> requests for CrossInk itself go to [CrossInk](https://github.com/uxjulia/crossink).
+
 # Project Vision & Scope: CrossInk
 
 The goal of this CrossPoint fork is to provide useful enhancements while still adhering to the core principles of Crosspoint. If you have a major feature request, it should first be directed at the main project since this is a downstream project that consumes their updates.
