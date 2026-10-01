@@ -14,7 +14,7 @@ Make sure `clang-format` 21+ is installed and available in `PATH` before running
 If needed, see [Getting Started](./getting-started.md).
 
 ```sh
-./bin/clang-format-fix
+clang-format -i <changed .cpp/.h files>
 pio check --fail-on-defect low --fail-on-defect medium --fail-on-defect high
 pio run -e simulator
 pio run -e default

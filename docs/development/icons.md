@@ -15,11 +15,11 @@ The local manifests in `src/components/icons/` can use either source:
 - **Tabler outline:** `assets/tabler-icons/icons/outline`
 - **Tabler filled:** `assets/tabler-icons/icons/filled`
 
-Tabler is a CrossInk submodule pinned to a release commit. Clone it with the
-other dependencies before generating icons:
+VARAGH does not include the Tabler icon source (the icons it uses are already
+converted). To generate a new Tabler icon, add it first:
 
 ```sh
-git submodule update --init --recursive
+git submodule add https://github.com/tabler/tabler-icons.git assets/tabler-icons
 ```
 
 ## Generate an icon header

@@ -12,11 +12,11 @@ This guide helps you build and run CrossInk locally.
 
 - PlatformIO Core (`pio`) or VS Code + PlatformIO IDE
 - Python 3.8+
-- `clang-format` 21+ in your `PATH` (CI uses clang-format 21)
+- `clang-format` 21+ in your `PATH` (code style is defined in `.clang-format`)
 - USB-C cable
 - Xteink X4 or X3 device for hardware testing
 
-If `./bin/clang-format-fix` fails with either of these errors, install clang-format 21:
+If formatting fails with either of these errors, install clang-format 21:
 
 - `clang-format: No such file or directory`
 - `.clang-format: error: unknown key 'AlignFunctionDeclarations'`
@@ -77,7 +77,7 @@ pio run -e default --target upload
 ## Validation
 
 ```sh
-./bin/clang-format-fix
+clang-format -i <changed .cpp/.h files>
 pio check --fail-on-defect low --fail-on-defect medium --fail-on-defect high
 pio run
 ```
