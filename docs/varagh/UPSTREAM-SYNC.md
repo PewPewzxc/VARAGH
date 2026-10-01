@@ -1,6 +1,6 @@
 # Keeping VARAGH up to date with CrossInk and CrossPoint
 
-VARAGH 1.0.0 is based on CrossInk v1.6.0 (commit `b25beb13`). The repository has
+VARAGH 1.0.0 to 1.1.0 are based on CrossInk v1.6.0 (commit `b25beb13`). The repository has
 three remotes set up for this:
 
 | Remote | Repository | Use |
@@ -11,7 +11,9 @@ three remotes set up for this:
 
 The display/UI library is a submodule pointing to your fork
 github.com/PewPewzxc/freeink-sdk (branch `varagh`), whose own `upstream` remote is
-github.com/Free-Ink/freeink-sdk.
+github.com/Free-Ink/freeink-sdk. That fork is currently not published on GitHub:
+its `varagh` branch is kept locally and in each release's full-source zip, so skip
+the `git push origin varagh` step below until the fork exists again.
 
 ## Merge a new CrossInk release
 

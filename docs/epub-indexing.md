@@ -10,15 +10,21 @@ pages and saves that layout in the book's cache. **Indexing Method** chooses
 whether CrossInk finishes that work before you start reading the chapter, or
 does it a little at a time as you read.
 
-The default is **Full Section**. Most books work well with it. Choose
-**Incremental** for a book with unusually large chapters, or when waiting for
-an entire chapter to open is more disruptive than seeing a short indexing wait
-later.
+The default is **Automatic**, which picks one of the other two methods for
+each chapter: Full Section for a chapter of normal size (up to 32 KB of text,
+which builds in about a second and a half) and Incremental for a larger one.
+Choose **Full Section** or **Incremental** to use one method for every
+chapter.
 
 | Method       | What happens                                                                                                | Main benefit                                                    | Main tradeoff                                                                                                |
 | ------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Automatic    | Full Section for normal-size chapters, Incremental for large ones.                                          | Normal chapters behave as Full Section; large ones open quickly. | In a large chapter, the tradeoff of Incremental applies.                                                     |
 | Full Section | Builds and caches the whole chapter before it is shown.                                                     | Normal page turns within the chapter do not need more indexing. | A large uncached chapter can take a noticeable time to open.                                                 |
 | Incremental  | Builds enough pages to show your current position, then continues in small background steps while you read. | You can begin reading a large chapter sooner.                   | If you reach pages that have not been built yet, CrossInk may briefly show **Indexing** while it catches up. |
+
+A chapter that builds in full shows the **Indexing** popup only when it is
+larger than 32 KB: a normal chapter is ready about as fast as the popup could
+be drawn.
 
 ## Full Section
 
@@ -32,7 +38,8 @@ penultimate page of the current one. When this succeeds, moving to the next
 chapter does not require a visible indexing wait. It is deliberately
 best-effort: on the X3/X4's limited memory, CrossInk skips that background work
 when there is not enough free or contiguous memory, and indexes the next
-chapter when you enter it instead.
+chapter when you enter it instead. Automatic does the same when the next
+chapter is one it builds in full.
 
 Use Full Section when:
 
@@ -72,14 +79,14 @@ to make the requested position readable.
 KOReader Sync uses the same content location rather than the other device's
 page number. If a synced location is beyond this device's saved incremental
 prefix, CrossInk indexes forward until that location is available. Switching
-between Incremental and Full Section does not change the saved reading location:
+between the indexing methods does not change the saved reading location:
 Full Section resolves it as soon as the chapter is built, while Incremental only
 builds through the requested content.
 
 ## Changing The Setting
 
 To change the default for future EPUBs, open **Settings → Reader → Indexing
-Method** and choose **Incremental** or **Full Section**.
+Method** and choose **Automatic**, **Incremental** or **Full Section**.
 
 To change it only for the EPUB you are reading, open the reader menu, choose
 **Reader Options**, then choose **Indexing Method**. The per-book choice is

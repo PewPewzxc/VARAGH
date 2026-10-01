@@ -2,6 +2,140 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.1.0 "Tiger"] - 2026-10-01
+
+Based on CrossInk v1.6.0 and VARAGH 1.0.1. Tiger is a speed and picture-quality
+release for the X4 Pro: pictures in books look smoother and sharper, chapters open
+sooner, and the processor rests more. Some speed ideas were inspired by studying
+[microreader](https://github.com/CidVonHighwind/microreader) (ideas only, no code).
+
+Updating keeps your settings, books, reading progress, highlights and flashcards.
+Books are not indexed again (the page layout format stays v78). Pictures you
+already viewed are prepared once more the first time you see them. If your
+Indexing Method was the old default (Full Section), it changes to the new default,
+Automatic, once; any other choice stays.
+
+### Added
+
+- **Indexing Method: Automatic**, the new default (Settings → Reader → Indexing
+  Method, and per book in Reader Options). It uses Full Section for chapters up to
+  32 KB of text, which build in about a second and a half, and Incremental for
+  longer ones. Long chapters therefore show their first page as soon as the first
+  pages are laid out, instead of after the whole chapter; normal chapters behave as
+  before and still have their final page count right away. The next chapter is
+  still prepared in the background near the end of a chapter when it is one that
+  Automatic builds in full. Full Section and Incremental remain available.
+- **Settings → Display → Faster Screen Link** (off by default; X4 Pro screens with
+  the SSD1677 controller): sends each screen image to the display at the chip's
+  rated 20 MHz instead of 10 MHz. After turning it on you have 10 seconds to
+  confirm the screen looks right, otherwise it switches back by itself; leaving
+  Settings before confirming (also with the Home key) switches it back too. It can
+  only be turned on on the reader, not from the web settings page.
+- **Speed log** in `/.crosspoint/speed-log.csv` on the SD card: page turns, chapter
+  indexing, pictures, opening books and loading Home, plus a battery reading every
+  5 minutes. Chapter indexing is split into its steps (unzipping, styles, parsing,
+  layout, hyphenation, fonts, pictures, writing, screen), and opening a book and
+  loading Home are timed step by step. It holds timings and device state only,
+  never book titles or text.
+- Settings → System and the boot screen show the version as **1.1.0 Tiger** with a
+  small tiger mark. Check for Updates still shows the full version string.
+
+### Changed
+
+**Pictures in books**
+
+- Pictures are shrunk by averaging every pixel of the original instead of picking
+  every n-th pixel, so lines and edges are no longer jagged.
+- Greys are drawn with Floyd-Steinberg error diffusion instead of a 4×4 ordered
+  (Bayer) dither: fine, even dots instead of a visible crosshatch, and smooth
+  gradients in skies and faces.
+- A levels step before shading maps everything at or below 16 to black and at or
+  above 232 to white (with a linear stretch in between), so the paper of scanned
+  pages and near-white backgrounds stay clean white instead of speckled grey.
+- The new method is used for JPEG and PNG pictures that are shown at their size or
+  smaller; enlarged pictures keep the previous method. Prepared pictures are cached
+  in a new file type (`.pxt`), so pictures are prepared again once after updating.
+- Before/after pictures: [FEATURES.md, section 7](FEATURES.md#7-speed-pictures-and-battery).
+
+**Chapter indexing and the SD card**
+
+- The X4 Pro runs its SD card at 40 MHz (the card's high-speed mode, as the stock
+  X4 Pro firmware does) instead of 20 MHz: reads are about 70% faster. A card that
+  cannot start at 40 MHz is retried at 20 MHz automatically (four tries at 40 MHz,
+  then two at 20 MHz).
+- Chapter indexing writes to the SD card in large pieces instead of one small write
+  per value: when a whole chapter is built, all its pages and the page index are
+  written through one 8 KB buffer; otherwise one page at a time. Writing had been
+  about half of the indexing time.
+- A chapter that builds in full in about a second (up to 32 KB) no longer shows the
+  **Indexing** popup. Drawing the popup and the extra screen cleaning it forced on
+  the next page took about 2.4 seconds, longer than the indexing itself. Larger
+  chapters still show it.
+- Letter shapes of SD-card fonts (such as NotoVazir) are kept in the X4 Pro's 8 MB
+  memory (PSRAM) once read, so page turns and chapter indexing stop reading them
+  from the card again.
+- The book, picture and drawing code is compiled for speed (-O2) instead of size.
+
+**Battery and responsiveness**
+
+- Buttons and touch wake the processor immediately; after 1 second without input it
+  drops to its low-power clock (was 3 seconds). On the X4 Pro it also stays at the
+  low-power clock while the screen refreshes, since the screen does that work
+  itself.
+- The main loop gets a 12 KB stack on the X4 Pro (was 8 KB), leaving room for
+  background indexing.
+
+### Fixed
+
+- Some PNG pictures showed a corrupted lower part: the PNG decoder's bundled zlib
+  copied repeated data four bytes at a time even when source and destination
+  overlapped. It now copies byte by byte (`scripts/patch_pngdec.py`).
+- A PNG picture partly above the top of the screen could be drawn outside the
+  screen buffer (memory corruption in portrait orientations).
+- JPEG decoder: Huffman table setup no longer shifts by a negative count
+  (undefined behaviour, now guarded; `scripts/jpegdec_patches/0004`). No visible
+  change.
+
+### Measured on an X4 Pro
+
+Literata 14 pt with text anti-aliasing, VARAGH test builds before and after each
+change:
+
+| What | Before | After |
+|---|---|---|
+| SD card read speed | 2.0 MB/s (20 MHz) | 3.4 MB/s (40 MHz) |
+| Indexing a 40-page chapter | 1.21 s | 0.73 s |
+| … of which writing to the card | 0.62 s | 0.21 s |
+| First page of a 256-page chapter | 7.7 s (whole chapter first) | only the first pages are waited for (Automatic) |
+| Start of a chapter that was not prepared | popup + extra refresh (~2.4 s) | no popup for chapters up to 32 KB |
+
+A page turn takes about 1.45 s, of which 1.37 s is the screen's own refresh with
+anti-aliased text, so page turns are limited by the screen, not the processor.
+
+### For developers
+
+- New: `lib/EpdFont/FontFileMirror` (PSRAM font copy), `lib/Epub/Epub/converters/ToneMappedImage`
+  (picture shading; output identical to `freeink::ImageToneMapper` with the levels
+  table applied), `lib/SpeedLog` (speed log and `SpeedProfile` timers),
+  `src/components/TigerMark`, `HalFile::beginWriteBatch` / `endWriteBatch`.
+- New build scripts: `scripts/tiger_speed_flags.py` (-O2 for hot paths),
+  `scripts/patch_pngdec.py`, `scripts/jpegdec_patches/0004-guard-negative-huffman-shifts.patch`.
+- FreeInk SDK changes (in the full-source zip): `EpdBus::setSpiHz`,
+  `FreeInkDisplay::spiClockHz` / `setSpiClockHz`, SD card at `SDMMC_FREQ_HIGHSPEED`
+  with a 20 MHz fallback.
+- Settings: `indexingMethod` gains `INDEXING_AUTOMATIC` (2); the settings file
+  records `indexingMethodSchema` so the Full Section → Automatic move happens once.
+- New tests: font memory copy, picture shading and its JPEG path, speed log, and
+  chapter files written through one batch across 5,000 pages.
+- Repository clean-up: removed files that only served CrossInk's own project and
+  are not used to build VARAGH: AI assistant instructions (`AGENTS.md`,
+  `CLAUDE.md`, `.claude/`), the CrossInk website (`site/`, `docs/index.md`,
+  `docs/catalog`), `SCOPE.md`, the copy of CrossInk's README, CrossInk's release
+  scripts, the code-style CI workflow and its helpers (`bin/`, `.githooks/`),
+  `.clangd`, the Nix setup, template READMEs, unused pictures and the Tabler icon
+  source submodule (the icons VARAGH uses are already converted). The README is
+  shorter; details are in FEATURES.md.
+
 ## [VARAGH v1.0.1] - 2026-09-24
 
 Based on CrossInk v1.6.0.

@@ -1,15 +1,15 @@
 # VARAGH features
 
-This page lists everything VARAGH 1.0.0 adds to or changes in
+This page lists everything VARAGH (up to 1.1.0 "Tiger") adds to or changes in
 [CrossInk](https://github.com/uxjulia/crossink) v1.6.0. Everything CrossInk and
 CrossPoint already do (EPUB/TXT/XTC reading, fonts from the SD card, KOReader
 sync, Calibre, OPDS, reading stats, Quick Actions, and so on) is still there;
-see [CrossInk's README](docs/CROSSINK-README.md) for those.
+see [CrossInk's README](https://github.com/uxjulia/crossink#readme) for those.
 
 VARAGH is built for the **Xteink X4 Pro**.
 
 All photos on this page were taken on an X4 Pro running VARAGH 1.0.0, with the
-front light on.
+front light on. The picture comparisons in section 7 are computed, not photographed.
 
 **The one setting to make after installing:**
 **Settings → Reader → Font Options → Font Family → NotoVazir.**
@@ -26,7 +26,7 @@ pronunciation, dictionary entry, highlight and flashcard displays correctly.
 4. [Highlights](#4-highlights)
 5. [Flashcards](#5-flashcards)
 6. [Swipe to delete](#6-swipe-to-delete)
-7. [Battery and speed](#7-battery-and-speed)
+7. [Speed, pictures and battery](#7-speed-pictures-and-battery)
 8. [Summer time for the clock](#8-summer-time-for-the-clock)
 9. [Pronunciations in menus](#9-pronunciations-in-menus)
 10. [VARAGH name and logo](#10-varagh-name-and-logo)
@@ -279,18 +279,87 @@ anywhere else, swiping right or pressing any button hides it again.
 
 ---
 
-## 7. Battery and speed
+## 7. Speed, pictures and battery
 
-- **Display power-off when idle (X4 Pro).** After a quick page turn the display
+VARAGH 1.1.0 "Tiger" is about speed and picture quality; the battery savings
+from 1.0.0 stay. There is nothing to switch on: everything in this section
+works by itself, except the optional Faster Screen Link.
+
+### Smoother, sharper pictures in books (1.1.0)
+
+- Pictures are shrunk by **averaging** every pixel of the original (1.0.1 picked
+  every n-th pixel and skipped the rest, which made lines jagged).
+- Greys are drawn with **error diffusion**: fine, even dots instead of the fixed
+  crosshatch pattern of 1.0.1. Gradients such as skies and faces look smooth.
+- A **levels** step turns nearly-white areas white and nearly-black areas black,
+  so the paper of scanned pages stays clean instead of turning speckled grey.
+- Pictures you already viewed are prepared once more the first time you see
+  them after updating. Enlarged pictures keep the previous method, which suits
+  enlarging better.
+
+The close-ups below show the same part of the same picture at the same size,
+enlarged 2×. Each shows exactly the 4 greys the X4 Pro screen receives,
+computed on a computer by VARAGH's own picture code from test pictures.
+
+<p align="center"><img src="docs/images/varagh/tiger/shading-landscape.png" alt="Landscape picture: crosshatch pattern in 1.0.1, smooth greys in 1.1.0"></p>
+<p align="center"><img src="docs/images/varagh/tiger/shading-portrait.png" alt="Portrait picture: crosshatch pattern in 1.0.1, smooth greys in 1.1.0"></p>
+<p align="center"><img src="docs/images/varagh/tiger/shading-line-art.png" alt="Line drawing: jagged lines in 1.0.1, cleaner lines in 1.1.0"></p>
+<p align="center"><img src="docs/images/varagh/tiger/shading-dark-scene.png" alt="Dark picture: more visible detail in 1.1.0"></p>
+
+### Chapters open faster (1.1.0)
+
+- **Indexing Method: Automatic** (new default). Before a chapter can be shown,
+  the reader lays it out into pages ("indexing"). Normal-size chapters (up to
+  32 KB of text) are indexed completely, as before; long chapters show their
+  first page right away and are indexed a few pages ahead while you read. You
+  can still choose Full Section or Incremental in **Settings → Reader →
+  Indexing Method**, or for one book in the reader menu → Reader Options.
+  [How indexing works](docs/epub-indexing.md).
+- **No "Indexing" popup for quick chapters.** Drawing the popup and the extra
+  screen cleaning it caused took about 2.4 seconds, longer than indexing a
+  normal chapter.
+- **Pages are written to the SD card in large pieces** instead of hundreds of
+  small writes: writing was about half of the indexing time.
+- **The SD card runs at 40 MHz** (its high-speed mode) instead of 20 MHz: reads
+  are about 70% faster. A card that cannot start at 40 MHz falls back to 20 MHz
+  by itself.
+- **Fonts stay in memory.** Letter shapes of SD-card fonts such as NotoVazir are
+  kept in the X4 Pro's 8 MB memory once read, so page turns and indexing no
+  longer read them from the card again.
+- The book, picture and drawing code is compiled for speed instead of size.
+
+### Battery
+
+- **Display power-off when idle (1.0.0).** After a quick page turn the display
   controller used to keep its power stage running until the next refresh.
   VARAGH turns it off 5 seconds after the screen stops changing, and the next
   refresh turns it back on. Checked against all three X4 Pro panel controllers
   (SSD1677, UC8179, UC8279). Nothing changes on screen.
-- **Faster text drawing**, ported from CrossPoint #3633.
-- **Less memory per SD-card font**: fonts share their character tables,
+- **The processor slows down sooner (1.1.0):** 1 second after the last button
+  press or touch instead of 3, and also while the screen refreshes. Buttons and
+  touch still respond immediately.
+- **Faster text drawing** (1.0.0), ported from CrossPoint #3633.
+- **Less memory per SD-card font** (1.0.0): fonts share their character tables,
   ported from CrossPoint #3616.
 - The Persian/IPA fallback font loads only when a book or screen needs it,
   and reads character widths from the SD card only when needed.
+
+### Faster Screen Link (1.1.0, optional)
+
+**Settings → Display → Faster Screen Link** (off by default) sends each screen
+image to the display at 20 MHz instead of 10 MHz, on X4 Pro screens with the
+SSD1677 controller. After you turn it on, the reader asks you to confirm within
+10 seconds that the screen looks right; without confirmation, or if you leave
+Settings first, it switches back by itself. It can only be turned on on the
+reader, not from the web settings page.
+
+### Speed log (1.1.0)
+
+The reader writes timings to `/.crosspoint/speed-log.csv` on the SD card: page
+turns, chapter indexing (split into its steps), pictures, opening books and
+loading Home, plus a battery reading every 5 minutes. It holds timings and
+device state only, never titles or text. Send it along when you report that
+something is slow.
 
 ---
 
@@ -320,7 +389,9 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
 
 ## 10. VARAGH name and logo
 
-- **Boot screen**: the VARAGH logo with "VARAGH", "Booting" and the version below.
+- **Boot screen**: the VARAGH logo with "VARAGH" and "Booting", and at the bottom
+  the version with a small tiger: **1.1.0 Tiger**. Settings → System shows
+  **VARAGH 1.1.0 Tiger** in the same way.
 - **Default sleep screen** (when no custom sleep image is set): the VARAGH logo
   with "VARAGH" and "Sleeping"; inverted in dark mode.
 - "VARAGH" in every place the menus said "CrossInk", in every UI language.
@@ -352,13 +423,15 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
   source is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), OFL
   licence texts were added for all built-in fonts, and each release includes a
   full-source zip (the firmware binary includes GPL-licensed wolfSSL).
-- The display and UI library is a fork,
-  [PewPewzxc/freeink-sdk](https://github.com/PewPewzxc/freeink-sdk) (branch
-  `varagh`). It adds the display idle power-off hook and a read-only touch
-  hit-test used by swipe to delete.
-- New unit tests: German stemming, summer-time rules, glyph drawing,
-  highlight file format and storage, and lookup-word cleanup.
-- Book page caches are rebuilt once after installing (layout format v78).
+- The display and UI library (FreeInk SDK) has VARAGH changes: the display idle
+  power-off hook, a read-only touch hit-test used by swipe to delete, and in
+  1.1.0 the 40 MHz SD card and the Faster Screen Link. The library with these
+  changes is in each release's full-source zip.
+- Unit tests: German stemming, summer-time rules, glyph drawing, highlight file
+  format and storage, lookup-word cleanup; in 1.1.0 also the font memory copy,
+  picture shading, the speed log and chapter-file writing.
+- Book page caches were rebuilt once when installing 1.0.0 (layout format v78);
+  1.1.0 keeps that format, so books are not indexed again.
 - Guides: [fonts](docs/varagh/FONTS.md), [dictionaries](docs/varagh/DICTIONARIES.md),
   [keeping up with CrossInk and CrossPoint](docs/varagh/UPSTREAM-SYNC.md),
   [changelog](CHANGELOG.md).

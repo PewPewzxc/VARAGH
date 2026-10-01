@@ -21,13 +21,13 @@ Fetched by PlatformIO at the versions pinned in `platformio.ini`, or vendored in
 |---|---|
 | wolfSSL (`wolfssl/Arduino-wolfSSL` 5.7.2) | GPL-2.0-or-later |
 | WebSockets (`links2004/WebSockets` 2.7.3) | LGPL-2.1 |
-| PNGdec, JPEGDEC (BitBank Software) | Apache-2.0 |
+| PNGdec, JPEGDEC (BitBank Software); modified at build time by `scripts/patch_pngdec.py` and `scripts/patch_jpegdec.py` | Apache-2.0 |
 | ArduinoJson (Benoit Blanchon) | MIT |
 | QRCode (Richard Moore) | MIT |
 | SdFat (Bill Greiman) | MIT |
 | expat, miniz, MiniBidi (`lib/`) | MIT |
 | uzlib (`lib/`) | zlib licence |
-| Tabler Icons (submodule `assets/tabler-icons`), Lucide icons (inside the SDK) | MIT, ISC |
+| Tabler Icons (converted icons in `src/components/icons`), Lucide icons (inside the SDK) | MIT, ISC |
 
 **Firmware binaries.** Because `firmware-*.bin` links wolfSSL (GPL-2.0-or-later),
 each released binary is distributed under the terms of the GNU GPL version 3 or
