@@ -3688,8 +3688,47 @@ async function findEpubCoverImagePaths(zip) {
     return !properties.includes("cover-image") &&
       (item.getAttribute("media-type") || "").startsWith("image/") && /cover/i.test(`${id} ${href}`);
     });
+  const coverPaths = new Set();
   const href = coverItem?.getAttribute("href");
-  return href ? new Set([resolvePath(opfPath, decodeHref(href.split("#")[0]))]) : new Set();
+  if (href) coverPaths.add(resolvePath(opfPath, decodeHref(href.split("#")[0])));
+
+  const coverPagePaths = new Set(
+    items
+      .filter((item) => {
+        const itemHref = item.getAttribute("href") || "";
+        const id = item.getAttribute("id") || "";
+        const mediaType = item.getAttribute("media-type") || "";
+        const hasCoverToken = /(?:^|[-_])cover(?:[-_]|$)/i.test(id) ||
+          /(?:^|\/)cover(?:[-_][^/]*)?\.(?:x?html?)$/i.test(itemHref);
+        return /(?:xhtml|html)/i.test(mediaType) && hasCoverToken;
+      })
+      .map((item) => resolvePath(opfPath, decodeHref((item.getAttribute("href") || "").split("#")[0]))),
+  );
+  for (const reference of Array.from(doc.getElementsByTagName("reference"))) {
+    if ((reference.getAttribute("type") || "").toLowerCase() === "cover") {
+      const pageHref = reference.getAttribute("href");
+      if (pageHref) coverPagePaths.add(resolvePath(opfPath, decodeHref(pageHref.split("#")[0])));
+    }
+  }
+  if (coverPaths.size > 0) {
+    const firstSpineId = doc.getElementsByTagName("itemref")[0]?.getAttribute("idref");
+    const firstSpineItem = firstSpineId && items.find((item) => item.getAttribute("id") === firstSpineId);
+    const firstSpineHref = firstSpineItem?.getAttribute("href");
+    if (firstSpineHref) {
+      coverPagePaths.add(resolvePath(opfPath, decodeHref(firstSpineHref.split("#")[0])));
+    }
+  }
+  for (const pagePath of coverPagePaths) {
+    const page = zip.files[pagePath];
+    if (!page) continue;
+    const pageDoc = new DOMParser().parseFromString(await safeReadText(page), "application/xhtml+xml");
+    if (pageDoc.getElementsByTagName("parsererror").length) continue;
+    for (const image of Array.from(pageDoc.querySelectorAll("img, image"))) {
+      const imageHref = image.getAttribute("src") || image.getAttribute("href") || image.getAttribute("xlink:href");
+      if (imageHref) coverPaths.add(resolvePath(pagePath, decodeHref(imageHref.split("#")[0])));
+    }
+  }
+  return coverPaths;
 }
 
 // Process single image - returns array of {data, suffix} objects

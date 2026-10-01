@@ -7,6 +7,7 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <LibraryBuilder.h>
 #include <Memory.h>
 #include <SdCardFontSystem.h>
 #include <Txt.h>
@@ -450,6 +451,7 @@ bool FileBrowserActivity::swipedEntry(const int rowValue, std::string& entry) {
 
 void FileBrowserActivity::deleteFileNow(const std::string& fullPath) {
   {
+    library::invalidateLibraryIndex();
     BookActions::clearFileMetadata(fullPath);
     if (!Storage.remove(fullPath.c_str())) {
       LOG_ERR("FileBrowser", "Failed to delete file: %s", fullPath.c_str());
@@ -492,6 +494,7 @@ void FileBrowserActivity::promptDeleteDirectory(const std::string& fullPath, con
     std::vector<std::string> metadataPaths;
     collectMetadataPathsRecursively(dirPath, metadataPaths);
 
+    library::invalidateLibraryIndex();
     if (!Storage.removeDir(dirPath.c_str())) {
       LOG_ERR("FileBrowser", "Failed to delete directory: %s", dirPath.c_str());
       return;
@@ -562,6 +565,8 @@ void FileBrowserActivity::showDirectoryActionMenu(const std::string& entry, bool
                                clearPreferredSleepFolder();
                                return;
                              case FileBrowserAction::DeleteCache:
+                             case FileBrowserAction::ToggleBookStatsTracking:
+                             case FileBrowserAction::ReadingStats:
                              case FileBrowserAction::DeleteStats:
                              case FileBrowserAction::ToggleCompleted:
                              case FileBrowserAction::RemoveFromRecents:
@@ -721,6 +726,23 @@ void FileBrowserActivity::showFileActionMenu(const std::string& entry, bool igno
 
         const auto action = static_cast<FileBrowserAction>(std::get<FileBrowserActionResult>(result.data).action);
         switch (action) {
+          case FileBrowserAction::ToggleBookStatsTracking: {
+            bool enabled = false;
+            if (!BookActions::toggleBookStatsTracking(fullPath, enabled)) {
+              const std::string error = std::string(tr(STR_TRACK_READING_STATS)) + " " + tr(STR_FAILED_LOWER);
+              BookActions::drawToast(renderer, error.c_str());
+            }
+            requestUpdate();
+            return;
+          }
+          case FileBrowserAction::ReadingStats:
+            if (auto statsActivity =
+                    BookActions::createReadingStatsActivity(renderer, mappedInput, fullPath, getFileName(entry))) {
+              startActivityForResult(std::move(statsActivity), [this](const ActivityResult&) { requestUpdate(); });
+            } else {
+              LOG_ERR("FileBrowser", "Failed to open reading stats for: %s", fullPath.c_str());
+            }
+            return;
           case FileBrowserAction::Rename:
             startRenameFile(fullPath, entry);
             return;
@@ -940,6 +962,7 @@ void FileBrowserActivity::renameFile(const std::string& oldPath, const std::stri
     LOG_ERR("FileBrowser", "Failed to save renamed favorite image path");
   }
 
+  library::invalidateLibraryIndex();
   ImageFolderIndex::invalidateForPath(oldPath.c_str());
   ImageFolderIndex::invalidateForPath(newPath.c_str());
   sdFontSystem.markRegistryDirtyForPath(oldPath.c_str());

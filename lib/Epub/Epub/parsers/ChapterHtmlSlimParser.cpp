@@ -638,10 +638,31 @@ void ChapterHtmlSlimParser::attachPendingPublisherPageMarkers(const int yPos) {
   pendingPublisherPageMarkers.erase(pendingPublisherPageMarkers.begin(), markerIt);
 }
 
+void ChapterHtmlSlimParser::queueInlinePadding(const CssStyle& cssStyle) {
+  if (!embeddedStyle || !honorsPublisherDecorations() || !cssStyle.hasPaddingLeft()) {
+    return;
+  }
+
+  const int paddingPixels = cssStyle.paddingLeft.toPixelsInt16(renderer.getFontAscenderSize(fontId), viewportWidth);
+  if (paddingPixels <= 0) {
+    return;
+  }
+
+  if (partWordBufferIndex > 0) {
+    flushPartWordBuffer();
+  }
+  pendingInlinePadding =
+      static_cast<int16_t>(std::min<int>(INT16_MAX, static_cast<int>(pendingInlinePadding) + paddingPixels));
+  // CSS inline padding stays glued to the following text, just like the empty
+  // <span class="spacey"/> elements used by the affected EPUB.
+  nextWordContinues = true;
+}
+
 // flush the contents of partWordBuffer to currentTextBlock
 void ChapterHtmlSlimParser::flushPartWordBuffer() {
   if (lowMemoryAbort) {
     partWordBufferIndex = 0;
+    partWordInlinePadding = 0;
     nextWordContinues = false;
     return;
   }
@@ -690,6 +711,7 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     currentTextRunBytes = static_cast<uint16_t>(
         std::min<size_t>(currentTextRunBytes + static_cast<size_t>(partWordBufferIndex), UINT16_MAX));
     partWordBufferIndex = 0;
+    partWordInlinePadding = 0;
     nextWordContinues = false;
     return;
   }
@@ -699,18 +721,21 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     // table content rather than dereferencing a null paragraph block.
     LOG_ERR("EHP", "Discarding text without a paragraph or compact table cell");
     partWordBufferIndex = 0;
+    partWordInlinePadding = 0;
     nextWordContinues = false;
     return;
   }
 
   // flush the buffer
   partWordBuffer[partWordBufferIndex] = '\0';
-  currentTextBlock->addWord(
-      partWordBuffer, fontStyle, false, nextWordContinues, honorsPublisherDecorations() && effectiveBackgroundBlack,
-      insideFootnoteLink ? currentFootnote.linkId : 0, partWordVisibleOffset, partWordReferenceOffset);
+  currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues,
+                            honorsPublisherDecorations() && effectiveBackgroundBlack,
+                            insideFootnoteLink ? currentFootnote.linkId : 0, partWordVisibleOffset,
+                            partWordReferenceOffset, partWordInlinePadding);
   currentTextRunBytes = static_cast<uint16_t>(
       std::min<size_t>(currentTextRunBytes + static_cast<size_t>(partWordBufferIndex), UINT16_MAX));
   partWordBufferIndex = 0;
+  partWordInlinePadding = 0;
   nextWordContinues = false;
 }
 
@@ -734,7 +759,7 @@ uint16_t ChapterHtmlSlimParser::textRunBytesBeforeLayoutLimit() const {
   return DEFAULT_TEXT_RUN_BYTES_BEFORE_LAYOUT;
 }
 
-void ChapterHtmlSlimParser::flushLongTextRunIfNeeded(const bool force) {
+void ChapterHtmlSlimParser::flushLongTextRunIfNeeded(const bool force, const bool flushLastLine) {
   if (!currentTextBlock) {
     currentTextRunBytes = 0;
     return;
@@ -758,11 +783,12 @@ void ChapterHtmlSlimParser::flushLongTextRunIfNeeded(const bool force) {
           [this](const std::shared_ptr<TextBlock>& textBlock, const uint32_t offset, const uint32_t referenceOffset) {
             addLineToPage(textBlock, offset, referenceOffset);
           },
-          false)) {
+          flushLastLine)) {
     LOG_ERR("EHP", "Failed to lay out long text run");
     lowMemoryAbort = true;
     return;
   }
+  if (flushLastLine) currentTextBlock->setContinuation(true);
   currentTextRunBytes = 0;
 }
 
@@ -773,9 +799,12 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   }
 
   nextWordContinues = false;  // New block = new paragraph, no continuation
+  pendingInlinePadding = 0;
+  partWordInlinePadding = 0;
   if (currentTextBlock) {
     // already have a text block running and it is empty - just reuse it
     if (currentTextBlock->isEmpty()) {
+      currentTextBlock->setContinuation(false);
       BlockStyle incoming = blockStyle;
       const bool currentIsEmptyBr = currentTextBlock->getBlockStyle().fromBrElement;
       if (currentIsEmptyBr) {
@@ -2220,7 +2249,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
         return;
       }
 
-      // Skip image if CSS display:none
+      // Skip hidden images and retain explicit block placement in all render modes.
+      bool displayBlockImage = false;
+      bool displayInlineImage = false;
       if (self->cssParser) {
         CssStyle imgDisplayStyle = self->usesSimpleCssLookup()
                                        ? self->cssParser->resolveStyle("img", classAttr)
@@ -2232,6 +2263,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
           self->skipCurrentElement();
           return;
         }
+        displayBlockImage = imgDisplayStyle.hasDisplay() && imgDisplayStyle.display == CssDisplay::Block;
+        displayInlineImage = imgDisplayStyle.hasDisplay() && imgDisplayStyle.display == CssDisplay::Inline;
       }
 
       if (!src.empty() && self->imageRendering != 1) {
@@ -2415,6 +2448,42 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                   self->lowMemoryImageFallback = true;
                   if (sourcePath.empty()) Storage.remove(cachedImagePath.c_str());
                   self->skipCurrentElement();
+                  return;
+                }
+
+                // Small images participate in the text line's width and height.
+                // Full-width art and explicit block images retain the existing
+                // centered, page-breaking placement below.
+                const bool inlineImage =
+                    self->currentTextBlock && self->tableDepth == 0 && !self->inRuby && displayWidth > 0 &&
+                    displayHeight > 0 && displayWidth < containerWidth &&
+                    (displayInlineImage || (imgStyle.hasDisplay() && imgStyle.display == CssDisplay::Inline) ||
+                     displayHeight <= self->effectiveLineHeight() * 2) &&
+                    !displayBlockImage && !(imgStyle.hasDisplay() && imgStyle.display == CssDisplay::Block);
+                if (inlineImage) {
+                  const bool attachToPrevious = self->partWordBufferIndex > 0 || self->nextWordContinues;
+                  if (self->partWordBufferIndex > 0) self->flushPartWordBuffer();
+                  auto imageBlock = makeUniqueNoThrow<ImageBlock>(std::move(cachedImagePath), std::move(sourcePath),
+                                                                  displayWidth, displayHeight);
+                  if (!imageBlock) {
+                    LOG_ERR("EHP", "Failed to create inline ImageBlock");
+                    self->lowMemoryAbort = true;
+                    return;
+                  }
+                  const uint16_t imageId = self->nextInlineImageId++;
+                  self->pendingInlineImages.push_back({imageId, std::move(imageBlock)});
+                  self->currentTextBlock->addInlineImage(imageId, static_cast<uint16_t>(displayWidth),
+                                                         static_cast<uint16_t>(displayHeight), attachToPrevious,
+                                                         self->visibleTextOffset, self->referenceTextOffset);
+                  self->nextWordContinues = true;
+                  // An icon-only run has no characterData callback to trigger
+                  // the usual bounded paragraph flush. Seal the current line
+                  // after this many tiny images so C3 memory stays bounded.
+                  const bool flushImageLine = self->pendingInlineImages.size() >= MAX_PENDING_INLINE_IMAGES;
+                  self->flushLongTextRunIfNeeded(flushImageLine, flushImageLine);
+                  if (self->lowMemoryAbort) return;
+                  self->pushCssAncestor(self->depth, name, classAttr);
+                  self->depth += 1;
                   return;
                 }
 
@@ -3005,6 +3074,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     }
   }
 
+  if (!isHeaderOrBlock(name) && !isTableStructuralTag(name) && !self->currentCompactTable) {
+    self->queueInlinePadding(cssStyle);
+  }
+
   // Unprocessed tag, just increasing depth and continue forward
   self->pushCssAncestor(self->depth, name, classAttr);
   self->depth += 1;
@@ -3122,6 +3195,8 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
       self->partWordBuffer[0] = ' ';
       self->partWordBuffer[1] = '\0';
       self->partWordBufferIndex = 1;
+      self->partWordInlinePadding = self->pendingInlinePadding;
+      self->pendingInlinePadding = 0;
       self->partWordVisibleOffset = codepointOffset;
       self->partWordReferenceOffset = codepointReferenceOffset;
       self->nextWordContinues = true;  // Attach space to previous word (no break).
@@ -3144,6 +3219,8 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
       self->partWordBuffer[0] = ' ';
       self->partWordBuffer[1] = '\0';
       self->partWordBufferIndex = 1;
+      self->partWordInlinePadding = self->pendingInlinePadding;
+      self->pendingInlinePadding = 0;
       self->partWordVisibleOffset = codepointOffset;
       self->partWordReferenceOffset = codepointReferenceOffset;
       self->nextWordContinues = true;
@@ -3212,6 +3289,8 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
     if (self->partWordBufferIndex == 0) {
       self->partWordVisibleOffset = codepointOffset;
       self->partWordReferenceOffset = codepointReferenceOffset;
+      self->partWordInlinePadding = self->pendingInlinePadding;
+      self->pendingInlinePadding = 0;
     }
     self->partWordBuffer[self->partWordBufferIndex++] = s[i];
     if (startsCodepoint && countVisibleOffsets) codepointOffset++;
@@ -3659,6 +3738,8 @@ void ChapterHtmlSlimParser::releaseInputFile() {
 }
 
 bool ChapterHtmlSlimParser::beginParse() {
+  pendingInlineImages.clear();
+  nextInlineImageId = 1;
   malformedMarkupTruncated = false;
   htmlEnded_ = false;
   parseFileOffset_ = 0;
@@ -3800,6 +3881,7 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
 }
 
 void ChapterHtmlSlimParser::abortParse() {
+  pendingInlineImages.clear();
   if (activeParser) {
     destroyXmlParser(activeParser);
     activeParser = nullptr;
@@ -3907,7 +3989,10 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line, const
     return;
   }
 
-  const int lineHeight = effectiveLineHeight() + line->getRubyShift(renderer.getFontAscenderSize(fontId));
+  const auto& lineImages = currentTextBlock->currentLineImages();
+  const int textHeight = effectiveLineHeight() + line->getRubyShift(renderer.getFontAscenderSize(fontId));
+  int lineHeight = textHeight;
+  for (const auto& image : lineImages) lineHeight = std::max(lineHeight, static_cast<int>(image.height));
 
   if (!currentPage) {
     if (!startNewPage("line layout")) {
@@ -3942,7 +4027,7 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line, const
   }
 
   // Track cumulative words to retire links after laying out their final word.
-  wordsExtractedInBlock += line->wordCount();
+  wordsExtractedInBlock += line->wordCount() + lineImages.size();
   auto footnoteIt = pendingFootnotes.begin();
   while (footnoteIt != pendingFootnotes.end() && footnoteIt->first <= wordsExtractedInBlock) {
     currentPage->addFootnote(footnoteIt->second.number, footnoteIt->second.href, footnoteIt->second.linkId);
@@ -3953,13 +4038,35 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line, const
 
   // Apply horizontal left inset (margin + padding) as x position offset
   const int16_t xOffset = line->getBlockStyle().leftInset();
-  auto pageLine = makeUniqueNoThrow<PageLine>(line, xOffset, currentPageNextY);
-  if (!pageLine) {
-    LOG_ERR("EHP", "Failed to create PageLine");
-    lowMemoryAbort = true;
-    return;
+  if (!line->isEmpty()) {
+    // A taller inline image raises the line's top edge; keep the text beside
+    // its lower edge instead of leaving it stranded above the image.
+    auto pageLine = makeUniqueNoThrow<PageLine>(line, xOffset, currentPageNextY + lineHeight - textHeight);
+    if (!pageLine) {
+      LOG_ERR("EHP", "Failed to create PageLine");
+      lowMemoryAbort = true;
+      return;
+    }
+    currentPage->elements.push_back(std::move(pageLine));
   }
-  currentPage->elements.push_back(std::move(pageLine));
+  for (const auto& image : lineImages) {
+    const auto it = std::find_if(pendingInlineImages.begin(), pendingInlineImages.end(),
+                                 [&image](const PendingInlineImage& pending) { return pending.id == image.id; });
+    if (it == pendingInlineImages.end()) {
+      LOG_ERR("EHP", "Missing inline image %u", image.id);
+      lowMemoryAbort = true;
+      return;
+    }
+    auto pageImage = makeUniqueNoThrow<PageImage>(std::move(it->block), xOffset + image.x,
+                                                  currentPageNextY + lineHeight - image.height, true);
+    if (!pageImage) {
+      LOG_ERR("EHP", "Failed to create inline PageImage");
+      lowMemoryAbort = true;
+      return;
+    }
+    currentPage->elements.push_back(std::move(pageImage));
+    pendingInlineImages.erase(it);
+  }
   markCurrentPageFromCurrentTextBlock();
   currentPageNextY += lineHeight;
 }

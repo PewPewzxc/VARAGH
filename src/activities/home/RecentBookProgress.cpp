@@ -237,7 +237,7 @@ float RecentBookProgress::loadCachedEpubPercent(const RecentBook& book) {
   if (!FsHelpers::hasEpubExtension(book.path)) {
     return -1.0f;
   }
-  const std::string cachePath = Epub::cachePathForFilePath(book.path, "/.crosspoint");
+  const std::string cachePath = Epub::resolveCachePathForFilePath(book.path, "/.crosspoint");
   const float cachedProgress = loadCachedEpubPercentFromCachePath(cachePath);
   if (cachedProgress >= 0.0f) {
     return cachedProgress;

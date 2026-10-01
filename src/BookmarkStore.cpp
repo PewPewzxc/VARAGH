@@ -850,7 +850,7 @@ bool BookmarkStore::rollbackRenameMigration(RenameMigration& migration) {
 
 bool BookmarkStore::hasAnyBookmarks() {
   if (!Storage.exists(BOOKMARKS_DIR)) return false;
-  return !Storage.listFiles(BOOKMARKS_DIR).empty();
+  return !Storage.listFiles(BOOKMARKS_DIR, 1).empty();
 }
 
 bool BookmarkStore::getAllBookmarkedBooks(std::vector<BookmarkedBookEntry>& out) {

@@ -96,6 +96,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "activities/boot_sleep/ImageFolderIndex.h"
 #include "activities/home/BookActions.h"
 #include "activities/reader/KOReaderSyncActivity.h"
+#include "activities/reader/ReaderUtils.h"
 #include "activities/reader/ReadingStatsUtils.h"
 #include "activities/reader/StatsBackup.h"
 #include "activities/settings/FontDownloadActivity.h"
@@ -113,7 +114,6 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "simulator/SimulatorHomeKeyInput.h"
 #include "simulator/SimulatorSmokeTest.h"
 #endif
-#include "images/LoadingIcon.h"
 #include "util/BatteryDiagnosticLog.h"
 #include "util/ButtonNavigator.h"
 #include "util/ButtonShortcutController.h"
@@ -180,6 +180,7 @@ static void logBootHeap(const char* stage) {
 }
 
 // Fonts
+#if !CROSSINK_SCALABLE_FONTS
 EpdFont lexenddeca10RegularFont(&lexenddeca_10_regular);
 EpdFont lexenddeca10BoldFont(&lexenddeca_10_bold);
 EpdFont lexenddeca10ItalicFont(&lexenddeca_10_italic);
@@ -225,6 +226,7 @@ EpdFont bitter16ItalicFont(&bitter_16_italic);
 EpdFont bitter16BoldItalicFont(&bitter_16_bolditalic);
 EpdFontFamily bitter16FontFamily(&bitter16RegularFont, &bitter16BoldFont, &bitter16ItalicFont, &bitter16BoldItalicFont);
 
+#endif
 // IPA pronunciation letters (U+0250-U+02FF) for the UI fonts, so dictionary
 // meanings shown in lists and menus draw /ˈkœnən/ instead of boxes.
 EpdFont ipa8RegularFont(&inter_ipa_8_regular);
@@ -359,7 +361,10 @@ constexpr uint32_t SILENT_REBOOT_READER_CLEAN_IMAGE_BASE = 1U << 0;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_MAGIC = 0xC1EAB017;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_AUTO_TURN = 1U << 0;
 constexpr uint32_t NETWORK_RENDER_TASK_STACK_BYTES = 8192;
-constexpr uint32_t READER_RENDER_TASK_STACK_BYTES = 16384;
+// FreeType's anti-aliased rasterizer reserves a 16 KiB scratch pool on its
+// caller's stack. Scalable fonts are S3-only, so leave C3's constrained reader
+// stack unchanged and give S3 reader renders room for their normal call frames.
+constexpr uint32_t READER_RENDER_TASK_STACK_BYTES = FREEINK_MCU_S3 ? 24576 : 16384;
 
 #if !defined(SIMULATOR) && FREEINK_MCU_S3
 // Background section builds run on the Arduino loop task (8 KB by default).
@@ -605,7 +610,10 @@ bool handleGlobalPowerButtonAction(const CrossPointSettings::SHORT_PWRBTN action
                                    const QuickLockTrigger quickLockTrigger) {
   switch (action) {
     case CrossPointSettings::SHORT_PWRBTN::SLEEP:
+    case CrossPointSettings::SHORT_PWRBTN::SLEEP_ONLY:
       enterDeepSleep();
+      return true;
+    case CrossPointSettings::SHORT_PWRBTN::WAKE_ONLY:
       return true;
     case CrossPointSettings::SHORT_PWRBTN::QUICK_LOCK:
       if (quickLockTrigger == QuickLockTrigger::None) {
@@ -662,6 +670,9 @@ bool handleGlobalPowerButtonAction(const CrossPointSettings::SHORT_PWRBTN action
       }
       activityManager.goToHotspotFileTransfer();
       return true;
+    case CrossPointSettings::SHORT_PWRBTN::LIBRARY:
+      activityManager.goToLibrary();
+      return true;
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_FRONTLIGHT: {
       if (!Frontlight.present()) return false;
       const bool lightOn = !Frontlight.isOn();
@@ -691,6 +702,7 @@ bool handleGlobalPowerButtonAction(const CrossPointSettings::SHORT_PWRBTN action
 }
 
 bool dispatchShortcutAction(const CrossPointSettings::SHORT_PWRBTN action) {
+  if (action == CrossPointSettings::SHORT_PWRBTN::READING_STATS && !SETTINGS.shouldTrackReadingStats()) return false;
   // An EPUB reader may have a per-book orientation that is restored during
   // teardown. Let it hand off Sync Progress before the global restart drops
   // that transient setting.
@@ -746,6 +758,8 @@ CrossPointSettings::SHORT_PWRBTN chordPowerAction(const ButtonShortcutController
       return Power::SYNC_PROGRESS;
     case Chord::NearbyPositionSync:
       return Power::NEARBY_POSITION_SYNC;
+    case Chord::Library:
+      return Power::LIBRARY;
     case Chord::FileTransfer:
       return Power::FILE_TRANSFER;
     case Chord::CalibreWireless:
@@ -1045,7 +1059,7 @@ bool shouldClearX4WakeGhosting() {
 
 // Wake validation runs before the SD card and its settings file are available.
 // Mirror the one setting that changes its behavior while entering sleep, so a
-// deliberate short sleep press can wake the device even after the button has
+// permitted short wake press can pass verification even after the button has
 // been released during boot. The write is skipped when the value is unchanged.
 constexpr char WAKE_NVS_NAMESPACE[] = "crosspoint";
 constexpr char WAKE_SHORT_PRESS_KEY[] = "wakeShortPr";
@@ -1065,7 +1079,7 @@ bool readWakeShortPressFromNvs() {
 
 void mirrorWakeShortPressToNvs() {
 #ifndef SIMULATOR
-  const uint8_t expected = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP ? 1 : 0;
+  const uint8_t expected = SETTINGS.shortPowerPressWakes() ? 1 : 0;
   nvs_handle_t handle;
   if (nvs_open(WAKE_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
   uint8_t current = 0;
@@ -1126,7 +1140,7 @@ void enterDeepSleep(bool fromTimeout) {
     delay(POST_SLEEP_SCREEN_SETTLE_MS);
   }
 
-  if (halClock.isAvailable() && SETTINGS.autoBackupStats != 0) {
+  if (halClock.isAvailable() && SETTINGS.shouldTrackReadingStats() && SETTINGS.autoBackupStats != 0) {
     ReadingStatsDateTime now;
     if (getCurrentLocalReadingStatsDateTime(now) && !backupGlobalStats(false)) {
       LOG_ERR("MAIN", "Automatic reading-stats backup failed before deep sleep");
@@ -1195,6 +1209,7 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
   fontCacheManager.setFontDecompressor(&fontDecompressor);
   renderer.setFontCacheManager(&fontCacheManager);
 
+#if !CROSSINK_SCALABLE_FONTS
   renderer.insertFont(LEXENDDECA_10_FONT_ID, lexenddeca10FontFamily);
   renderer.insertFont(LEXENDDECA_12_FONT_ID, lexenddeca12FontFamily);
   renderer.insertFont(LEXENDDECA_14_FONT_ID, lexenddeca14FontFamily);
@@ -1203,10 +1218,10 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
   renderer.insertFont(BITTER_12_FONT_ID, bitter12FontFamily);
   renderer.insertFont(BITTER_14_FONT_ID, bitter14FontFamily);
   renderer.insertFont(BITTER_16_FONT_ID, bitter16FontFamily);
+#endif
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
-
   if (loadReaderResources) {
     sdFontSystem.begin(renderer);
   } else {
@@ -1291,7 +1306,8 @@ void setup() {
   const auto wakeupReason = gpio.getWakeupReason();
 #ifndef SIMULATOR
   const bool shortPressWakes = readWakeShortPressFromNvs();
-  if (wakeupReason == HalGPIO::WakeupReason::PowerButton && !gpio.verifyPowerButtonWakeup(shortPressWakes)) {
+  if (wakeupReason == HalGPIO::WakeupReason::PowerButton &&
+      !gpio.verifyPowerButtonWakeup(shortPressWakes, CrossPointSettings::POWER_BUTTON_LONG_PRESS_MS)) {
     LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
     powerManager.startDeepSleep(gpio);
   }
@@ -1448,10 +1464,11 @@ void setup() {
   const bool shouldRestoreSleepFrame =
       resume == BootResume::SplashlessWake && (isUc8279X3 ? hasValidSleepFrame : Storage.exists(SLEEP_FRAME_FILE));
   bool allowFastInitialReaderRefresh = false;
+  bool x4WakeFrameAlreadyCleaned = false;
 
   setupDisplayAndFonts(SleepWakePolicy::shouldInitializeSeamlessly(resume, isUc8279X3, hasValidSleepFrame),
                        resume != BootResume::Network, useReaderRenderStack);
-  logBootHeap("display and selected fonts ready");
+  logBootHeap("display and font resolver ready");
 
   switch (resume) {
     case BootResume::Silent:
@@ -1469,25 +1486,11 @@ void setup() {
       APP_STATE.showBootScreen = true;
       APP_STATE.saveToFile();
       if (shouldRestoreSleepFrame && loadSleepFrameBuffer()) {
-        const bool useDifferentialRefresh = gpio.deviceIsX3();
-        if (useDifferentialRefresh) {
-          // begin() clears the X3 controller RAM, so restore the saved frame as
-          // the baseline before replacing the moon with the loading icon.
+        if (gpio.deviceIsX3()) {
+          // begin() clears the X3 controller RAM. Restore the saved frame as
+          // the baseline for the first reader paint without refreshing the panel.
           renderer.cleanupGrayscaleWithFrameBuffer();
-        }
-
-        const auto pageHeight = renderer.getScreenHeight();
-        renderer.drawImage(LoadingIcon, 0, pageHeight - LOADINGICON_HEIGHT, LOADINGICON_WIDTH, LOADINGICON_HEIGHT);
-        if (useDifferentialRefresh) {
-          renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
           allowFastInitialReaderRefresh = true;
-        } else {
-          renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-          if (shouldClearX4WakeGhosting()) {
-            // The X4's explicit wake refresh has already cleaned the retained
-            // frame, so the reader can use its fast initial cycle as well.
-            allowFastInitialReaderRefresh = true;
-          }
         }
       } else if (isUc8279X3 && hasValidSleepFrame) {
         // The frame passed the size preflight but could not be read after display
@@ -1505,6 +1508,7 @@ void setup() {
         // baseline, so the reader's first page can use its fast initial cycle
         // instead of repeating the cleanup waveform.
         allowFastInitialReaderRefresh = true;
+        x4WakeFrameAlreadyCleaned = true;
       }
       break;
     case BootResume::Splash:
@@ -1586,7 +1590,12 @@ void setup() {
              mappedInputManager.isPressed(MappedInputManager::Button::Back) || APP_STATE.readerActivityLoadCount > 0) {
     // Boot to home screen if no book is open, last sleep was not from reader, back button is held, or reader activity
     // crashed (indicated by readerActivityLoadCount > 0)
-    activityManager.goHome();
+    // On X4, use the first Home paint to clean the retained sleep image.
+    const auto homeRefreshMode =
+        resume == BootResume::SplashlessWake && shouldClearX4WakeGhosting() && !x4WakeFrameAlreadyCleaned
+            ? HalDisplay::HALF_REFRESH
+            : HalDisplay::FAST_REFRESH;
+    activityManager.goHome(HomeMenuItem::NONE, homeRefreshMode);
   } else {
     // Clear app state to avoid getting into a boot loop if the epub doesn't load
     const auto path = APP_STATE.openEpubPath;
@@ -1674,7 +1683,8 @@ void loop() {
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
-  if (Serial && millis() - lastMemPrint >= 10000) {
+  // ROM logging works even when Arduino Serial reports no connected listener.
+  if ((Serial || FREEINK_LOG_TRANSPORT == FREEINK_LOG_TRANSPORT_ROM_PRINTF) && millis() - lastMemPrint >= 10000) {
     logMemoryStats("Periodic");
     lastMemPrint = millis();
   }
@@ -1759,6 +1769,19 @@ void loop() {
     const bool longPowerPressed =
         powerPressed && gpio.getPowerButtonHeldTime() >= SETTINGS.getPowerButtonLongPressDuration();
     if (buttonShortcutController.tryUnlockLongPower(millis(), longPowerPressed)) {
+      notifyQuickLockChanged();
+      lastActivityTime = millis();
+      return;
+    }
+    if (buttonShortcutController.tryUnlockSide(millis(), mappedInputManager.isPressed(MappedInputManager::Button::Up),
+                                               mappedInputManager.wasPressed(MappedInputManager::Button::Up),
+                                               mappedInputManager.wasReleased(MappedInputManager::Button::Up),
+                                               SETTINGS.sideButtonUpLong != CrossPointSettings::IGNORE,
+                                               mappedInputManager.isPressed(MappedInputManager::Button::Down),
+                                               mappedInputManager.wasPressed(MappedInputManager::Button::Down),
+                                               mappedInputManager.wasReleased(MappedInputManager::Button::Down),
+                                               SETTINGS.sideButtonDownLong != CrossPointSettings::IGNORE,
+                                               ReaderUtils::SKIP_HOLD_MS)) {
       notifyQuickLockChanged();
       lastActivityTime = millis();
       return;
@@ -1907,7 +1930,20 @@ void loop() {
   // Add delay at the end of the loop to prevent tight spinning
   // When an activity requests skip loop delay (e.g., webserver running), use yield() for faster response
   // Otherwise, use longer delay to save power
-  if (activityManager.skipLoopDelay()) {
+  const uint8_t inputPollDelayMs = activityManager.inputPollDelayMs();
+  bool skipLoopDelay = false;
+  {
+    // Reader scheduling inspects state also owned by the render task. Never wait
+    // here: the input loop must stay available while a page is being rendered.
+    RenderLock lock(RenderLock::Mode::Try);
+    if (!lock.ownsLock()) {
+      // Continue polling at the activity's rate while its screen is drawn.
+      delay(inputPollDelayMs);
+      return;
+    }
+    skipLoopDelay = activityManager.skipLoopDelay();
+  }
+  if (skipLoopDelay) {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
@@ -1920,7 +1956,7 @@ void loop() {
       idleWait(50);
     } else {
       // Short delay to prevent tight loop while still being responsive
-      idleWait(10);
+      idleWait(inputPollDelayMs);
     }
   }
 }

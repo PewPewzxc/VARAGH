@@ -6,6 +6,7 @@
 
 #include "CrossPointSettings.h"
 #include "ReaderProgressSaveDebouncer.h"
+#include "SideButtonShortcuts.h"
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
 #if CROSSINK_APP_CAP_TOUCH
@@ -21,7 +22,7 @@ class TxtReaderActivity final : public Activity {
   int pagesUntilFullRefresh = 0;
   // Session-only display toggle; cached page layout remains unchanged.
   bool statusBarVisible = true;
-  bool sideButtonLongPressHandled = false;
+  SideButtonShortcuts sideButtonShortcuts;
   bool frontButtonLongPressHandled = false;
   bool longPowerButtonHandled = false;
   bool longPressBackHandled = false;
@@ -44,6 +45,8 @@ class TxtReaderActivity final : public Activity {
   uint8_t cachedVerticalMargin = 0;
   uint8_t cachedHorizontalMargin = 0;
   uint8_t cachedParagraphAlignment = CrossPointSettings::LEFT_ALIGN;
+  int cachedTopStatusBarHeight = 0;
+  int cachedBottomStatusBarHeight = 0;
   int cachedOrientedMarginTop = 0;
   int cachedOrientedMarginRight = 0;
   int cachedOrientedMarginBottom = 0;
@@ -73,6 +76,7 @@ class TxtReaderActivity final : public Activity {
   void cycleReaderFont();
   void rebuildTextLayout();
   void openReaderMenu();
+  bool applyReaderOrientation(uint8_t orientation);
 #if CROSSINK_APP_CAP_TOUCH
   bool handlePinchFontResize();
   void resetPinchFontGesture();

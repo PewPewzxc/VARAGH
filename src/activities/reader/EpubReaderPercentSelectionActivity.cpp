@@ -274,7 +274,7 @@ void EpubReaderPercentSelectionActivity::loop() {
   }
 
   // A long-press Confirm already fired this press: swallow input until it's physically
-  // released (same hold-to-act pattern used elsewhere in this codebase, e.g. RecentBooksActivity).
+  // released so the next press starts cleanly.
   if (confirmLongPressFired) {
     if (!mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
       confirmLongPressFired = false;
@@ -401,6 +401,7 @@ void EpubReaderPercentSelectionActivity::buildPercentScreen(UiApp::ScreenType& s
              static_cast<unsigned long>(value % 100));
   }
   screen.target().text(screen.takeTop(readoutLh, theme.spaceLg), line, readout);
+  buildLanding(screen, line, sizeof(line));
 
   // The slider is a visual-only indicator here: it only renders when the device has no
   // touch hardware (isKeypadVisible() already handled the touch case above), so it can
@@ -479,6 +480,7 @@ void EpubReaderPercentSelectionActivity::buildKeypadScreen(UiApp::ScreenType& sc
     backspaceBtn.enabled = entryLen > 0;
     screen.button(backspaceBtn, iconRect);
   }
+  buildLanding(screen, line, lineSize);
 
   const fui::Rect gridArea = screen.contentRect().inset(fui::Insets{0, theme.spaceLg, theme.spaceLg, theme.spaceLg});
 
@@ -513,6 +515,42 @@ void EpubReaderPercentSelectionActivity::buildKeypadScreen(UiApp::ScreenType& sc
   fui::keyGrid(screen.frame(), gridArea, gridProps);
 }
 
+bool EpubReaderPercentSelectionActivity::previewCentipercent(uint32_t& out) const {
+  if (!isKeypadVisible()) {
+    out = value;
+    return true;
+  }
+  if (entryLen == 0) return false;
+  // Same reading as confirmKeypad().
+  const float parsed = std::strtof(entryText, nullptr);
+  out = static_cast<uint32_t>(std::lround(std::clamp(parsed, 0.0f, 100.0f) * 100.0f));
+  return true;
+}
+
+void EpubReaderPercentSelectionActivity::buildLanding(UiApp::ScreenType& screen, char* line, const size_t lineSize) {
+  if (mode != Mode::Percent || !landingProvider) return;
+  uint32_t centipercent = 0;
+  Landing landing;
+  if (!previewCentipercent(centipercent) || !landingProvider(static_cast<float>(centipercent) / 100.0f, landing)) {
+    return;
+  }
+  const auto& theme = screen.theme();
+  fui::TextStyle style = theme.smallText;
+  style.align = fui::TextAlign::Center;
+  const int16_t lh = screen.target().lineHeight(style.font);
+  const fui::Insets sideInset{0, theme.spaceLg, 0, theme.spaceLg};
+  if (!landing.chapter.empty()) {
+    fui::TextStyle title = style;
+    title.bold = true;
+    screen.target().text(screen.takeTop(lh, theme.spaceSm).inset(sideInset), landing.chapter.c_str(), title);
+  }
+  if (landing.page > 0 && landing.pageCount > 0) {
+    snprintf(line, lineSize, landing.estimated ? tr(STR_LANDING_PAGE_ESTIMATE) : tr(STR_LANDING_PAGE),
+             static_cast<unsigned>(landing.page), static_cast<unsigned>(landing.pageCount));
+    screen.target().text(screen.takeTop(lh, theme.spaceLg).inset(sideInset), line, style);
+  }
+}
+
 void EpubReaderPercentSelectionActivity::render(RenderLock&&) {
   renderer.clearScreen();
 
@@ -537,8 +575,10 @@ void EpubReaderPercentSelectionActivity::render(RenderLock&&) {
   uiReady = true;
 
   // Button hints follow the current front button layout and auto-hide on touch devices.
-  const auto labels = mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), tr(STR_SELECT), tr(STR_DIR_LEFT),
-                                            tr(STR_DIR_RIGHT));
+  const bool percentSlider = mode == Mode::Percent && !isKeypadVisible();
+  const auto labels =
+      mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), tr(STR_SELECT),
+                            percentSlider ? "-1" : tr(STR_DIR_LEFT), percentSlider ? "+1" : tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 
   renderer.displayBuffer();

@@ -39,6 +39,7 @@ class FrontlightPanelActivity final : public Activity {
   bool initialInversion = false;
   bool initialTouchscreenDisabled = false;
   bool pendingTouchscreenDisabled = false;
+  bool ttfRenderingChanged = false;
   // Swallow the swipe/tap fallout of a slider drag so its release can't
   // trigger the back gesture and close the panel mid-adjustment.
   bool draggingSlider = false;
@@ -77,12 +78,16 @@ class FrontlightPanelActivity final : public Activity {
   void openReadingStats();
   void openGlobalSettings();
   void drawHeader();
+  bool showsBookProgress() const;
+  void drawBookProgress();
 
  public:
   explicit FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                    FrontlightPanelContext context = {});
   void onEnter() override;
   void onExit() override;
+  // Keep the visible sliders and exit-time save in sync with a global edge action.
+  void onExternalFrontlightChange() override;
   void loop() override;
   void render(RenderLock&&) override;
   // From an active reader, Home returns to the library; elsewhere it dismisses

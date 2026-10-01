@@ -6,12 +6,12 @@ add_executable(PersistableStoreAtomicTest
 target_include_directories(PersistableStoreAtomicTest PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs
   ${REPO_ROOT}/lib/Serialization
-  ${REPO_ROOT}/.pio/libdeps/simulator/ArduinoJson/src
 )
 
 target_link_libraries(PersistableStoreAtomicTest PRIVATE
   crosspoint_test_common
   GTest::gtest_main
+  ArduinoJson
 )
 
 gtest_discover_tests(PersistableStoreAtomicTest)

@@ -20,10 +20,6 @@ int Epub::getTocItemsCount() const { return 0; }
 int Epub::getTocIndexForSpineIndex(int) const { return -1; }
 bool Epub::readItemContentsToStream(const std::string&, Print&, size_t, bool) const { return false; }
 
-bool CssParser::loadFromCache() { return false; }
-// Referenced by the inline CssParser::clear() that Section calls.
-size_t CssParser::SvHash::operator()(const std::string& s) const noexcept { return std::hash<std::string>{}(s); }
-
 void Hyphenator::setPreferredLanguage(const std::string&) {}
 
 // The speed log writes to the SD card on device; section tests only need the symbol.
@@ -48,4 +44,4 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
   return std::make_unique<Page>();
 }
 
-uint16_t Page::imageEstimateUnits(uint16_t) const { return 0; }
+uint16_t Page::imageEstimateUnits(uint16_t, uint16_t) const { return 0; }

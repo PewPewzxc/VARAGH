@@ -69,8 +69,8 @@ constexpr CssTextDecoration operator&(const CssTextDecoration a, const CssTextDe
 constexpr uint8_t CSS_TEXT_DECORATION_MASK =
     static_cast<uint8_t>(CssTextDecoration::Underline) | static_cast<uint8_t>(CssTextDecoration::LineThrough);
 
-// Display options - only None and Block are relevant for e-ink rendering
-enum class CssDisplay : uint8_t { Block = 0, None = 1 };
+// Keep inline distinct so replaced elements can participate in text layout.
+enum class CssDisplay : uint8_t { Block = 0, None = 1, Inline = 2 };
 
 // Vertical alignment options for inline elements (e.g. superscript/subscript)
 enum class CssVerticalAlign : uint8_t { Baseline = 0, Super = 1, Sub = 2 };
@@ -170,7 +170,7 @@ struct CssStyle {
   CssLength paddingRight;   // Padding right
   CssLength imageHeight;    // Height for img (e.g. 2em) – width derived from aspect ratio when only height set
   CssLength imageWidth;     // Width for img when both or only width set
-  CssDisplay display = CssDisplay::Block;                       // display property (Block or None)
+  CssDisplay display = CssDisplay::Block;
   bool backgroundBlack = false;                                 // Simple black inline/block background support
   CssVerticalAlign verticalAlign = CssVerticalAlign::Baseline;  // vertical-align (super/sub positioning)
   bool pageBreakBefore = false;

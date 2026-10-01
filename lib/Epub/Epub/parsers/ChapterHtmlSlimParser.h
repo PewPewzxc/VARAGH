@@ -36,6 +36,7 @@ class ChapterHtmlSlimParser {
   static constexpr uint16_t MAX_SIMPLE_TABLE_CELL_WORDS = 160;
   static constexpr uint8_t TABLE_CELL_PADDING = 6;
   static constexpr size_t MAX_INLINE_STYLE_DEPTH = 64;
+  static constexpr size_t MAX_PENDING_INLINE_IMAGES = 16;
   static constexpr size_t MAX_BLOCK_STYLE_DEPTH = 16;
 
   Epub* epub;
@@ -59,6 +60,8 @@ class ChapterHtmlSlimParser {
   uint32_t partWordVisibleOffset = 0;
   uint32_t visibleTextOffset = 0;
   uint32_t partWordReferenceOffset = 0;
+  int16_t partWordInlinePadding = 0;
+  int16_t pendingInlinePadding = 0;
   uint32_t referenceTextOffset = 0;
   bool referenceTextStarted = false;
   bool referenceWhitespacePending = false;
@@ -94,6 +97,12 @@ class ChapterHtmlSlimParser {
   std::string contentBase;
   std::string imageBasePath;
   int imageCounter = 0;
+  struct PendingInlineImage {
+    uint16_t id;
+    std::unique_ptr<ImageBlock> block;
+  };
+  std::vector<PendingInlineImage> pendingInlineImages;
+  uint16_t nextInlineImageId = 1;
   bool lowMemoryImageFallback = false;
   bool lowMemoryAbort = false;
   bool attemptedTextLayoutFontCacheRelease = false;
@@ -254,7 +263,8 @@ class ChapterHtmlSlimParser {
   void addPendingPublisherPageMarker(const char* label);
   void attachPendingPublisherPageMarkers(int yPos);
   void flushPartWordBuffer();
-  void flushLongTextRunIfNeeded(bool force = false);
+  void queueInlinePadding(const CssStyle& cssStyle);
+  void flushLongTextRunIfNeeded(bool force = false, bool flushLastLine = false);
   size_t bufferedWordsBeforeLayoutLimit() const;
   uint16_t textRunBytesBeforeLayoutLimit() const;
   void markCurrentPageFromCurrentTextBlock();

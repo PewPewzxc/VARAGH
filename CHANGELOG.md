@@ -2,6 +2,81 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.1.1 "Tiger"] - unreleased
+
+Based on CrossInk v1.6.1 (release candidate) and VARAGH 1.1.0. Still "Tiger". Everything
+CrossInk 1.6.1 adds is included (see [v1.6.1] below), and every VARAGH feature
+stays: picture shading, Automatic indexing, fast SD card and chapter writing, the
+PSRAM font copy, Persian/IPA fallback font, Highlights hub, flashcards, German
+dictionary tools, swipe to delete, Summer Time and Faster Screen Link.
+
+Updating keeps your settings, books, reading progress, highlights and flashcards.
+Book pages are laid out once more the first time each book is opened (page
+format v181), because CrossInk 1.6.1 changes how small pictures and dialogue
+spacing are placed. Side-button settings move to the new per-button settings;
+"Orientation Change" becomes Rotate Page CCW on one button and Rotate Page CW on
+the other.
+
+### Added (from CrossInk 1.6.1)
+
+- **Library** replaces Recent Books: search, sort by title, author, date added,
+  series, genre or recently read, hide finished books, and a cover grid for
+  recently opened books.
+- **TTF fonts**: put a `.ttf` font into the `fonts` folder and pick it like any
+  other font (8–22 pt), with a TTF Rendering menu. Lexend Deca and Bitter are
+  built in as TTF. NotoVazir and other `.cpfont` fonts work as before. Under a
+  TTF reader font, Persian and IPA words still fall back to an installed
+  `.cpfont` font that has them (NotoVazir); TTF fonts themselves are never used
+  as that fallback.
+- Small pictures inside a paragraph are drawn within the text line. They use the
+  VARAGH picture shading like every other picture.
+- Short- and long-press actions for each side button, including Rotate Page CCW,
+  CW and 180°.
+- Separate top and bottom status bars with left, centre and right slots.
+- Footnotes can be chosen on the page; reading stats per book and an on/off switch.
+- X4 Pro: chapter and book progress in the frontlight drawer; brightness and
+  warmth move one step at a time.
+
+### Added (VARAGH)
+
+- **Go to % shows where you will land**: under the percent, the chapter title
+  and the page in that chapter ("page 8 of 21"). The page count is exact for
+  chapters already laid out with the current settings and marked with ~ when it
+  is estimated from the chapter's size (CrossPoint issue #3739).
+
+### Changed
+
+- **Flashcards**: the end of a practice round now shows two separate numbers:
+  what you tapped this round ("This round: 3 Know it · 1 Again · 2 skipped") and
+  how many cards of the category are learned ("Learned: 5 of 20 cards"). A card
+  counts as learned after Know it in several rounds (box 4 or higher), so one
+  Know it alone does not raise the learned number. Saved progress is unchanged.
+- Swipe left to delete now works in the Library list: sorted by Recently Read it
+  removes the book from the recent books (the file stays), as in Recent Books;
+  in the other sorts it asks before deleting the book file.
+- Carousel Home reuses saved cover pictures after reading and prepares other
+  covers only when shown (CrossInk #743).
+- The X4 Pro Home button steps back through menus instead of jumping Home
+  (CrossInk #770).
+
+### Fixed (from CrossInk 1.6.1)
+
+- EPUBs with unusual XML tags no longer open at "End of Book" (#790).
+- Changing the global font applies to an open book that has no own settings (#772).
+- KOReader sign-in rejects oversized server replies instead of crashing (#783).
+- Persian and other right-to-left books turn pages in reading direction on swipe
+  and tap.
+- Dialogue spacing from empty inline spans is kept (#748).
+
+### For developers
+
+- Merged CrossInk `release/v1.6.1` (3b67ad68). FreeInk SDK moved to 8bbc44c with
+  the VARAGH display/SD-card changes reapplied on top.
+- `SECTION_FILE_VERSION` 181 / partial 0xE1: VARAGH numbers start at 181 so its
+  page caches never match a CrossInk cache with the same number.
+- `SdCardFontManager`: TTF sizes skip script-fallback (other family) files, and
+  changing TTF render options frees and re-attaches the script fallback.
+
 ## [VARAGH v1.1.0 "Tiger"] - 2026-10-01
 
 Based on CrossInk v1.6.0 and VARAGH 1.0.1. Tiger is a speed and picture-quality
@@ -179,6 +254,67 @@ Based on CrossInk v1.6.0.
 
 # CrossInk changelog
 
+## [v1.6.1] - 2026-09-30
+
+### Added
+
+- Turn reading stats tracking on or off for the whole device or individual EPUB and XTC books, while keeping saved history and Time Left estimates.
+- Assign separate short-press and long-press actions to the Left/Up and Right/Down side buttons; existing side-button layouts migrate to matching individual actions.
+- Assign a side-button shortcut to flip the reading screen 180°, alongside clockwise and counterclockwise turns.
+- TTF font support on ESP32-S3 devices. Whole-point sizes from 8pt to 22pt will be automatically available.
+- Library replaces Recent Books with a searchable book list, and adds various book metadata sort options.
+- Assign Library to power, long-press, button-chord, Home-button, or Quick Actions shortcuts to open the book list directly.
+- Customize the top and bottom reader status bars separately, including item positions and progress bars, in EPUB, TXT, and XTC books. Each bar can be previewed where it appears while reading.
+- Assign actions to upward and downward slides along either screen edge on touch devices.
+- View a selected book's reading stats from its Library or File Browser action menu.
+- Reset a book's reader settings from the in-reader Settings tab.
+- View chapter pages and book progress in the X4 Pro frontlight drawer while reading.
+- Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
+- Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
+
+### Changed
+
+- Set Power short-press and long-press to Sleep, Wake, or Sleep/Wake separately; holding Power can always wake the device. Chord shortcuts and the home button can also now sleep the device.
+- Brightness and warmth gestures now respond while you drag, with longer swipes allowing finer one-point adjustments.
+- Text drawing resolves clipping and screen rotation once per glyph, reducing work when painting menus and book pages.
+- Library reuses its index on return visits and refreshes after file changes, instead of scanning the card every time.
+- Home reads saved EPUB progress and chapter metadata without opening or indexing the book, and stops saved-item checks after the first file.
+- Optional EPUB background work yields immediately when rendering is busy, keeping input polling responsive.
+- SD-card fonts share identical character lookup tables across styles, reducing memory use and repeated card reads.
+- EPUB reader menus now share five tabs across devices. X3, X4, and X4 Classic gain live font and margin previews, Reading Stats, and in-book transfer options.
+- The on-screen keyboard now uses wider outlined keys with clearer spacing on touch and button devices.
+- Long status titles shorten faster when they do not fit the screen.
+- Leaving an EPUB or TXT reader releases rebuildable font buffers for other screens.
+- Menu buttons now follow the device layout: Left/Right switch tabs and Up/Down select rows in reader menus and global settings.
+
+### Fixed
+
+- File Transfer choices no longer appear preselected when opened on a touch device.
+- Saved clipping lists now show a scrollbar when more clippings are available below the visible rows.
+- EPUB Safe Mode no longer pins inherited fonts and page layout as personal book settings.
+- The X4 Pro Home button now steps back through dictionary lookup, chapter selection, and nested settings instead of jumping to Home.
+- OPDS downloads now use the first listed author for filename templates when a catalog also lists translators or other contributors.
+- Retain the CSS spacing supplied by empty inline spans.
+- Improve stability when connecting to Wi-Fi for update checks and KOReader authentication on X4 Pro.
+- Crash reports now identify the primary CPU core, show task names when available, preserve both cores' backtraces, and include the firmware ELF hash needed to decode them.
+- Release clipping index memory after closing a book or clearing its clippings.
+- Keep clipped text, exported excerpts, and chapter titles on complete characters when shortened.
+- Keep clipping-selection button hints from covering book text.
+- Changing a reader font with incremental indexing now returns after the current reading position is ready, instead of waiting for the whole chapter to be re-indexed.
+- Release builds use the pinned PlatformIO core during nested ESP-IDF configuration.
+- Adding the sleep moon to the last screen no longer flashes white in night mode.
+- Waking the reader skips the intermediate loading icon refresh.
+- Screenshot folder names keep complete non-English characters when shortened.
+- Longer power-on instructions wrap on the finished update screen.
+- Sticky now records periodic heap and PSRAM statistics over its ROM logging path.
+- RTL EPUBs use reading-order swipe and tap directions.
+- Korean text keeps natural syllable spacing when justified and wraps by word.
+- Footnote choices can be selected directly on the reading page, with a list fallback for links without a visible target.
+- Changing global font or page layout settings from the pull-down panel on touch devices now updates the open book when it inherits those settings.
+- KOReader authentication now rejects unexpectedly large server responses to avoid crashes.
+- EPUBs rewritten with alternate XML namespace prefixes now open normally instead of jumping straight to End of Book.
+- Carousel Home screen reuses cached cover artwork after reading and prepares other positions only when viewed, while keeping progress, reading time, and menu choices current.
+
 ## [v1.6.0] - 2026-09-21
 
 ### Added
@@ -220,7 +356,7 @@ Based on CrossInk v1.6.0.
 - EPUB dictionary lookup can select an individual part of a hyphenated word.
 - Short Power-button frontlight and touchscreen shortcuts in EPUB books no longer run the configured long-press action.
 - Silent restarts now preserve the frontlight state instead of applying wake or schedule settings.
-- The Home button now returns from Customize Status Bar to the previous menu instead of leaving the reader.
+- The Home button now returns from Status Bars to the previous menu instead of leaving the reader.
 - OPDS book downloads can follow secure redirects without sharing catalog credentials with the download host.
 - Larger EPUB stylesheets work on PSRAM readers, including rules that hide duplicate images.
 - JPEG-heavy EPUBs can use PSRAM for decoding on supported readers, leaving internal memory available for reading.

@@ -4,6 +4,8 @@
 #include <FreeInkUIGfxRenderer.h>
 
 #include <atomic>
+#include <functional>
+#include <string>
 
 #include "MappedInputManager.h"
 #include "activities/Activity.h"
@@ -16,6 +18,17 @@ class EpubReaderPercentSelectionActivity final : public Activity {
                                               float initialPercent);
   EpubReaderPercentSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, uint32_t initialPage,
                                      uint32_t pageCount);
+
+  // VARAGH: where a percent lands, shown under the readout (CrossPoint #3739).
+  struct Landing {
+    std::string chapter;    // chapter title; empty when the book has none
+    uint32_t page = 0;      // 1-based page within the chapter; 0 = unknown
+    uint32_t pageCount = 0; // pages in that chapter; 0 = unknown
+    bool estimated = false; // true when the chapter is not laid out yet
+  };
+  // Called while the render lock is held (from render()); must not take it again.
+  using LandingProvider = std::function<bool(float percent, Landing& out)>;
+  void setLandingProvider(LandingProvider provider) { landingProvider = std::move(provider); }
 
   void onEnter() override;
   void onExit() override;
@@ -83,4 +96,10 @@ class EpubReaderPercentSelectionActivity final : public Activity {
   // Long-press Confirm toggles into keypad mode (or backspaces within it); swallow
   // the eventual release so it doesn't also fire the short-press action.
   bool confirmLongPressFired = false;
+
+  LandingProvider landingProvider;
+  // Value shown in the readout (typed keypad digits or the slider value), in centipercent.
+  bool previewCentipercent(uint32_t& out) const;
+  // Draws the chapter and page lines for the previewed percent.
+  void buildLanding(UiApp::ScreenType& screen, char* line, size_t lineSize);
 };

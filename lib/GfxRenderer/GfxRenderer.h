@@ -262,7 +262,7 @@ class GfxRenderer {
   // Drawing
   bool isPixelBlack(int x, int y) const;
   void drawPixel(int x, int y, bool state = true) const;
-  // Fast path for unrotated glyphs: same result as drawPixel() per ink pixel, clipped and rotated once per glyph.
+  // Unscaled glyphs share one clipped, orientation-aware rasterizer.
   void drawGlyphBitmap(const uint8_t* bitmap, int width, int height, const glyphBitmap::Frame& frame, bool twoBit,
                        RenderMode mode, bool state) const;
   void drawLine(int x1, int y1, int x2, int y2, bool state = true) const;
@@ -302,6 +302,12 @@ class GfxRenderer {
   void writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* src);
 
   // Text
+  struct TextVerticalBounds {
+    int top = 0;
+    int bottom = 0;
+  };
+  // Visible regular-text glyph bounds relative to the y coordinate passed to drawText().
+  TextVerticalBounds getTextVerticalBounds(int fontId, const char* text) const;
   int getTextWidth(int fontId, const char* text, EpdFontFamily::Style style = EpdFontFamily::REGULAR,
                    BidiUtils::BidiBaseDir baseDir = BidiUtils::BidiBaseDir::AUTO) const;
   void drawCenteredText(int fontId, int y, const char* text, bool black = true,

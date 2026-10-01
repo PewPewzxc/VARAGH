@@ -200,7 +200,10 @@ void OtaUpdateActivity::render(RenderLock&&) {
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == FINISHED) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_COMPLETE), true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, tr(STR_POWER_ON_HINT));
+    const int hintY = top + height + metrics.verticalSpacing;
+    const Rect hintBounds{metrics.contentSidePadding, hintY, pageWidth - metrics.contentSidePadding * 2,
+                          pageHeight - hintY};
+    UITheme::drawCenteredWrappedText(renderer, hintBounds, UI_10_FONT_ID, hintY, tr(STR_POWER_ON_HINT), 3);
   }
 
   renderer.displayBuffer(screenTransitionRefresh.modeFor(static_cast<uint8_t>(state)));

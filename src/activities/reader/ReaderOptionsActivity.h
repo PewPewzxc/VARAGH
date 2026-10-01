@@ -47,6 +47,7 @@ class ReaderOptionsActivity final : public Activity {
   DictionaryFontChangedCallback dictionaryFontChangedCallback = nullptr;
   void* dictionaryFontChangedContext = nullptr;
   bool settingsDirty = false;
+  bool ttfRenderingChanged = false;
   bool stablePageNumbersAvailable = false;
 
   using UiApp = freeink::ui::FreeInkApp<20, 4>;
@@ -75,6 +76,7 @@ class ReaderOptionsActivity final : public Activity {
   void persistGlobalSettings() override;
   void beginGlobalSettingsEdit();
   void endGlobalSettingsEdit();
+  void finishWithResult(bool cancelled = false);
   static void optionsScreen(UiApp::ScreenType& screen, void* user);
   static void onRowEvent(const freeink::ui::ActionEvent& event, void* user);
   void buildOptionsScreen(UiApp::ScreenType& screen);

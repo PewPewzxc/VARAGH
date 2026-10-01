@@ -272,7 +272,7 @@ void BookReadingStats::formatDuration(uint32_t seconds, char* buf, size_t len) {
   }
 }
 
-void BookReadingStats::save(const std::string& cachePath) const {
+bool BookReadingStats::save(const std::string& cachePath) const {
   const std::string statsFileName = statsFileNameForVersion(STATS_FILE_VERSION);
   const std::string statsPath = cachePath + "/" + statsFileName;
   const std::string tmpPath = statsPath + ".tmp";
@@ -308,13 +308,13 @@ void BookReadingStats::save(const std::string& cachePath) const {
   // silently wipe the book's history.
   if (Storage.exists(tmpPath.c_str()) && !Storage.remove(tmpPath.c_str())) {
     LOG_ERR("STATS", "Could not remove stale stats temp file: %s", tmpPath.c_str());
-    return;
+    return false;
   }
 
   FsFile f;
   if (!Storage.openFileForWrite("STATS", tmpPath, f)) {
     LOG_ERR("STATS", "Could not write %s", tmpPath.c_str());
-    return;
+    return false;
   }
 
   const size_t written = f.write(data, STATS_FILE_SIZE);
@@ -323,7 +323,7 @@ void BookReadingStats::save(const std::string& cachePath) const {
             static_cast<unsigned>(STATS_FILE_SIZE));
     f.close();
     Storage.remove(tmpPath.c_str());
-    return;
+    return false;
   }
 
   f.flush();
@@ -331,13 +331,13 @@ void BookReadingStats::save(const std::string& cachePath) const {
     LOG_ERR("STATS", "Failed to sync %s", tmpPath.c_str());
     f.close();
     Storage.remove(tmpPath.c_str());
-    return;
+    return false;
   }
 
   if (!f.close()) {
     LOG_ERR("STATS", "Failed to close %s", tmpPath.c_str());
     Storage.remove(tmpPath.c_str());
-    return;
+    return false;
   }
 
   const bool hadOriginal = Storage.exists(statsPath.c_str());
@@ -345,12 +345,12 @@ void BookReadingStats::save(const std::string& cachePath) const {
     if (Storage.exists(backupPath.c_str()) && !Storage.remove(backupPath.c_str())) {
       LOG_ERR("STATS", "Could not remove stale stats backup: %s", backupPath.c_str());
       Storage.remove(tmpPath.c_str());
-      return;
+      return false;
     }
     if (!Storage.rename(statsPath.c_str(), backupPath.c_str())) {
       LOG_ERR("STATS", "Could not back up %s", statsFileName.c_str());
       Storage.remove(tmpPath.c_str());
-      return;
+      return false;
     }
   }
 
@@ -360,12 +360,13 @@ void BookReadingStats::save(const std::string& cachePath) const {
       LOG_ERR("STATS", "Could not restore stats backup: %s", backupPath.c_str());
     }
     if (hadOriginal && Storage.exists(statsPath.c_str())) Storage.remove(tmpPath.c_str());
-    return;
+    return false;
   }
 
   if (hadOriginal && Storage.exists(backupPath.c_str()) && !Storage.remove(backupPath.c_str())) {
     LOG_ERR("STATS", "Could not remove completed stats backup: %s", backupPath.c_str());
   }
+  return true;
 }
 
 bool BookReadingStats::remove(const std::string& cachePath) {

@@ -13,7 +13,7 @@
 
 namespace {
 constexpr uint32_t BOOK_CACHE_MAGIC = 0x425843FF;  // bytes: 0xFF, "CXB"
-constexpr uint8_t BOOK_CACHE_VERSION = 9;          // v9: NFC titles and updated guide start-reference handling
+constexpr uint8_t BOOK_CACHE_VERSION = 10;         // v10: namespace-aware OPF parsing
 constexpr char bookBinFile[] = "/book.bin";
 constexpr char tmpSpineBinFile[] = "/spine.bin.tmp";
 constexpr char tmpTocBinFile[] = "/toc.bin.tmp";

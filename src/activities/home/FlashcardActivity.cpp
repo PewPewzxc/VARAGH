@@ -83,6 +83,7 @@ void FlashcardActivity::onEnter() {
 void FlashcardActivity::startSession() {
   HighlightStore::loadLevels(categoryId, offsets.size(), levels);
   order = HighlightFormat::reviewOrder(levels);
+  roundAnswers.assign(order.size(), 0);
   finished = order.empty();
   showCard(0);
 }
@@ -101,6 +102,7 @@ void FlashcardActivity::answer(const bool knewIt) {
   const uint8_t next = HighlightFormat::levelAfterAnswer(levels[index], knewIt);
   if (!HighlightStore::setLevel(categoryId, index, next)) LOG_ERR("FLASH", "Could not save card level");
   levels[index] = next;
+  roundAnswers[position] = knewIt ? 1 : 2;
   if (position + 1 >= order.size()) {
     finished = true;
     requestUpdate();
@@ -214,14 +216,28 @@ void FlashcardActivity::drawScreen(const int font) {
   const int pad = 18;
   const int innerX = cardRect.x + pad;
   const int innerW = cardRect.w - 2 * pad;
-  char summary[64];
-  snprintf(summary, sizeof(summary), "%u/%u %s", static_cast<unsigned>(knownCount()),
-           static_cast<unsigned>(levels.size()), tr(STR_KNOWN));
-
   if (finished) {
+    // Two separate numbers: what was tapped this round, and how many cards of
+    // the whole category are learned (box KNOWN_LEVEL or higher, i.e. Know it
+    // several rounds in a row). One "Know it" alone does not make a card learned.
+    const auto knewCount = static_cast<unsigned>(std::count(roundAnswers.begin(), roundAnswers.end(), 1));
+    const auto againCount = static_cast<unsigned>(std::count(roundAnswers.begin(), roundAnswers.end(), 2));
+    const unsigned skippedCount = static_cast<unsigned>(roundAnswers.size()) - knewCount - againCount;
+    char round[128];
+    snprintf(round, sizeof(round), tr(STR_FLASHCARDS_ROUND), knewCount, againCount, skippedCount);
+    char learned[96];
+    snprintf(learned, sizeof(learned), tr(STR_FLASHCARDS_LEARNED), static_cast<unsigned>(knownCount()),
+             static_cast<unsigned>(levels.size()));
+
     const int midY = cardRect.y + cardRect.h / 3;
     renderer.drawCenteredText(UI_12_FONT_ID, midY, tr(STR_FLASHCARDS_DONE), true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, midY + renderer.getLineHeight(UI_12_FONT_ID) * 2, summary);
+    const int maxY = cardRect.y + cardRect.h;
+    int y = midY + renderer.getLineHeight(UI_12_FONT_ID) * 2;
+    if (!order.empty()) {
+      y = drawParagraphs(renderer, UI_10_FONT_ID, round, innerX, y, innerW, maxY, EpdFontFamily::REGULAR, true);
+      y += renderer.getLineHeight(UI_10_FONT_ID) / 2;
+    }
+    drawParagraphs(renderer, UI_10_FONT_ID, learned, innerX, y, innerW, maxY, EpdFontFamily::BOLD, true);
     if (!order.empty()) drawButton(renderer, restartRect.x, restartRect.y, restartRect.w, restartRect.h,
                                    tr(STR_START_OVER), true);
   } else {

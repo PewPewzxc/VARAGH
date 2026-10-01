@@ -83,8 +83,9 @@ ReaderActivity::EpubOpenResult ReaderActivity::loadEpub(const std::string& path)
   // panel keeps showing its last image, and the next activity redraws fully.
   GfxRenderer::FrameBufferLoan loan(renderer);
   const uint32_t epubLoadStartedMs = millis();
-  const bool loaded = epub->load(true, result.readerSettings.readerSettings.embeddedStyle == 0,
-                                 Epub::XLocationLoadMode::Immediate, true);
+  const bool loaded = epub->load(
+      true, result.readerSettings.hasSafeModeOverride || result.readerSettings.readerSettings.embeddedStyle == 0,
+      Epub::XLocationLoadMode::Immediate, true);
   const uint32_t epubLoadMs = millis() - epubLoadStartedMs;
   if (loaded) {
     const uint32_t imageIndexStartedMs = millis();

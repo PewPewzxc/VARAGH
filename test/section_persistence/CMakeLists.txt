@@ -2,6 +2,7 @@ add_executable(SectionPersistenceTest
   SectionPersistenceTest.cpp
   SectionPersistenceLinkStubs.cpp
   ${REPO_ROOT}/lib/Epub/Epub/Section.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/css/CssParser.cpp
 )
 
 target_include_directories(SectionPersistenceTest PRIVATE

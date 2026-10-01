@@ -28,12 +28,17 @@ constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // v75: HTML hidden attributes suppress content in all reading modes.
 // v76: Paragraphs without source CSS indentation no longer receive a synthetic indent.
 // v77: Ordered lists, marker suppression, and list-container insets affect page layout.
-// v78: VARAGH script fallback measures Persian/IPA words in the fallback font.
-constexpr uint8_t SECTION_FILE_VERSION = 78;
+// v78: Inline CSS padding affects dialogue and other styled text positions.
+// v79: Hangul word boundaries and line-end splits change cached page positions.
+// v80: Small EPUB images can share text lines, changing cached page positions.
+// VARAGH: v181 = CrossInk v80 + VARAGH script fallback (Persian/IPA words are
+// measured in the fallback font). VARAGH numbers start at 181 so its caches
+// never match a CrossInk cache of the same number (VARAGH 1.0/1.1.0 used v78).
+constexpr uint8_t SECTION_FILE_VERSION = 181;
 // Suspended incremental build: valid pages plus LUTs and a parse-watermark trailer.
 // Change this with layout or payload changes so stale partial pages cannot resume
 // under a different layout contract.
-constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xF4;
+constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xE1;  // must differ from 181 (0xB5)
 constexpr uint32_t HEADER_SIZE =
     sizeof(SECTION_CACHE_MAGIC) + sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(bool) +
     sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) + sizeof(uint8_t) +
@@ -152,7 +157,7 @@ uint32_t Section::onPageComplete(std::unique_ptr<Page> page) {
   // Scan the page before serializing it so image-only and mixed pages can be
   // protected from the later XHTML byte-density projection without changing
   // the serialized page payload.
-  const uint16_t imageUnits = page->imageEstimateUnits(imageEstimateViewportHeight_);
+  const uint16_t imageUnits = page->imageEstimateUnits(imageEstimateViewportWidth_, imageEstimateViewportHeight_);
   // The page's fields reach the card in one write instead of one each (a full
   // build's batch collects several pages).
   if (!wholeBuildBatch_) beginFileWriteBatch();
@@ -475,6 +480,7 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
   pageCount = 0;
   builtPageCount_ = 0;
   imageEstimateViewportHeight_ = viewportHeight;
+  imageEstimateViewportWidth_ = viewportWidth;
   protectedImageUnits_ = 0;
   if (layoutAbortedForLowMemory) *layoutAbortedForLowMemory = false;
   if (buildOptions.cancellationObserved) *buildOptions.cancellationObserved = false;
@@ -859,6 +865,7 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
   const auto tmpSectionPath = binTmpPath();
   builtPageCount_ = 0;
   imageEstimateViewportHeight_ = viewportHeight;
+  imageEstimateViewportWidth_ = viewportWidth;
   protectedImageUnits_ = 0;
   pageCount = partial_ ? partialPageCount_ : 0;
   buildComplete_ = false;

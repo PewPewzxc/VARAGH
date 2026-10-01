@@ -39,6 +39,9 @@ class FlashcardActivity final : public Activity {
   std::vector<uint32_t> offsets;
   std::vector<uint8_t> levels;
   std::vector<uint16_t> order;
+  // This round's answer per position in `order`: 0 none, 1 Know it, 2 Again.
+  // Re-answering a card after swiping back replaces its earlier answer.
+  std::vector<uint8_t> roundAnswers;
   size_t position = 0;
   bool finished = false;
   bool flipped = false;

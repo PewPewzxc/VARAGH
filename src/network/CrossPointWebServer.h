@@ -110,6 +110,8 @@ class CrossPointWebServer {
   void handleSettingsPage() const;
   void handleGetSettings() const;
   void handlePostSettings();
+  void handleGetStatusBars() const;
+  void handlePostStatusBars();
 
   // Font management handlers
   void handleFontsPage() const;
@@ -124,7 +126,6 @@ class CrossPointWebServer {
     std::string familyName;
     std::string filePath;
     bool valid = false;
-    bool magicChecked = false;
     size_t bytesWritten = 0;
     static constexpr size_t BUFFER_SIZE = 4096;
     std::vector<uint8_t> buffer;

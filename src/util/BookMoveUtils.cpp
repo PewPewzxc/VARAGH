@@ -2,6 +2,7 @@
 
 #include <Epub.h>
 #include <HalStorage.h>
+#include <LibraryBuilder.h>
 #include <Logging.h>
 #include <Txt.h>
 #include <Xtc.h>
@@ -184,6 +185,7 @@ RenameMigrationResult migrateRenamedBookState(const std::string& oldPath, const 
     cacheMoved = true;
   }
 
+  library::invalidateLibraryIndex();
   if (!Storage.rename(oldPath.c_str(), newPath.c_str())) {
     LOG_ERR("BookMove", "Failed to rename file: %s -> %s", oldPath.c_str(), newPath.c_str());
     return recover();
@@ -211,6 +213,7 @@ RenameMigrationResult migrateRenamedBookState(const std::string& oldPath, const 
 
 bool migrateMovedEpubState(const std::string& oldPath, const std::string& newPath, const std::string& oldCachePath,
                            const std::string& title, const std::string& author, const bool keepInRecents) {
+  library::invalidateLibraryIndex();
   bool ok = true;
 
   const std::string newCachePath = Epub::cachePathForFilePath(newPath, "/.crosspoint");

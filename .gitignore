@@ -33,3 +33,5 @@ dist-publish/
 /CMakeLists.txt
 /dependencies.lock
 /sdkconfig.*
+
+lib/ScalableFont/*.generated.h

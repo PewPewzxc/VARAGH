@@ -242,7 +242,7 @@ void XMLCALL OpdsParser::endElement(void* userData, const XML_Char* name) {
     } else if (strcmp(name, "author") == 0 || strstr(name, ":author") != nullptr) {
       self->inAuthor = false;
     } else if (self->inAuthorName && (strcmp(name, "name") == 0 || strstr(name, ":name") != nullptr)) {
-      self->currentEntry.author = std::move(self->currentText);
+      if (self->currentEntry.author.empty()) self->currentEntry.author = std::move(self->currentText);
       self->inAuthorName = false;
     } else if (strcmp(name, "id") == 0 || strstr(name, ":id") != nullptr) {
       if (self->inId) self->currentEntry.id = std::move(self->currentText);

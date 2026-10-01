@@ -25,7 +25,7 @@ TEST_F(BookReadingStatsAtomicTest, RestoresOriginalWhenReplacementRenameFails) {
   statsWithSeconds(123).save(CACHE_PATH);
   Storage.failNextRenameFrom(statsPath + ".tmp");
 
-  statsWithSeconds(999).save(CACHE_PATH);
+  EXPECT_FALSE(statsWithSeconds(999).save(CACHE_PATH));
 
   EXPECT_EQ(BookReadingStats::load(CACHE_PATH).totalReadingSeconds, 123U);
   EXPECT_TRUE(Storage.exists(statsPath.c_str()));
@@ -84,7 +84,7 @@ TEST_F(BookReadingStatsAtomicTest, RecoversTempWhenPublishAndBackupRestoreFail) 
 
 TEST_F(BookReadingStatsAtomicTest, SuccessfulReplacementRemovesTransactionFiles) {
   statsWithSeconds(123).save(CACHE_PATH);
-  statsWithSeconds(789).save(CACHE_PATH);
+  EXPECT_TRUE(statsWithSeconds(789).save(CACHE_PATH));
 
   EXPECT_EQ(BookReadingStats::load(CACHE_PATH).totalReadingSeconds, 789U);
   EXPECT_FALSE(Storage.exists((statsPath + ".tmp").c_str()));
