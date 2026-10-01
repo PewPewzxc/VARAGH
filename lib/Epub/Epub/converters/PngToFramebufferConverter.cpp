@@ -14,6 +14,7 @@
 #include "DirectPixelWriter.h"
 #include "DitherUtils.h"
 #include "PixelCache.h"
+#include "ToneMappedImage.h"
 
 namespace {
 
@@ -39,6 +40,10 @@ struct PngContext {
 
   uint8_t* grayLineBuffer{nullptr};
   uint32_t lastYieldMs{0};
+
+  // Tone-mapped path (PSRAM boards): every source row goes to the mapper.
+  ToneMappedImageWriter* tone{nullptr};
+  int toneNextRow{0};
 };
 
 // File I/O callbacks use pFile->fHandle to access the FsFile*,
@@ -214,6 +219,18 @@ int pngDrawCallback(PNGDRAW* pDraw) {
   int srcY = pDraw->y;
   int srcWidth = ctx->srcWidth;
 
+  if (ctx->tone) {
+    // PNGdec rejects interlaced images, so rows arrive in order; a repeated or
+    // skipped row would misalign the mapper, so only the expected one is fed.
+    if (srcY == ctx->toneNextRow) {
+      convertLineToGray(pDraw->pPixels, ctx->grayLineBuffer, srcWidth, pDraw->iPixelType, pDraw->iBpp,
+                        pDraw->pPalette, pDraw->iHasAlpha);
+      ctx->tone->addSourceRow(ctx->grayLineBuffer);
+      ++ctx->toneNextRow;
+    }
+    return 1;
+  }
+
   // Map source rows with the exact output-height ratio. During downscaling,
   // multiple source rows can select the same output row; during upscaling, one
   // source row must be repeated across every output row in its range. Emitting
@@ -246,7 +263,10 @@ int pngDrawCallback(PNGDRAW* pDraw) {
   for (int dstY = firstDstY; dstY < endDstY; dstY++) {
     ctx->lastDstY = dstY;
     int outY = ctx->config->y + dstY;
-    if (outY >= ctx->screenHeight) continue;
+    // Rows above the screen too: ImageBlock passes partly visible images, and
+    // DirectPixelWriter does not bounds-check the physical x that a negative
+    // logical y maps to in portrait, so drawing them wrote past the frame.
+    if (outY < 0 || outY >= ctx->screenHeight) continue;
 
     pw.beginRow(outY);
 
@@ -439,6 +459,14 @@ bool PngToFramebufferConverter::decodeToFramebuffer(const std::string& imagePath
     }
   }
 
+  // Downscales (and 1:1) on PSRAM boards take the tone-mapped path.
+  ToneMappedImageWriter tone;
+  if (ToneMappedImageWriter::shouldUse(config, ctx.srcWidth, ctx.srcHeight, ctx.dstWidth, ctx.dstHeight) &&
+      tone.begin(renderer, config, &ctx.cache, &ctx.caching, ctx.srcWidth, ctx.srcHeight, ctx.dstWidth,
+                 ctx.dstHeight)) {
+    ctx.tone = &tone;
+  }
+
   ctx.lastYieldMs = millis();
   rc = png->decode(&ctx, 0);
 
@@ -454,6 +482,8 @@ bool PngToFramebufferConverter::decodeToFramebuffer(const std::string& imagePath
 
   png->close();
   delete png;
+
+  if (ctx.tone) tone.finish();
 
   // Finalize the streamed cache (caching may have been cleared on a flush error).
   if (ctx.caching) {

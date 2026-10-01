@@ -9,6 +9,7 @@
 
 #include "EpdFont.h"
 #include "EpdFontData.h"
+#include "FontFileMirror.h"
 
 // On-disk binary format version for .cpfont files. Defined as a preprocessor
 // macro (rather than a constexpr) so it can be stringified into the SD-fonts
@@ -118,6 +119,10 @@ class SdCardFont {
   void resetStats();
   const Stats& getStats() const { return stats_; }
   bool lastPrewarmFailed() const { return lastPrewarmFailed_; }
+
+  // True while this font's bytes are being kept in PSRAM (see FontFileMirror).
+  bool isMirrored() const { return mirror_.attached(); }
+  const FontFileMirror::Stats& mirrorStats() const { return mirror_.stats(); }
 
   // Content hash of the file header + style TOC entries (computed during load).
   // Used to generate deterministic font IDs for section cache invalidation.
@@ -294,6 +299,11 @@ class SdCardFont {
   void mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sortedNew, uint32_t newCount);
 
   Stats stats_;
+  // PSRAM copy of this .cpfont, filled block by block as glyphs are read.
+  // Every read below goes through FontFileReader, which serves it from here
+  // when attached and from the SD card otherwise. Mutable because const
+  // lookups such as readAdvance() fill it as a side effect, like any cache.
+  mutable FontFileMirror mirror_;
   uint32_t contentHash_ = 0;
   bool loaded_ = false;
   bool lastPrewarmFailed_ = false;

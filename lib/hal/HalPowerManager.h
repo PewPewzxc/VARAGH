@@ -24,6 +24,7 @@ extern HalPowerManager powerManager;  // Singleton
 class HalPowerManager {
   int normalFreq = 0;  // MHz
   bool isLowPower = false;
+  bool panelWaitLowered = false;  // CPU lowered by beginPanelWait(), not setPowerSaving()
 
   mutable int _batteryCachedPercent = 0;  // Last read battery percentage * 10 (0-1000); callers divide by 10 (ADC/X4
                                           // path only — I2C/X3 path stores 0-100 directly)
@@ -39,13 +40,25 @@ class HalPowerManager {
 #else
   static constexpr int LOW_POWER_FREQ = 10;  // MHz
 #endif
-  static constexpr unsigned long IDLE_POWER_SAVING_MS = 3000;  // ms
+  // Drop to the low-power clock this long after the last input. Instant input
+  // wake restores full speed before an input is handled, so the window only
+  // needs to cover short bursts of taps (it was 3000 ms before input wake).
+  static constexpr unsigned long IDLE_POWER_SAVING_MS = 1000;  // ms
   static constexpr unsigned long BATTERY_POLL_MS = 1500;       // ms
 
   void begin();
 
   // Control CPU frequency for power saving
   void setPowerSaving(bool enabled);
+
+  // Panel-refresh waits. The display driver calls these around long BUSY
+  // waits, when a render has handed the frame to the panel and only waits for
+  // its waveform. The CPU drops to LOW_POWER_FREQ for that window even while a
+  // render Lock is held, then returns to the speed it had; the refresh itself
+  // takes exactly as long either way. S3 boards only (LOW_POWER_FREQ >= 80,
+  // so the APB peripheral clock is unchanged); elsewhere these do nothing.
+  void beginPanelWait();
+  void endPanelWait();
 
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode

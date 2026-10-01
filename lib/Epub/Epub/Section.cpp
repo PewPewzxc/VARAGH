@@ -9,6 +9,7 @@
 #include <Memory.h>
 #include <MemoryBudget.h>
 #include <Serialization.h>
+#include <SpeedLog.h>
 
 #include "Epub/ReferencePageNavigation.h"
 #include "Epub/css/CssParser.h"
@@ -102,6 +103,18 @@ bool promoteSectionCache(const std::string& tmpPath, const std::string& filePath
   }
   return false;
 }
+
+// Speed log: one "index.<part>" line per build phase that took at least 1 ms
+// since `start` (a = spine index). Parts overlap; see SpeedProfile.h.
+void recordIndexParts(const SpeedProfile::Snapshot& start, const int spineIndex) {
+  const SpeedProfile::Snapshot now = SpeedProfile::snapshot();
+  for (int i = 0; i < SpeedProfile::PartCount; ++i) {
+    const uint32_t us = now.us[i] - start.us[i];
+    if (us >= 1000) {
+      SpeedLog::recordNamed(SpeedProfile::partName(static_cast<SpeedProfile::Part>(i)), us / 1000, spineIndex);
+    }
+  }
+}
 }  // namespace
 
 Section::Section(const std::shared_ptr<Epub>& epub, const int spineIndex, GfxRenderer& renderer,
@@ -125,6 +138,7 @@ Section::Section(Epub& epub, const int spineIndex, GfxRenderer& renderer, const 
 Section::~Section() { suspendBuild(); }
 
 uint32_t Section::onPageComplete(std::unique_ptr<Page> page) {
+  const SpeedProfile::Scope profile(SpeedProfile::Write);
   if (!ensureBuildFileOpen()) {
     LOG_ERR("SCT", "File not open for writing page %d", builtPageCount_);
     return 0;
@@ -139,7 +153,12 @@ uint32_t Section::onPageComplete(std::unique_ptr<Page> page) {
   // protected from the later XHTML byte-density projection without changing
   // the serialized page payload.
   const uint16_t imageUnits = page->imageEstimateUnits(imageEstimateViewportHeight_);
-  if (!page->serialize(file)) {
+  // The page's fields reach the card in one write instead of one each (a full
+  // build's batch collects several pages).
+  if (!wholeBuildBatch_) beginFileWriteBatch();
+  const bool serialized = page->serialize(file);
+  const bool written = wholeBuildBatch_ || endFileWriteBatch();
+  if (!serialized || !written) {
     LOG_ERR("SCT", "Failed to serialize page %d", builtPageCount_);
     return 0;
   }
@@ -152,6 +171,30 @@ uint32_t Section::onPageComplete(std::unique_ptr<Page> page) {
     pageCount = builtPageCount_;
   }
   return position;
+}
+
+void Section::beginFileWriteBatch() {
+#ifndef SIMULATOR
+  constexpr size_t WRITE_BATCH_BYTES = 8 * 1024;
+  if (!writeBatch_) {
+#if defined(ARDUINO_ARCH_ESP32)
+    // Boards without PSRAM keep writing field by field, as before.
+    if (psramHeapAvailable()) writeBatch_ = makePsramByteBufferNoThrow(WRITE_BATCH_BYTES);
+#else
+    // Host tests take the batched path too.
+    writeBatch_ = makeHeapByteBufferNoThrow(WRITE_BATCH_BYTES);
+#endif
+  }
+  if (writeBatch_) file.beginWriteBatch(writeBatch_.get(), WRITE_BATCH_BYTES);
+#endif
+}
+
+bool Section::endFileWriteBatch() {
+#ifndef SIMULATOR
+  return file.endWriteBatch();
+#else
+  return true;
+#endif
 }
 
 bool Section::ensureBuildFileOpen() {
@@ -403,6 +446,8 @@ bool Section::clearCache() const {
 bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::function<void()>& popupFn,
                                 bool* imagesWereSuppressed, bool* layoutAbortedForLowMemory,
                                 const SectionBuildOptions buildOptions) {
+  const uint32_t buildStartedMs = millis();
+  const SpeedProfile::Snapshot profileStart = SpeedProfile::snapshot();
   const int fontId = spec.fontId;
   const float lineCompression = spec.lineCompression;
   const bool extraParagraphSpacing = spec.extraParagraphSpacing;
@@ -498,7 +543,10 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
       }
       const size_t htmlStreamChunkSize = sectionHtmlStreamChunkSize(buildOptions.isPreview());
       prepareSectionZipInflate(renderer, fontId);
-      streamed = epub->readItemContentsToStream(localPath, tmpHtml, htmlStreamChunkSize);
+      streamed = [&] {
+        const SpeedProfile::Scope profile(SpeedProfile::Unzip);
+        return epub->readItemContentsToStream(localPath, tmpHtml, htmlStreamChunkSize);
+      }();
       fileSize = tmpHtml.size();
       // Explicitly close() file before calling Storage.remove()
       tmpHtml.close();
@@ -550,6 +598,14 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
     cleanupTempHtml();
     return false;
   }
+  // Pages and the page index reach the card in large writes instead of one per
+  // page; the batch ends before the header is patched (or when the file closes).
+  beginFileWriteBatch();
+  wholeBuildBatch_ = true;
+  struct WholeBuildBatchFlag {
+    bool& flag;
+    ~WholeBuildBatchFlag() { flag = false; }
+  } wholeBuildBatchFlag{wholeBuildBatch_};
   SectionPageIndex pageIndex;
   bool pageCompletionFailed = false;
 
@@ -563,7 +619,10 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
     cssParser = epub->getCssParser();
     if (cssParser) {
       const auto cssHeapBefore = MemoryBudget::snapshot();
-      const bool cssLoaded = cssParser->loadFromCache();
+      const bool cssLoaded = [&] {
+        const SpeedProfile::Scope profile(SpeedProfile::Css);
+        return cssParser->loadFromCache();
+      }();
       const auto cssHeapAfter = MemoryBudget::snapshot();
       LOG_DBG("SCT", "CSS cache load: ok=%u partial=%u rules=%u free=%u->%u delta=%d maxAlloc=%u->%u delta=%d",
               cssLoaded ? 1U : 0U, cssParser->isCachePartial() ? 1U : 0U, static_cast<unsigned>(cssParser->ruleCount()),
@@ -633,6 +692,7 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
   if (cancelBuild()) {
     cancelled = true;
   } else {
+    const SpeedProfile::Scope profile(SpeedProfile::Parse);
     success = visitor.beginParse();
   }
   while (success && !cancelled) {
@@ -641,7 +701,10 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
       cancelled = true;
       break;
     }
-    const auto status = visitor.parseStep();
+    const auto status = [&] {
+      const SpeedProfile::Scope profile(SpeedProfile::Parse);
+      return visitor.parseStep();
+    }();
     if (status == ChapterHtmlSlimParser::ParseStatus::Error) {
       visitor.abortParse();
       success = false;
@@ -652,6 +715,7 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
         visitor.abortParse();
         cancelled = true;
       } else {
+        const SpeedProfile::Scope profile(SpeedProfile::Parse);
         success = visitor.finishParse();
       }
       break;
@@ -703,7 +767,8 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
 
   const auto& anchors = visitor.getAnchors();
   SectionPageIndexOffsets pageIndexOffsets;
-  const bool wrotePageIndex = writeSectionPageIndex(
+  // The build's batch is still open and collects the page index too.
+  const bool indexSerialized = writeSectionPageIndex(
       file, pageIndex,
       [&anchors](FsFile& output) {
         if (!serialization::tryWritePod(output, static_cast<uint16_t>(anchors.size()))) return false;
@@ -713,6 +778,7 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
         return true;
       },
       pageIndexOffsets);
+  const bool wrotePageIndex = endFileWriteBatch() && indexSerialized;
   if (!wrotePageIndex) {
     LOG_ERR("SCT", "Failed to write section page index");
     file.close();
@@ -752,6 +818,8 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
   partial_ = false;
   partialPageCount_ = 0;
   partialProtectedImageUnits_ = 0;
+  SpeedLog::record(SpeedLog::Event::Index, millis() - buildStartedMs, pageCount, spineIndex);
+  recordIndexParts(profileStart, spineIndex);
   return true;
 }
 
@@ -775,6 +843,8 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
     LOG_ERR("SCT", "startBuild called while a build is already active");
     return false;
   }
+  const uint32_t buildStartedMs = millis();
+  const SpeedProfile::Snapshot profileStart = SpeedProfile::snapshot();
 
   // Reclaim rebuildable font data before CSS and layout allocate their
   // working buffers. Font objects remain registered and reload on demand.
@@ -838,7 +908,10 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
       }
       const size_t htmlStreamChunkSize = sectionHtmlStreamChunkSize(buildOptions.isPreview());
       prepareSectionZipInflate(renderer, fontId);
-      streamed = epub->readItemContentsToStream(localPath, tmpHtml, htmlStreamChunkSize);
+      streamed = [&] {
+        const SpeedProfile::Scope profile(SpeedProfile::Unzip);
+        return epub->readItemContentsToStream(localPath, tmpHtml, htmlStreamChunkSize);
+      }();
       fileSize = tmpHtml.size();
       tmpHtml.close();
       if (!streamed && Storage.exists(tmpHtmlPath.c_str())) {
@@ -879,6 +952,8 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
     return false;
   }
   ctx->reusedHtml = htmlCached;
+  ctx->startedAtMs = buildStartedMs;
+  ctx->profileStart = profileStart;
   ctx->htmlPath = htmlPath;
   ctx->tmpHtmlPath = tmpHtmlPath;
   ctx->tmpSectionPath = tmpSectionPath;
@@ -892,7 +967,10 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
     ctx->cssParser = epub->getCssParser();
     if (ctx->cssParser) {
       const auto cssHeapBefore = MemoryBudget::snapshot();
-      const bool cssLoaded = ctx->cssParser->loadFromCache();
+      const bool cssLoaded = [&] {
+        const SpeedProfile::Scope profile(SpeedProfile::Css);
+        return ctx->cssParser->loadFromCache();
+      }();
       const auto cssHeapAfter = MemoryBudget::snapshot();
       LOG_DBG("SCT", "CSS cache load: ok=%u partial=%u rules=%u free=%u->%u delta=%d maxAlloc=%u->%u delta=%d",
               cssLoaded ? 1U : 0U, ctx->cssParser->isCachePartial() ? 1U : 0U,
@@ -963,7 +1041,10 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
 
   Hyphenator::setPreferredLanguage(epub->getLanguage());
   build_ = std::move(ctx);
-  if (!build_->parser->beginParse()) {
+  if (![&] {
+        const SpeedProfile::Scope profile(SpeedProfile::Parse);
+        return build_->parser->beginParse();
+      }()) {
     LOG_ERR("SCT", "Failed to begin incremental section parse");
     lastLayoutAbortedForLowMemory_ = build_->parser->wasLowMemoryAbortTriggered();
     if (lastLayoutAbortedForLowMemory_ && partial_) {
@@ -987,7 +1068,10 @@ bool Section::buildSomeMore(const int maxPages) {
   // would otherwise turn one "small" chunk into a blocking rebuild of the whole watermark.
   const int startCount = builtPageCount_;
   for (;;) {
-    const auto status = build_->parser->parseStep();
+    const auto status = [&] {
+      const SpeedProfile::Scope profile(SpeedProfile::Parse);
+      return build_->parser->parseStep();
+    }();
     lastImagesWereSuppressed_ = lastImagesWereSuppressed_ || build_->parser->wasLowMemoryFallbackTriggered();
     lastLayoutAbortedForLowMemory_ = lastLayoutAbortedForLowMemory_ || build_->parser->wasLowMemoryAbortTriggered();
     if (build_->pageCompletionFailed || status == ChapterHtmlSlimParser::ParseStatus::Error) {
@@ -1121,7 +1205,8 @@ bool Section::commitBuildFile(const uint8_t version, const uint32_t bytesConsume
 
   const auto& anchors = build_->parser->getAnchors();
   SectionPageIndexOffsets pageIndexOffsets;
-  const bool wrotePageIndex = writeSectionPageIndex(
+  beginFileWriteBatch();
+  const bool indexSerialized = writeSectionPageIndex(
       file, build_->pageIndex,
       [this, asPartial, &anchors](FsFile& output) {
         uint16_t anchorCount = 0;
@@ -1136,6 +1221,7 @@ bool Section::commitBuildFile(const uint8_t version, const uint32_t bytesConsume
         return true;
       },
       pageIndexOffsets);
+  const bool wrotePageIndex = endFileWriteBatch() && indexSerialized;
   if (!wrotePageIndex) {
     LOG_ERR("SCT", "Failed to write section page index");
     return failCommit();
@@ -1178,7 +1264,10 @@ bool Section::finalizeBuild() {
     return false;
   }
 
-  const bool success = build_->parser->finishParse();
+  const bool success = [&] {
+    const SpeedProfile::Scope profile(SpeedProfile::Parse);
+    return build_->parser->finishParse();
+  }();
   lastImagesWereSuppressed_ = lastImagesWereSuppressed_ || build_->parser->wasLowMemoryFallbackTriggered();
   lastLayoutAbortedForLowMemory_ = lastLayoutAbortedForLowMemory_ || build_->parser->wasLowMemoryAbortTriggered();
   if (!success || build_->pageCompletionFailed) {
@@ -1188,6 +1277,8 @@ bool Section::finalizeBuild() {
   }
 
   const bool committed = commitBuildFile(SECTION_FILE_VERSION, 0, 0);
+  const uint32_t buildStartedMs = build_->startedAtMs;
+  const SpeedProfile::Snapshot buildProfileStart = build_->profileStart;
   if (build_->cssParser) build_->cssParser->clear();
   if (!build_->reusedHtml && Storage.exists(build_->tmpHtmlPath.c_str())) {
     Storage.remove(build_->tmpHtmlPath.c_str());
@@ -1205,6 +1296,8 @@ bool Section::finalizeBuild() {
   partialPageCount_ = 0;
   partialProtectedImageUnits_ = 0;
   pageCount = builtPageCount_;
+  SpeedLog::record(SpeedLog::Event::Index, millis() - buildStartedMs, pageCount, spineIndex);
+  recordIndexParts(buildProfileStart, spineIndex);
   return true;
 }
 

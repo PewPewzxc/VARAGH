@@ -6,6 +6,7 @@
 #include <Memory.h>
 #include <MemoryBudget.h>
 #include <Serialization.h>
+#include <SpeedLog.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -34,13 +35,26 @@ void ImageBlock::setExtractor(void* context, ExtractFn extract, SeedCacheFn seed
 
 namespace {
 
-std::string getCachePath(const std::string& imagePath) {
-  // Replace extension with .pxc (pixel cache)
+// Pixel caches written by the tone-mapped (area-average + error-diffusion)
+// decoders use a new extension, so images cached by the older ordered-dither
+// path are decoded again once instead of being reused. Same file format.
+constexpr char PIXEL_CACHE_EXTENSION[] = ".pxt";
+constexpr char LEGACY_PIXEL_CACHE_EXTENSION[] = ".pxc";
+
+std::string replaceExtension(const std::string& imagePath, const char* extension) {
   size_t dotPos = imagePath.rfind('.');
   if (dotPos != std::string::npos) {
-    return imagePath.substr(0, dotPos) + ".pxc";
+    return imagePath.substr(0, dotPos) + extension;
   }
-  return imagePath + ".pxc";
+  return imagePath + extension;
+}
+
+std::string getCachePath(const std::string& imagePath) { return replaceExtension(imagePath, PIXEL_CACHE_EXTENSION); }
+
+// Drop the ordered-dither cache of an image that is about to be re-cached.
+void removeLegacyCache(const std::string& imagePath) {
+  const std::string legacy = replaceExtension(imagePath, LEGACY_PIXEL_CACHE_EXTENSION);
+  if (Storage.exists(legacy.c_str())) Storage.remove(legacy.c_str());
 }
 
 // Half-open image-local bounds shared by retained and streamed PXC rendering.
@@ -429,6 +443,7 @@ void ImageBlock::prepareCache() const {
     return;
   }
   if (sourcePath.empty()) return;
+  removeLegacyCache(imagePath);
   const std::string cache = getCachePath(imagePath);
   // Seed/extract replaces this path's PXC payload. Invalidate before it is
   // regenerated so a retained previous payload cannot outlive that write.
@@ -561,7 +576,9 @@ void ImageBlock::render(GfxRenderer& renderer, const int x, const int y, const b
     return;
   }
 
+  const uint32_t decodeStartedMs = millis();
   bool success = decoder->decodeToFramebuffer(imagePath, renderer, config);
+  SpeedLog::record(SpeedLog::Event::Image, millis() - decodeStartedMs, width, height);
   if (!success) {
     LOG_ERR("IMG", "Failed to decode image: %s", imagePath.c_str());
     rememberImageFailure(imagePath);

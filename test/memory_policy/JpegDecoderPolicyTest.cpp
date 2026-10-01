@@ -3,6 +3,7 @@
 #include <JPEGDEC.h>
 #include <JpegToFramebufferConverter.h>
 #include <MemoryBudget.h>
+#include <ToneMappedImage.h>
 #include <gtest/gtest.h>
 
 class JpegDecoderPolicyTest : public testing::Test {
@@ -12,9 +13,15 @@ class JpegDecoderPolicyTest : public testing::Test {
     Storage.reset();
     Storage.put("image.jpg", {0xff, 0xd8, 0xff, 0xd9});
     jpegdec_test::reset();
+    // These cases pin the decoder's own allocations; the tone-mapped path has
+    // its own tests (ToneMappedImageTest, JpegTonePathTest).
+    ToneMappedImageWriter::setEnabled(false);
   }
 
-  void TearDown() override { EXPECT_TRUE(fakeheap::live.empty()); }
+  void TearDown() override {
+    ToneMappedImageWriter::setEnabled(true);
+    EXPECT_TRUE(fakeheap::live.empty());
+  }
 };
 
 TEST_F(JpegDecoderPolicyTest, PsramFailureTakesFreshSafeInternalFallback) {

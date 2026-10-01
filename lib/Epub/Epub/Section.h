@@ -1,4 +1,7 @@
 #pragma once
+#include <Memory.h>
+#include <SpeedProfile.h>
+
 #include <functional>
 #include <memory>
 #include <optional>
@@ -41,6 +44,12 @@ class Section {
   GfxRenderer& renderer;
   std::string filePath;
   HalFile file;
+  // Collects writes so they reach the card in large pieces (see
+  // HalFile::beginWriteBatch): one page at a time in incremental builds, the
+  // whole chapter in a full build. PSRAM boards; allocated on first use.
+  HeapByteBuffer writeBatch_;
+  // A full build keeps one batch open across all its pages.
+  bool wholeBuildBatch_ = false;
 
   struct BuildContext {
     std::unique_ptr<ChapterHtmlSlimParser> parser;
@@ -62,6 +71,9 @@ class Section {
     // the EMA is stepped once per build advance (not per redraw) to damp that wobble.
     float smoothedEstimate = 0;
     uint32_t smoothedAtConsumed = 0;
+    // millis() when startBuild() began, and the phase timers then, for the speed log.
+    uint32_t startedAtMs = 0;
+    SpeedProfile::Snapshot profileStart;
   };
   std::unique_ptr<BuildContext> build_;
   bool buildComplete_ = false;
@@ -82,6 +94,8 @@ class Section {
   bool writeSectionFileHeader(const ReaderRenderSpec& spec);
   uint32_t onPageComplete(std::unique_ptr<Page> page);
   bool ensureBuildFileOpen();
+  void beginFileWriteBatch();
+  bool endFileWriteBatch();
   bool finalizeBuild();
   // Write the LUTs/anchor map (and, for a partial, the watermark trailer), patch the
   // header, stamp the version byte, and swap the tmp .bin over filePath.

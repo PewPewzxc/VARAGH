@@ -199,6 +199,73 @@ void HalGPIO::update() {
 
 bool HalGPIO::wasUsbStateChanged() const { return usbStateChanged; }
 
+namespace {
+// Given from the edge ISR, taken by the idle loop's wait. A binary semaphore
+// rather than a task notification: the main task's notification value already
+// signals render completion in ActivityManager::requestUpdateAndWait().
+SemaphoreHandle_t inputWakeSemaphore = nullptr;
+constexpr uint8_t MAX_INPUT_WAKE_PINS = 8;
+int8_t inputWakePins[MAX_INPUT_WAKE_PINS];
+uint8_t inputWakePinCount = 0;
+
+void ARDUINO_ISR_ATTR onInputWakeEdge() {
+  SemaphoreHandle_t semaphore = inputWakeSemaphore;
+  if (semaphore == nullptr) return;
+  BaseType_t higherPriorityTaskWoken = pdFALSE;
+  xSemaphoreGiveFromISR(semaphore, &higherPriorityTaskWoken);
+  if (higherPriorityTaskWoken == pdTRUE) portYIELD_FROM_ISR();
+}
+
+void addInputWakePin(const int8_t pin) {
+  if (pin < 0 || inputWakePinCount >= MAX_INPUT_WAKE_PINS) return;
+  for (uint8_t i = 0; i < inputWakePinCount; ++i) {
+    if (inputWakePins[i] == pin) return;
+  }
+  inputWakePins[inputWakePinCount++] = pin;
+  // Both edges: presses, releases and the touch IRQ pulse all count as input.
+  attachInterrupt(digitalPinToInterrupt(pin), onInputWakeEdge, CHANGE);
+}
+}  // namespace
+
+void HalGPIO::beginInputWake() {
+  if (inputWakeSemaphore != nullptr) return;
+  const auto& board = BoardConfig::ACTIVE;
+  const bool digitalButtons = board.inputStyle == BoardConfig::InputStyle::DigitalButtons;
+  const bool touchIrq = board.touch.controller != BoardConfig::TouchController::None && board.touch.irq >= 0;
+  if (!digitalButtons && !touchIrq) return;
+
+  inputWakeSemaphore = xSemaphoreCreateBinary();
+  if (inputWakeSemaphore == nullptr) {
+    LOG_ERR("GPIO", "Input wake unavailable: semaphore allocation failed");
+    return;
+  }
+  if (digitalButtons) {
+    const auto& in = board.input;
+    for (const int8_t pin : {in.back, in.confirm, in.left, in.right, in.up, in.down, in.power}) {
+      addInputWakePin(pin);
+    }
+  }
+  if (touchIrq) addInputWakePin(board.touch.irq);
+  LOG_INF("GPIO", "Input wake armed on %u pins", static_cast<unsigned>(inputWakePinCount));
+}
+
+void HalGPIO::endInputWake() {
+  for (uint8_t i = 0; i < inputWakePinCount; ++i) {
+    detachInterrupt(digitalPinToInterrupt(inputWakePins[i]));
+  }
+  inputWakePinCount = 0;
+  // The semaphore stays allocated: waitForInputOrTimeout() keeps working (as a
+  // plain timed wait) and a late ISR on another core can never see it freed.
+}
+
+bool HalGPIO::waitForInputOrTimeout(const uint32_t timeoutMs) {
+  if (inputWakeSemaphore == nullptr || inputWakePinCount == 0) {
+    delay(timeoutMs);
+    return false;
+  }
+  return xSemaphoreTake(inputWakeSemaphore, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
+}
+
 bool HalGPIO::isPressed(uint8_t buttonIndex) const { return inputMgr.isPressed(buttonIndex); }
 
 bool HalGPIO::wasPressed(uint8_t buttonIndex) const { return inputMgr.wasPressed(buttonIndex); }

@@ -56,7 +56,7 @@ class EpubReaderActivity final : public Activity {
     uint8_t focusReadingEnabled = 0;
     uint8_t guideReadingEnabled = 0;
     uint8_t epubRenderMode = 0;
-    uint8_t indexingMethod = CrossPointSettings::INDEXING_FULL_SECTION;
+    uint8_t indexingMethod = CrossPointSettings::INDEXING_AUTOMATIC;
     char sdFontFamilyName[64] = "";
   };
 
@@ -152,6 +152,8 @@ class EpubReaderActivity final : public Activity {
   QueuedTurnRenderingState queuedTurnRendering;
   unsigned long pageShownAtMs = 0UL;
   unsigned long lastRenderCompleteMs = 0UL;
+  // Speed log: reader start time until the first page is on screen (0 = logged).
+  unsigned long openStartedMs = 0UL;
   int idlePrewarmSpine = -1;
   int idlePrewarmPage = -1;
   int idlePrewarmFontId = 0;
@@ -353,6 +355,13 @@ class EpubReaderActivity final : public Activity {
   // If a build predicted to be fast still has not produced the requested page within this
   // window, show the popup while the blocking build continues.
   static constexpr unsigned long BUILD_POPUP_DEADLINE_MS = 1000;
+  // A chapter up to this size (uncompressed) builds in full in about 1.5 s on
+  // the X4 Pro: Automatic indexing builds such chapters whole (larger ones
+  // incrementally), and a full build this size shows no Indexing popup.
+  static constexpr size_t QUICK_FULL_BUILD_MAX_BYTES = 32 * 1024;
+  size_t spineItemBytes(int spineIndex) const;
+  // Whether the indexing method builds this chapter in full before showing it.
+  bool indexesWholeSection(int spineIndex) const;
   // Only true during the blocking build-to-target phase. The parser retains the callback during
   // background indexing, so this guard prevents it from drawing over an already-visible page.
   bool buildPopupPending = false;

@@ -88,6 +88,17 @@ class HalGPIO {
   // Start button GPIO and setup SPI for screen and SD card
   void begin();
 
+  // Instant input wake. GPIO interrupts on plain digital buttons and the touch
+  // IRQ end the idle loop's wait the moment something is pressed or touched,
+  // instead of on its next 10-50 ms tick. Call beginInputWake() once after
+  // begin(), and endInputWake() before deep sleep. ADC-ladder buttons have no
+  // clean digital edge, so those boards keep plain timed polling.
+  void beginInputWake();
+  void endInputWake();
+  // Wait up to timeoutMs; returns true early when a button/touch edge arrives.
+  // Without wake interrupts this is an ordinary delay.
+  bool waitForInputOrTimeout(uint32_t timeoutMs);
+
   // Button input methods
   void update();
   bool isPressed(uint8_t buttonIndex) const;

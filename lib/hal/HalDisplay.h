@@ -112,6 +112,25 @@ class HalDisplay {
   bool supportsStripGrayscale() const;
 
   // Runtime geometry passthrough
+  // Faster panel link. The Xteink board profiles drive every display
+  // controller at 10 MHz; the SSD1677 datasheet (Table 12-1) rates writes up
+  // to 20 MHz, which halves the time each frame spends on the wire. Offered
+  // only on SSD1677 panels; other controllers keep the profile clock.
+  static constexpr uint32_t FAST_LINK_SPI_HZ = 20000000;
+  bool supportsFastLink() const;
+  bool fastLinkEnabled() const;
+  // Switch between frames only (callers hold the render lock).
+  void setFastLink(bool enabled);
+
+  // Microseconds spent in panel calls (SPI transfers, waveform waits) since
+  // boot, wrapping. The speed log subtracts two readings to split a page
+  // turn into drawing and panel time.
+  static uint32_t panelTimeUs() { return panelTimeUs_; }
+
+  // Power hooks the driver fires around long panel BUSY waits, i.e. while a
+  // refresh waveform runs and the CPU only waits (see EpdBus::setBusyWaitHooks).
+  void setPanelWaitHooks(void (*beginHook)(), void (*endHook)());
+
   uint16_t getDisplayWidth() const;
   uint16_t getDisplayHeight() const;
   uint16_t getDisplayWidthBytes() const;
@@ -119,6 +138,8 @@ class HalDisplay {
 
  private:
   EInkDisplay einkDisplay;
+  uint32_t baseSpiHz_ = 0;  // board-profile display clock, captured in begin()
+  static uint32_t panelTimeUs_;
 };
 
 extern HalDisplay display;

@@ -4,6 +4,8 @@
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Memory.h>
+#include <SpeedLog.h>
+#include <SpeedProfile.h>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
@@ -48,6 +50,7 @@ int ReaderActivity::initialRefreshCountdown() const {
 }
 
 ReaderActivity::EpubOpenResult ReaderActivity::loadEpub(const std::string& path) {
+  const uint32_t loadStartedMs = millis();
   EpubOpenResult result;
   if (!Storage.exists(path.c_str())) {
     LOG_ERR("READER", "File does not exist: %s", path.c_str());
@@ -64,10 +67,14 @@ ReaderActivity::EpubOpenResult ReaderActivity::loadEpub(const std::string& path)
   // indexing popup so it isn't a silent wait on the home screen. The cachePath/hash is known at
   // construction, so this check is valid before load(); a cached open loads in a blink -> no popup.
   const bool uncached = !Storage.exists((epub->getCachePath() + "/book.bin").c_str());
+  // Speed log: the screen time spent during the open (the popup's refresh).
+  const uint32_t panelUsAtStart = SpeedProfile::panelUs();
   if (uncached) {
     // The popup replaces the restored Quick Resume frame, so the reader must clean it.
     allowFastInitialRefresh = false;
+    const uint32_t popupStartedMs = millis();
     GUI.drawPopup(renderer, tr(STR_INDEXING));
+    SpeedLog::recordNamed("open.popup", millis() - popupStartedMs);
   }
   // Keep one settings snapshot for both EPUB preparation and the reader handoff.
   result.readerSettings = EpubReaderActivity::readBookReaderSettings(*epub);
@@ -75,11 +82,22 @@ ReaderActivity::EpubOpenResult ReaderActivity::loadEpub(const std::string& path)
   // rebuild stale/missing CSS and need miniz's ~43 KB streaming workspace. The
   // panel keeps showing its last image, and the next activity redraws fully.
   GfxRenderer::FrameBufferLoan loan(renderer);
+  const uint32_t epubLoadStartedMs = millis();
   const bool loaded = epub->load(true, result.readerSettings.readerSettings.embeddedStyle == 0,
                                  Epub::XLocationLoadMode::Immediate, true);
-  if (loaded) epub->ensureOptimizerImageIndex();
+  const uint32_t epubLoadMs = millis() - epubLoadStartedMs;
+  if (loaded) {
+    const uint32_t imageIndexStartedMs = millis();
+    epub->ensureOptimizerImageIndex();
+    SpeedLog::recordNamed("open.imgidx", millis() - imageIndexStartedMs);
+  }
   loan.end();
   if (loaded) {
+    // Speed log: the whole book open (popup, index, CSS, locations); a = 1 on
+    // first open, b = screen ms within it. open.load is epub->load() alone.
+    SpeedLog::recordNamed("open.load", epubLoadMs, uncached ? 1 : 0);
+    SpeedLog::recordNamed("open.book", millis() - loadStartedMs, uncached ? 1 : 0,
+                          static_cast<int32_t>((SpeedProfile::panelUs() - panelUsAtStart) / 1000));
     result.epub = std::move(epub);
     result.failure = Epub::OpenFailure::None;
     return result;

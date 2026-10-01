@@ -100,6 +100,12 @@ uint8_t enumDisplayIndexForWeb(const SettingInfo& setting, uint8_t rawValue) {
 }
 
 bool isWebSettingAvailable(const SettingInfo& setting) {
+  // Faster Screen Link is switched on only on the device, where a 10-second
+  // on-screen check switches it back unless the panel still looks right. The
+  // web page cannot offer that check, so it does not list the setting.
+  if (setting.nameId == StrId::STR_FAST_SCREEN_LINK) {
+    return false;
+  }
   if (setting.nameId == StrId::STR_SIDE_BUTTON_CHORD && !deviceSupportsSideButtonChord(gpio)) {
     return false;
   }

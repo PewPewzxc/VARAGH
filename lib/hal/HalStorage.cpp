@@ -12,6 +12,7 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 
 #include "HalSpiBus.h"
@@ -129,6 +130,7 @@ HalStorage::HalStorage()
 HalStorage::~HalStorage() = default;
 
 // begin() and ready() are only called from setup, no need to acquire mutex for them
+
 
 bool HalStorage::begin() {
   HalSpiBus::Lock spiLock;
@@ -285,7 +287,18 @@ HalFile::HalFile(ImplPtr impl) : impl(std::move(impl)) {}
 
 HalFile::~HalFile() { close(); }
 
-HalFile::HalFile(HalFile&&) = default;
+HalFile::HalFile(HalFile&& other)
+    : impl(std::move(other.impl)),
+      allocationFailed_(other.allocationFailed_),
+      iterationFailed_(other.iterationFailed_),
+      batch_(other.batch_),
+      batchCapacity_(other.batchCapacity_),
+      batchLength_(other.batchLength_),
+      batchOk_(other.batchOk_) {
+  other.allocationFailed_ = false;
+  other.iterationFailed_ = false;
+  other.clearWriteBatch();
+}
 
 HalFile& HalFile::operator=(HalFile&& other) {
   if (this == &other) return *this;
@@ -293,8 +306,13 @@ HalFile& HalFile::operator=(HalFile&& other) {
   impl = std::move(other.impl);
   allocationFailed_ = other.allocationFailed_;
   iterationFailed_ = other.iterationFailed_;
+  batch_ = other.batch_;
+  batchCapacity_ = other.batchCapacity_;
+  batchLength_ = other.batchLength_;
+  batchOk_ = other.batchOk_;
   other.allocationFailed_ = false;
   other.iterationFailed_ = false;
+  other.clearWriteBatch();
   return *this;
 }
 
@@ -459,12 +477,65 @@ bool HalFile::seek64(uint64_t pos) { HAL_FILE_WRAPPED_CALL(seekSet, pos); }
 bool HalFile::seekCur(int64_t offset) { HAL_FILE_WRAPPED_CALL(seekCur, offset); }
 bool HalFile::seekSet(size_t offset) { HAL_FILE_WRAPPED_CALL(seekSet, offset); }
 int HalFile::available() const { HAL_FILE_WRAPPED_CALL(available, ); }
-size_t HalFile::position() const { HAL_FILE_WRAPPED_CALL(position, ); }
+size_t HalFile::position() const {
+  HalStorage::StorageLock lock;
+  assert(impl != nullptr);
+  return impl->file.position() + batchLength_;
+}
 int HalFile::read(void* buf, size_t count) { HAL_FILE_WRAPPED_CALL(read, buf, count); }
 int HalFile::read() { HAL_FILE_WRAPPED_CALL(read, ); }
-size_t HalFile::write(const void* buf, size_t count) { HAL_FILE_WRAPPED_CALL(write, buf, count); }
-size_t HalFile::write(uint8_t b) { HAL_FILE_WRAPPED_CALL(write, b); }
+size_t HalFile::write(const void* buf, size_t count) {
+  if (batch_) {
+    if (batchLength_ + count > batchCapacity_ && !flushWriteBatch()) return 0;
+    if (count <= batchCapacity_) {
+      memcpy(batch_ + batchLength_, buf, count);
+      batchLength_ += count;
+      return count;
+    }
+    // Larger than the whole buffer: the batch is empty now, write it through.
+  }
+  HAL_FILE_WRAPPED_CALL(write, buf, count);
+}
+size_t HalFile::write(uint8_t b) {
+  if (batch_) return write(&b, 1);
+  HAL_FILE_WRAPPED_CALL(write, b);
+}
 bool HalFile::sync() { HAL_FILE_WRAPPED_CALL(sync, ); }
+
+void HalFile::beginWriteBatch(uint8_t* buffer, const size_t capacity) {
+  // Never drop the bytes of a batch that is still open; a failure there is
+  // reported by the next endWriteBatch().
+  const bool earlierOk = flushWriteBatch();
+  clearWriteBatch();
+  batchOk_ = earlierOk;
+  if (buffer && capacity > 0) {
+    batch_ = buffer;
+    batchCapacity_ = capacity;
+  }
+}
+
+bool HalFile::endWriteBatch() {
+  const bool ok = flushWriteBatch();
+  clearWriteBatch();
+  return ok;
+}
+
+bool HalFile::flushWriteBatch() {
+  if (batchLength_ > 0) {
+    HalStorage::StorageLock lock;
+    assert(impl != nullptr);
+    if (impl->file.write(batch_, batchLength_) != batchLength_) batchOk_ = false;
+    batchLength_ = 0;
+  }
+  return batchOk_;
+}
+
+void HalFile::clearWriteBatch() {
+  batch_ = nullptr;
+  batchCapacity_ = 0;
+  batchLength_ = 0;
+  batchOk_ = true;
+}
 bool HalFile::rename(const char* newPath) { HAL_FILE_WRAPPED_CALL(rename, newPath); }
 bool HalFile::isDirectory() const { HAL_FILE_FORWARD_CALL(isDirectory, ); }  // already thread-safe, no need to wrap
 void HalFile::rewindDirectory() {
@@ -478,8 +549,9 @@ void HalFile::rewindDirectory() {
 }
 bool HalFile::close() {
   if (!impl) return true;
+  const bool batchOk = endWriteBatch();
   HalStorage::StorageLock lock;
-  const bool ok = impl->file.close();
+  const bool ok = impl->file.close() && batchOk;
   impl.reset();
   allocationFailed_ = false;
   iterationFailed_ = false;

@@ -50,8 +50,12 @@ struct SdFontBitmapStorageTest : testing::Test {
     fakeheap::reset();
     Storage.reset();
     Storage.put("font.cpfont", fixture());
+    // These cases pin down the per-page glyph buffers alone; the PSRAM file
+    // mirror has its own cases below.
+    FontFileMirror::setEnabled(false);
   }
   void TearDown() override {
+    FontFileMirror::setEnabled(true);
     EXPECT_TRUE(fakeheap::live.empty());
     Storage.reset();
   }
@@ -158,4 +162,81 @@ TEST_F(SdFontBitmapStorageTest, ExternalBitmapsStillHonorUnderuseAndInternalPres
   font.clearCache();
   EXPECT_TRUE(fakeheap::live.empty());
   EXPECT_EQ(font.getEpdFont()->data->bitmap, nullptr);
+}
+
+// --- PSRAM file mirror together with SdCardFont ---
+
+struct SdFontMirrorTest : testing::Test {
+  void SetUp() override {
+    fakeheap::reset();
+    Storage.reset();
+    Storage.put("font.cpfont", fixture());
+  }
+  void TearDown() override {
+    EXPECT_TRUE(fakeheap::live.empty());
+    Storage.reset();
+  }
+};
+
+TEST_F(SdFontMirrorTest, RepeatPrewarmsAreServedFromMemory) {
+  SdCardFont font;
+  ASSERT_TRUE(font.load("font.cpfont"));
+  ASSERT_TRUE(font.isMirrored());
+  ASSERT_EQ(font.prewarm("ABC", 1), 0);
+  const auto* data = font.getEpdFont()->data;
+  for (int i = 0; i < 24; i++) EXPECT_EQ(data->bitmap[i], i);
+
+  // Dropping the per-page buffers keeps the mirror while PSRAM is plentiful,
+  // so the rebuild reads nothing from the card.
+  font.releaseForLowMemory();
+  ASSERT_TRUE(font.isMirrored());
+  const size_t cardReads = Storage.data("font.cpfont").readCalls;
+  ASSERT_EQ(font.prewarm("ABC", 1), 0);
+  data = font.getEpdFont()->data;
+  for (int i = 0; i < 24; i++) EXPECT_EQ(data->bitmap[i], i);
+  EXPECT_EQ(Storage.data("font.cpfont").readCalls, cardReads);
+  EXPECT_GT(font.mirrorStats().hitReads, 0u);
+  font.releaseForLowMemory();
+}
+
+TEST_F(SdFontMirrorTest, PsramPressureReleasesTheMirrorAndReadsFallBackToTheCard) {
+  SdCardFont font;
+  ASSERT_TRUE(font.load("font.cpfont"));
+  ASSERT_TRUE(font.isMirrored());
+  ASSERT_EQ(font.prewarm("A", 1), 0);
+  font.releaseForLowMemory();
+
+  fakeheap::external.free = 64 * 1024;  // far below the mirror's PSRAM headroom
+  font.releaseForLowMemory();
+  EXPECT_FALSE(font.isMirrored());
+  fakeheap::external.free = 8 * 1024 * 1024 - 0;  // restore for the rebuild below
+
+  const size_t cardReads = Storage.data("font.cpfont").readCalls;
+  ASSERT_EQ(font.prewarm("BC", 1), 0);
+  EXPECT_GT(Storage.data("font.cpfont").readCalls, cardReads);
+  const auto* data = font.getEpdFont()->data;
+  for (int i = 0; i < 16; i++) EXPECT_EQ(data->bitmap[i], 8 + i);
+  font.releaseForLowMemory();
+}
+
+TEST_F(SdFontMirrorTest, WithoutPsramTheFontBehavesAsBefore) {
+  fakeheap::reset(/*psram=*/false);
+  SdCardFont font;
+  ASSERT_TRUE(font.load("font.cpfont"));
+  EXPECT_FALSE(font.isMirrored());
+  ASSERT_EQ(font.prewarm("ABC", 1), 0);
+  const auto* data = font.getEpdFont()->data;
+  for (int i = 0; i < 24; i++) EXPECT_EQ(data->bitmap[i], i);
+  font.releaseForLowMemory();
+}
+
+TEST_F(SdFontMirrorTest, ReloadAndDestructionFreeTheMirror) {
+  {
+    SdCardFont font;
+    ASSERT_TRUE(font.load("font.cpfont"));
+    ASSERT_TRUE(font.isMirrored());
+    ASSERT_TRUE(font.load("font.cpfont"));  // reload replaces, never stacks
+    EXPECT_EQ(FontFileMirror::totalAttachedBytes(), fixture().size());
+  }
+  EXPECT_EQ(FontFileMirror::totalAttachedBytes(), 0u);
 }

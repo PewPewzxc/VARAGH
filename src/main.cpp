@@ -18,6 +18,8 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <SPI.h>
+#include <SpeedLog.h>
+#include <SpeedProfile.h>
 #if !defined(SIMULATOR) && !FREEINK_MCU_C3
 #include <XteinkDetect.h>
 #endif
@@ -90,6 +92,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "SilentRestart.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
+#include "activities/RenderLock.h"
 #include "activities/boot_sleep/ImageFolderIndex.h"
 #include "activities/home/BookActions.h"
 #include "activities/reader/KOReaderSyncActivity.h"
@@ -357,6 +360,14 @@ constexpr uint32_t SILENT_READER_PAGE_BUILD_MAGIC = 0xC1EAB017;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_AUTO_TURN = 1U << 0;
 constexpr uint32_t NETWORK_RENDER_TASK_STACK_BYTES = 8192;
 constexpr uint32_t READER_RENDER_TASK_STACK_BYTES = 16384;
+
+#if !defined(SIMULATOR) && FREEINK_MCU_S3
+// Background section builds run on the Arduino loop task (8 KB by default).
+// Tiger compiles the parser/layout hot paths at -O2, which grows a few stack
+// frames (about 0.5 KB along that chain, measured with -fstack-usage), so give
+// the loop task a comfortable margin on the S3 boards, which have the RAM.
+SET_LOOP_TASK_STACK_SIZE(12 * 1024);
+#endif
 
 // How the device is coming back to life, resolved once at boot. Both resume
 // flows suppress the splash and leave the panel holding its pre-boot frame; a
@@ -1067,6 +1078,24 @@ void mirrorWakeShortPressToNvs() {
 #endif
 }
 
+// Tiger speed log (/.crosspoint/speed-log.csv): refresh the device state it
+// stamps on every line. Battery and frontlight reads stay on the main loop.
+constexpr unsigned long SPEED_LOG_BATTERY_SAMPLE_MS = 5UL * 60UL * 1000UL;
+
+void refreshSpeedLogContext() {
+  SpeedLog::Context context;
+  context.batteryPercent = powerManager.getBatteryPercentage();
+#ifdef SIMULATOR
+  context.charging = gpio.isUsbConnected();
+#else
+  context.charging = gpio.isUsbConnectedCached();
+#endif
+  if (Frontlight.present()) {
+    context.frontlightPercent = Frontlight.isOn() ? Frontlight.brightness() : 0;
+  }
+  SpeedLog::setContext(context);
+}
+
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
@@ -1107,6 +1136,9 @@ void enterDeepSleep(bool fromTimeout) {
   // Last chance to sample: startDeepSleep() cuts the SD rail on X3, so nothing
   // can be written again until the next wake.
   BatteryDiagnosticLog::record(BatteryDiagnosticLog::Event::Sleep, BoardConfig::ACTIVE.name);
+  refreshSpeedLogContext();
+  SpeedLog::record(SpeedLog::Event::Sleep, millis());
+  SpeedLog::flush();
   // All sleep-time file writes are complete. Stop SDMMC before the power path
   // cuts peripheral rails and isolates the bus pads; SPI boards are a no-op.
   Storage.shutdown();
@@ -1116,6 +1148,9 @@ void enterDeepSleep(bool fromTimeout) {
   mirrorWakeShortPressToNvs();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+#ifndef SIMULATOR
+  gpio.endInputWake();
+#endif
   powerManager.startDeepSleep(gpio);
 }
 
@@ -1138,6 +1173,11 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
   display.begin();
 #else
   display.begin(seamless);
+  // While a refresh waveform runs the CPU only waits on the panel, so let it
+  // idle at the low clock for that window (race to idle, see HalPowerManager).
+  display.setPanelWaitHooks([] { powerManager.beginPanelWait(); }, [] { powerManager.endPanelWait(); });
+  // Faster Screen Link, if the user confirmed it on this panel (Settings > Display).
+  display.setFastLink(SETTINGS.fastScreenLink != 0);
 #endif
   renderer.begin();
   display.setInverted(SETTINGS.screenInverted != 0);
@@ -1573,7 +1613,29 @@ void setup() {
     gpio.update();
   }
 
+#ifndef SIMULATOR
+  // Buttons and touch now end the idle loop's wait immediately (see loop()).
+  gpio.beginInputWake();
+#endif
+
+  SpeedLog::setTasks(xTaskGetCurrentTaskHandle(), activityManager.renderTask());
+#ifndef SIMULATOR
+  SpeedProfile::panelTimeUsSource = &HalDisplay::panelTimeUs;
+#endif
+  refreshSpeedLogContext();
+  SpeedLog::record(SpeedLog::Event::Boot, millis());
+
   allowSleepAt = millis() + 2000;
+}
+
+// Idle-loop wait. On hardware a button or touch edge ends it early (see
+// HalGPIO::beginInputWake); the simulator keeps a plain delay.
+static void idleWait(const uint32_t ms) {
+#ifdef SIMULATOR
+  delay(ms);
+#else
+  gpio.waitForInputOrTimeout(ms);
+#endif
 }
 
 void loop() {
@@ -1642,6 +1704,7 @@ void loop() {
   }
   if (userInputReceived) {
     activityManager.notifyUserInput();
+    SpeedLog::noteInput();
   }
 
   // Let wake continue as soon as its hold has been verified. The release can
@@ -1817,6 +1880,21 @@ void loop() {
   runSimulatorSmokeTestTick();
 #endif
 
+  // Speed log: a battery sample every few minutes, and buffered lines written
+  // out only while no render is using the panel or the SD card.
+  {
+    static unsigned long lastSpeedLogSampleMs = 0;
+    if (millis() - lastSpeedLogSampleMs >= SPEED_LOG_BATTERY_SAMPLE_MS) {
+      lastSpeedLogSampleMs = millis();
+      refreshSpeedLogContext();
+      SpeedLog::record(SpeedLog::Event::Battery, 0);
+    }
+    if (SpeedLog::flushDue() && !RenderLock::peek()) {
+      RenderLock lock;
+      SpeedLog::flush();
+    }
+  }
+
   const unsigned long loopDuration = millis() - loopStartTime;
   if (loopDuration > maxLoopDuration) {
     maxLoopDuration = loopDuration;
@@ -1833,13 +1911,16 @@ void loop() {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
+    // Race to idle: work runs at full speed (renders hold a power lock and
+    // background builds set skipLoopDelay), and a button or touch edge ends
+    // either wait at once, so the low-power tick no longer delays input.
     if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
-      delay(50);
+      idleWait(50);
     } else {
       // Short delay to prevent tight loop while still being responsive
-      delay(10);
+      idleWait(10);
     }
   }
 }

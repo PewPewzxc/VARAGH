@@ -3,6 +3,9 @@
 #include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <HalGPIO.h>
+#ifndef SIMULATOR
+#include <HalDisplay.h>
+#endif
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
@@ -14,7 +17,6 @@
 #include <iterator>
 
 #include "AppCapabilities.h"
-#include "AppVersion.h"
 #include "BackupStatsActivity.h"
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
@@ -41,6 +43,7 @@
 #include "activities/util/KeyboardEntryActivity.h"
 #include "activities/util/OptionSelectionActivity.h"
 #include "components/CompactHeader.h"
+#include "components/TigerMark.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
@@ -62,8 +65,9 @@ const StrId SettingsActivity::categoryNames[categoryCount] = {StrId::STR_CAT_DIS
                                                               StrId::STR_CAT_CONTROLS, StrId::STR_CAT_SYSTEM};
 
 namespace {
-constexpr int systemVersionFooterSideMargin = 20;
 constexpr int systemVersionFooterBottomInset = 15;
+// Faster Screen Link confirmation window: unconfirmed, it switches back.
+constexpr uint32_t FAST_SCREEN_LINK_CONFIRM_MS = 10000;
 constexpr size_t controlsParentBaseCount = 4;
 constexpr size_t controlsHomeButtonCount = 4;
 constexpr size_t controlsPowerMinCount = 2;
@@ -114,14 +118,6 @@ uint8_t enumRawValueForDisplayIndex(const SettingInfo& setting, uint8_t displayI
   return setting.enumRawValues[displayIndex];
 }
 
-void drawCenteredTextLine(const GfxRenderer& renderer, const int pageWidth, const int y, const std::string& text) {
-  const int labelWidth = renderer.getTextWidth(SMALL_FONT_ID, text.c_str());
-  const int labelX = (pageWidth - labelWidth) / 2;
-  renderer.drawText(SMALL_FONT_ID, labelX, y, text.c_str());
-}
-
-bool isVersionBreakChar(const char c) { return c == ' ' || c == '-' || c == '+' || c == '.' || c == '_'; }
-
 std::string formatUtcOffset(uint8_t biasedQ) {
   if (biasedQ > 104) biasedQ = 48;
   const int totalMinutes = (static_cast<int>(biasedQ) - 48) * 15;
@@ -147,41 +143,12 @@ std::string formatCompactDuration(const uint32_t seconds) {
 
 void drawSystemVersionFooter(const GfxRenderer& renderer, const int pageWidth, const int pageHeight,
                              const ThemeMetrics& metrics) {
-  const std::string label = "VARAGH " CROSSINK_VERSION;
-  const int maxWidth = pageWidth - systemVersionFooterSideMargin * 2;
+  // "VARAGH 1.1.0 Tiger" and the tiger mark; Check for Updates shows the full
+  // version string.
+  const std::string label = std::string(tr(STR_CROSSINK)) + " " + TigerMark::versionLabel();
   const int bottomLineY =
       pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing - systemVersionFooterBottomInset;
-
-  if (renderer.getTextWidth(SMALL_FONT_ID, label.c_str()) <= maxWidth) {
-    drawCenteredTextLine(renderer, pageWidth, bottomLineY, label);
-    return;
-  }
-
-  size_t fallbackBreak = std::string::npos;
-  size_t preferredBreak = std::string::npos;
-  for (size_t i = 1; i < label.size(); i++) {
-    if (!isVersionBreakChar(label[i - 1])) continue;
-
-    const std::string firstLine = label.substr(0, i);
-    if (renderer.getTextWidth(SMALL_FONT_ID, firstLine.c_str()) > maxWidth) break;
-
-    fallbackBreak = i;
-    const std::string secondLine = label.substr(i);
-    if (renderer.getTextWidth(SMALL_FONT_ID, secondLine.c_str()) <= maxWidth) {
-      preferredBreak = i;
-    }
-  }
-
-  const size_t lineBreak = preferredBreak != std::string::npos ? preferredBreak : fallbackBreak;
-  const std::string firstLine = lineBreak == std::string::npos
-                                    ? renderer.truncatedText(SMALL_FONT_ID, label.c_str(), maxWidth)
-                                    : label.substr(0, lineBreak);
-  const std::string secondLine = lineBreak == std::string::npos
-                                     ? ""
-                                     : renderer.truncatedText(SMALL_FONT_ID, label.substr(lineBreak).c_str(), maxWidth);
-  const int lineHeight = renderer.getLineHeight(SMALL_FONT_ID);
-  drawCenteredTextLine(renderer, pageWidth, bottomLineY - lineHeight, firstLine);
-  drawCenteredTextLine(renderer, pageWidth, bottomLineY, secondLine);
+  TigerMark::drawLabelCentered(renderer, SMALL_FONT_ID, pageWidth, bottomLineY, label.c_str());
 }
 
 std::string formatSettingValue(const SettingInfo& setting) {
@@ -310,7 +277,17 @@ void SettingsActivity::rebuildSettingsLists() {
                        [](const SettingInfo& setting) { return setting.valuePtr == &CrossPointSettings::fadingFix; }),
         displaySettings.end());
   }
+  const bool offerFastScreenLink = display.supportsFastLink();
+#else
+  const bool offerFastScreenLink = false;
 #endif
+  if (!offerFastScreenLink) {
+    displaySettings.erase(std::remove_if(displaySettings.begin(), displaySettings.end(),
+                                         [](const SettingInfo& setting) {
+                                           return setting.valuePtr == &CrossPointSettings::fastScreenLink;
+                                         }),
+                          displaySettings.end());
+  }
   displaySleepSettings = buildDisplaySleepSettingsList(allSettings);
   displayFrontlightSettings = buildDisplayFrontlightSettingsList(allSettings);
   readerSettings = buildReaderSettingsParentList(allSettings);
@@ -760,6 +737,15 @@ void SettingsActivity::onRowEvent(const fui::ActionEvent& event, void* user) {
 }
 
 void SettingsActivity::onExit() {
+#ifndef SIMULATOR
+  // A Faster Screen Link check that is still open when Settings closes (the
+  // Home key, or anything else that replaces the activity stack) never hands
+  // back its result, so its auto-undo would not run. Keep only a confirmed
+  // faster link. The caller may hold the render lock; setFastLink() takes
+  // only the SPI bus lock, which keeps the switch between frames.
+  const bool confirmedFastLink = SETTINGS.fastScreenLink != 0;
+  if (display.fastLinkEnabled() != confirmedFastLink) display.setFastLink(confirmedFastLink);
+#endif
   if (!isFileBrowserView()) {
     dictionaryRegistry.clear();
     sdFontSystem.releaseRegistry();
@@ -956,6 +942,43 @@ void SettingsActivity::loop() {
   }
 }
 
+void SettingsActivity::toggleFastScreenLink() {
+#ifndef SIMULATOR
+  if (SETTINGS.fastScreenLink != 0) {
+    {
+      RenderLock lock(*this);
+      display.setFastLink(false);
+    }
+    SETTINGS.fastScreenLink = 0;
+    SETTINGS.saveToFile();
+    requestUpdate();
+    return;
+  }
+
+  {
+    RenderLock lock(*this);
+    display.setFastLink(true);
+  }
+  // The question is drawn over the faster link itself. If the panel cannot
+  // follow it the dialog is unreadable, nobody confirms, and the timeout below
+  // switches back to the normal clock.
+  startActivityForResult(
+      std::make_unique<ConfirmationActivity>(renderer, mappedInput, tr(STR_FAST_SCREEN_LINK),
+                                             tr(STR_FAST_SCREEN_LINK_CONFIRM), /*ignoreInitialConfirmRelease=*/false,
+                                             /*overrideDisabledReaderTouchscreen=*/false, FAST_SCREEN_LINK_CONFIRM_MS),
+      [this](const ActivityResult& result) {
+        const bool keep = !result.isCancelled;
+        if (!keep) {
+          RenderLock lock(*this);
+          display.setFastLink(false);
+        }
+        SETTINGS.fastScreenLink = keep ? 1 : 0;
+        SETTINGS.saveToFile();
+        requestUpdate();
+      });
+#endif
+}
+
 void SettingsActivity::toggleCurrentSetting() {
   int selectedSetting = selectedSettingIndex - 1;
   if (selectedSetting < 0 || selectedSetting >= settingsCount) {
@@ -1001,6 +1024,10 @@ void SettingsActivity::toggleCurrentSetting() {
   }
   if (setting.type == SettingType::STRING) {
     openStringEditor(setting);
+    return;
+  }
+  if (setting.valuePtr == &CrossPointSettings::fastScreenLink) {
+    toggleFastScreenLink();
     return;
   }
   if (setting.nameId == StrId::STR_FONT_FAMILY && setting.type == SettingType::ENUM) {

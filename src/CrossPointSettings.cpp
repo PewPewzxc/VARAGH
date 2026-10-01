@@ -43,6 +43,8 @@ constexpr char LANG_FILE_BIN[] = "/.crosspoint/language.bin";
 constexpr char LANG_FILE_BAK[] = "/.crosspoint/language.bin.bak";
 constexpr uint8_t INVALID_READER_FONT_SIZE = 0xFF;
 constexpr uint8_t TILT_DIRECTION_SCHEMA_CURRENT = 2;
+// 2: Automatic indexing exists and is the default (VARAGH 1.1).
+constexpr uint8_t INDEXING_METHOD_SCHEMA_CURRENT = 2;
 // X3 hardware predates this migration by less than a year. Reject the RTC's
 // factory/default year while preserving dates written by released firmware.
 constexpr uint16_t MIN_TRUSTED_MIGRATED_RTC_YEAR = 2025;
@@ -480,6 +482,7 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   doc["language"] = (language < getLanguageCount()) ? LANGUAGE_CODES[language] : "EN";
   if (keyboardLayouts != 0) doc["keyboardLayouts"] = keyboardLayouts;
   doc["tiltPageTurnDirectionSchema"] = TILT_DIRECTION_SCHEMA_CURRENT;
+  doc["indexingMethodSchema"] = INDEXING_METHOD_SCHEMA_CURRENT;
   doc["clockDateHasBeenSynced"] = clockDateHasBeenSynced;
   doc["screenInverted"] = screenInverted;
 }
@@ -681,6 +684,13 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc, bool importingCrossPoint
     needsResave = true;
   }
   if (!doc["tiltPageTurnDirection"].isNull() && doc["tiltPageTurnDirectionSchema"].isNull()) needsResave = true;
+
+  // Settings saved before Automatic indexing existed move from Full Section,
+  // the old default, to Automatic once; a choice made after that is kept.
+  if ((doc["indexingMethodSchema"] | static_cast<uint8_t>(1)) < INDEXING_METHOD_SCHEMA_CURRENT) {
+    if (indexingMethod == INDEXING_FULL_SECTION) indexingMethod = INDEXING_AUTOMATIC;
+    needsResave = true;
+  }
 
   if (doc["hideClock"].isNull() && !doc["statusBarClock"].isNull()) {
     constexpr uint8_t LEGACY_SHOW_CLOCK_NEVER = 0;

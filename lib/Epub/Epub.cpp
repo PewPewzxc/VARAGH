@@ -9,6 +9,7 @@
 #include <Memory.h>
 #include <MemoryBudget.h>
 #include <PngToBmpConverter.h>
+#include <SpeedLog.h>
 #include <Utf8.h>
 #include <ZipFile.h>
 
@@ -939,6 +940,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
       }
 
       if (rebuildCssCache) {
+        const uint32_t cssStartedMs = millis();
         BookMetadataCache::BookMetadata cachedMetadata = bookMetadataCache->coreMetadata;
         if (!parseContentOpf(cachedMetadata, /*writeSpineEntries=*/false, /*collectCssFiles=*/true)) {
           LOG_ERR("EBP", "Could not parse content.opf from cached bookMetadata for CSS files");
@@ -967,6 +969,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
         } else {
           LOG_ERR("EBP", "CSS cache rebuild failed; preserving existing section caches");
         }
+        SpeedLog::recordNamed("open.css", millis() - cssStartedMs, 0);
       }
     }
     // Release the resolved CSS rule map: it is only needed transiently while building
@@ -975,7 +978,9 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
     // an already-cached chapter, where createSectionFile never runs to clear it).
     cssParser->clear();
     if (xLocationLoadMode == XLocationLoadMode::Immediate) {
+      const uint32_t xlocStartedMs = millis();
       loadXLocations();
+      SpeedLog::recordNamed("open.xloc", millis() - xlocStartedMs, 0);
     }
 
     lastLoadFailure = OpenFailure::None;
@@ -1000,6 +1005,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
   }
 
   // OPF Pass
+  uint32_t phaseStartedMs = millis();
   BookMetadataCache::BookMetadata bookMetadata;
   if (!bookMetadataCache->beginContentOpfPass()) {
     LOG_ERR("EBP", "Could not begin writing content.opf pass");
@@ -1016,6 +1022,8 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
     LOG_ERR("EBP", "Could not end writing content.opf pass");
     return false;
   }
+  SpeedLog::recordNamed("open.opf", millis() - phaseStartedMs, 1);
+  phaseStartedMs = millis();
 
   // TOC Pass - try EPUB 3 nav first, fall back to NCX
   if (!bookMetadataCache->beginTocPass()) {
@@ -1047,6 +1055,8 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
     LOG_ERR("EBP", "Could not end writing toc pass");
     return false;
   }
+  SpeedLog::recordNamed("open.toc", millis() - phaseStartedMs, 1);
+  phaseStartedMs = millis();
 
   // Close the cache files
   if (!bookMetadataCache->endWrite()) {
@@ -1063,6 +1073,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
     return false;
   }
   LOG_DBG("EBP", "Total indexing completed in %lu ms", millis() - indexingStart);
+  SpeedLog::recordNamed("open.bookbin", millis() - phaseStartedMs, 1);
 
   if (!bookMetadataCache->cleanupTmpFiles()) {
     LOG_DBG("EBP", "Could not cleanup tmp files - ignoring");
@@ -1070,6 +1081,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
 
   if (!skipLoadingCss) {
     // Parse CSS before reloading book.bin to keep heap as open as possible for rule-table growth.
+    const uint32_t cssStartedMs = millis();
     bookMetadataCache.reset();
     if (parseCssFiles() != CssParseStatus::Failed) {
       Storage.removeDir((cachePath + "/sections").c_str());
@@ -1077,6 +1089,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
       LOG_ERR("EBP", "CSS cache build failed; leaving any existing section caches in place");
     }
     releaseCssFileList();
+    SpeedLog::recordNamed("open.css", millis() - cssStartedMs, 1);
   }
 
   // Reload the cache from disk so it's in the correct state
@@ -1091,7 +1104,9 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const XLoc
   }
 
   if (xLocationLoadMode == XLocationLoadMode::Immediate) {
+    const uint32_t xlocStartedMs = millis();
     loadXLocations();
+    SpeedLog::recordNamed("open.xloc", millis() - xlocStartedMs, 1);
   }
 
   lastLoadFailure = OpenFailure::None;

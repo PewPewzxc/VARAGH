@@ -164,6 +164,8 @@ class ActivityManager {
   void notifyInputLockChanged(bool locked);
   void notifyUserInput();
   bool skipLoopDelay() const;
+  // FreeRTOS handle of the render task (for stack-headroom diagnostics).
+  void* renderTask() const { return renderTaskHandle; }
   std::string getCurrentBookPath() const;
   ScreenshotInfo getScreenshotInfo() const;
 

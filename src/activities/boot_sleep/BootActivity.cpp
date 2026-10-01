@@ -11,10 +11,10 @@
 #include <cmath>
 #include <cstring>
 
-#include "AppVersion.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "ImageFolderIndex.h"
+#include "components/TigerMark.h"
 #include "fontIds.h"
 #include "images/BootLogo192.h"
 
@@ -122,7 +122,7 @@ void drawDefaultBootLogo(const GfxRenderer& renderer) {
   renderer.drawImage(BootLogo192, (pageWidth - 192) / 2, (pageHeight - 192) / 2, 192, 192);
   renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 + 116, tr(STR_CROSSINK), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 148, tr(STR_BOOTING));
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 30, CROSSINK_VERSION);
+  TigerMark::drawLabelCentered(renderer, SMALL_FONT_ID, pageWidth, pageHeight - 30, TigerMark::versionLabel().c_str());
 }
 
 }  // namespace

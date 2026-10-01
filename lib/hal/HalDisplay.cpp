@@ -1,10 +1,31 @@
+#include <BoardConfig.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+
+#include <esp_timer.h>
 
 #include "HalSpiBus.h"
 
 // Global HalDisplay instance
 HalDisplay display;
+
+uint32_t HalDisplay::panelTimeUs_ = 0;
+
+namespace {
+// Adds the duration of one panel call (SPI transfer and/or waveform wait) to
+// HalDisplay::panelTimeUs(). Only the render task talks to the panel.
+class PanelTimer {
+ public:
+  explicit PanelTimer(uint32_t& total) : total_(total), startUs_(static_cast<uint32_t>(esp_timer_get_time())) {}
+  ~PanelTimer() { total_ += static_cast<uint32_t>(esp_timer_get_time()) - startUs_; }
+  PanelTimer(const PanelTimer&) = delete;
+  PanelTimer& operator=(const PanelTimer&) = delete;
+
+ private:
+  uint32_t& total_;
+  uint32_t startUs_;
+};
+}  // namespace
 
 #define SD_SPI_MISO 7
 
@@ -21,6 +42,7 @@ void HalDisplay::begin(bool seamless) {
   }
 
   einkDisplay.begin();
+  baseSpiHz_ = einkDisplay.spiClockHz();
 
   if (seamless) {
     // Defuse the SDK's X3 _x3InitialFullSyncsRemaining counter (no-op on X4)
@@ -35,6 +57,23 @@ void HalDisplay::begin(bool seamless) {
       wakeupReason == HalGPIO::WakeupReason::Other) {
     einkDisplay.requestResync();
   }
+}
+
+bool HalDisplay::supportsFastLink() const {
+  return BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::SSD1677 && baseSpiHz_ > 0 &&
+         baseSpiHz_ < FAST_LINK_SPI_HZ;
+}
+
+bool HalDisplay::fastLinkEnabled() const { return supportsFastLink() && einkDisplay.spiClockHz() >= FAST_LINK_SPI_HZ; }
+
+void HalDisplay::setFastLink(const bool enabled) {
+  if (!supportsFastLink()) return;
+  HalSpiBus::Lock spiLock;
+  einkDisplay.setSpiClockHz(enabled ? FAST_LINK_SPI_HZ : baseSpiHz_);
+}
+
+void HalDisplay::setPanelWaitHooks(void (*beginHook)(), void (*endHook)()) {
+  einkDisplay.setBusyWaitHooks(beginHook, endHook);
 }
 
 void HalDisplay::clearScreen(uint8_t color) const { einkDisplay.clearScreen(color); }
@@ -62,6 +101,7 @@ EInkDisplay::RefreshMode convertRefreshMode(HalDisplay::RefreshMode mode) {
 }
 
 void HalDisplay::displayBuffer(HalDisplay::RefreshMode mode, bool turnOffScreen) {
+  const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
 
   if (gpio.deviceIsX3() && mode == RefreshMode::HALF_REFRESH) {
@@ -77,6 +117,7 @@ void HalDisplay::setInverted(bool inverted) {
 }
 
 void HalDisplay::displayBufferAsync(HalDisplay::RefreshMode mode) {
+  const PanelTimer timer(panelTimeUs_);
   if (gpio.deviceIsX3() && mode == RefreshMode::HALF_REFRESH) {
     einkDisplay.requestResync(1);
   }
@@ -84,7 +125,10 @@ void HalDisplay::displayBufferAsync(HalDisplay::RefreshMode mode) {
   einkDisplay.displayBufferAsyncNoShadow(convertRefreshMode(mode));
 }
 
-void HalDisplay::waitRefreshComplete() { einkDisplay.waitRefreshComplete(); }
+void HalDisplay::waitRefreshComplete() {
+  const PanelTimer timer(panelTimeUs_);
+  einkDisplay.waitRefreshComplete();
+}
 
 void HalDisplay::controllerIdle() {
   if (einkDisplay.hasPendingMaintenance()) return;
@@ -100,12 +144,14 @@ HalDisplay::GrayscaleCapabilities HalDisplay::grayscaleCapabilities(GrayscaleMod
 bool HalDisplay::supportsAsyncGrayscaleBase() const { return grayscaleCapabilities().asyncBase; }
 
 bool HalDisplay::displayGrayscaleBase(GrayscaleMode mode, RefreshMode fallback, bool turnOffScreen) {
+  const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
   if (gpio.deviceIsX3() && fallback == HALF_REFRESH) einkDisplay.requestResync(1);
   return einkDisplay.displayGrayscaleBase(mode, convertRefreshMode(fallback), turnOffScreen);
 }
 
 void HalDisplay::refreshDisplay(HalDisplay::RefreshMode mode, bool turnOffScreen) {
+  const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
 
   if (gpio.deviceIsX3() && mode == RefreshMode::HALF_REFRESH) {
@@ -129,10 +175,12 @@ uint8_t* HalDisplay::lendFrameBufferStorage(uint32_t* sizeOut) { return einkDisp
 void HalDisplay::returnFrameBufferStorage() { einkDisplay.returnBuildStorage(); }
 
 void HalDisplay::copyGrayscaleBuffers(const uint8_t* lsbBuffer, const uint8_t* msbBuffer) {
+  const PanelTimer timer(panelTimeUs_);
   einkDisplay.copyGrayscaleBuffers(lsbBuffer, msbBuffer);
 }
 
 void HalDisplay::displayGrayscaleBase(RefreshMode fallback, bool turnOffScreen) {
+  const PanelTimer timer(panelTimeUs_);
   // X3: a HALF or FULL fallback means the caller wants a clean base (e.g. the
   // sleep cover, a full-screen swap from arbitrary prior content). Without
   // this, the X3 grayscale base takes its gentle differential happy path and
@@ -146,24 +194,39 @@ void HalDisplay::displayGrayscaleBase(RefreshMode fallback, bool turnOffScreen) 
   einkDisplay.displayGrayscaleBase(convertRefreshMode(fallback), turnOffScreen);
 }
 
-void HalDisplay::preconditionGrayscale() { einkDisplay.preconditionGrayscale(); }
+void HalDisplay::preconditionGrayscale() {
+  const PanelTimer timer(panelTimeUs_);
+  einkDisplay.preconditionGrayscale();
+}
 
 void HalDisplay::preconditionGrayscale(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  const PanelTimer timer(panelTimeUs_);
   einkDisplay.preconditionGrayscale(x, y, w, h);
 }
 
-void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) { einkDisplay.copyGrayscaleLsbBuffers(lsbBuffer); }
+void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) {
+  const PanelTimer timer(panelTimeUs_);
+  einkDisplay.copyGrayscaleLsbBuffers(lsbBuffer);
+}
 
-void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) { einkDisplay.copyGrayscaleMsbBuffers(msbBuffer); }
+void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) {
+  const PanelTimer timer(panelTimeUs_);
+  einkDisplay.copyGrayscaleMsbBuffers(msbBuffer);
+}
 
-void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) { einkDisplay.cleanupGrayscaleBuffers(bwBuffer); }
+void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
+  const PanelTimer timer(panelTimeUs_);
+  einkDisplay.cleanupGrayscaleBuffers(bwBuffer);
+}
 
 void HalDisplay::displayGrayBuffer(bool turnOffScreen) {
+  const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
   einkDisplay.displayGrayBuffer(turnOffScreen);
 }
 
 void HalDisplay::writeGrayscalePlaneStrip(bool lsbPlane, const uint8_t* rows, uint16_t yStart, uint16_t numRows) {
+  const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
   einkDisplay.writeGrayscalePlaneStrip(lsbPlane ? EInkDisplay::GRAY_PLANE_LSB : EInkDisplay::GRAY_PLANE_MSB, rows,
                                        yStart, numRows);

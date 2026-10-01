@@ -5,6 +5,7 @@
 #include <BidiUtils.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
+#include <SpeedProfile.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -791,6 +792,7 @@ bool ParsedText::layoutAndExtractLines(
   if (words.empty()) {
     return true;
   }
+  const SpeedProfile::Scope profile(SpeedProfile::Layout);
 
   Arena layoutArena(psramHeapAvailable() ? ArenaBacking::PsramPreferred : ArenaBacking::Default);
   if (!layoutArena.init(LAYOUT_ARENA_SLAB_BYTES)) {

@@ -89,6 +89,35 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
+void HalPowerManager::beginPanelWait() {
+  // Only where the low clock leaves the 80 MHz APB bus clock alone (the S3
+  // boards). The C3's 10 MHz low clock would also re-clock SPI, I2C and PWM
+  // peripherals in the middle of a render.
+  if constexpr (LOW_POWER_FREQ < 80) return;
+  if (normalFreq <= 0 || modeMutex == nullptr) return;
+  xSemaphoreTake(modeMutex, portMAX_DELAY);
+  // Wi-Fi needs the full clock (setPowerSaving() refuses low power then too).
+  if (!isLowPower && !panelWaitLowered && WiFi.getMode() == WIFI_MODE_NULL) {
+    if (setCpuFrequencyMhz(LOW_POWER_FREQ)) {
+      panelWaitLowered = true;
+    }
+  }
+  xSemaphoreGive(modeMutex);
+}
+
+void HalPowerManager::endPanelWait() {
+  if (modeMutex == nullptr) return;
+  xSemaphoreTake(modeMutex, portMAX_DELAY);
+  if (panelWaitLowered) {
+    panelWaitLowered = false;
+    // If idle power saving took over during the wait, stay at the low clock.
+    if (!isLowPower && !setCpuFrequencyMhz(normalFreq)) {
+      LOG_DBG("PWR", "Failed to restore CPU frequency after panel wait");
+    }
+  }
+  xSemaphoreGive(modeMutex);
+}
+
 void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   disableWiFiBeforeDeepSleep();
 

@@ -353,7 +353,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     PAGE_TURN_GESTURE_COUNT
   };
 
-  enum INDEXING_METHOD { INDEXING_INCREMENTAL = 0, INDEXING_FULL_SECTION = 1, INDEXING_METHOD_COUNT };
+  // Automatic indexes a normal-size chapter in full and a large one incrementally.
+  enum INDEXING_METHOD {
+    INDEXING_INCREMENTAL = 0,
+    INDEXING_FULL_SECTION = 1,
+    INDEXING_AUTOMATIC = 2,
+    INDEXING_METHOD_COUNT
+  };
 
   enum TILT_PAGE_TURN { TILT_OFF = 0, TILT_ON = 1, TILT_PAGE_TURN_COUNT };
   enum TILT_PAGE_TURN_DIRECTION {
@@ -577,12 +583,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t uiScale = defaultUiScale();
   // Sunlight fading compensation
   uint8_t fadingFix = 0;
+  // Display SPI at the SSD1677's rated 20 MHz instead of the 10 MHz profile
+  // clock (see HalDisplay::setFastLink). Opt-in, confirmed on screen.
+  uint8_t fastScreenLink = 0;
   // Quick-return from footnotes when a footnote shortcut is active.
   uint8_t pwrBtnFootnoteBack = 1;
   // Use book's embedded CSS styles for EPUB rendering (1 = enabled, 0 = disabled)
   uint8_t embeddedStyle = 1;
   // EPUB section indexing policy. The current chapter keeps its active build.
-  uint8_t indexingMethod = INDEXING_FULL_SECTION;
+  uint8_t indexingMethod = INDEXING_AUTOMATIC;
   // Focus Reading - emphasizes the first part of words with bold
   uint8_t focusReadingEnabled = 0;
   // Guide Dots - places a middle dot between words to guide the eye

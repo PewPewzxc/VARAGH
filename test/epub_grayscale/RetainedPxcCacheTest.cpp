@@ -194,24 +194,39 @@ TEST_F(RetainedPxcCacheTest, RetentionLeavesPsramForTheNextJpegDecoder) {
 TEST_F(RetainedPxcCacheTest, RegeneratingTheSamePathInvalidatesRetainedPixels) {
   constexpr int width = 200;
   constexpr int height = 120;
-  Storage.put("image.pxc", cache(width, height, 0));
+  Storage.put("image.pxt", cache(width, height, 0));
   GfxRenderer renderer(800, 480);
   renderer.orientation = GfxRenderer::LandscapeCounterClockwise;
-  render(renderer, "image.pxc", width, height);
+  render(renderer, "image.pxt", width, height);
   const auto stalePixels = renderer.bw;
 
-  Storage.remove("image.pxc");
+  Storage.remove("image.pxt");
   SeedContext seed{.bytes = cache(width, height, 1)};
   ImageBlock::setExtractor(&seed, nullptr, seedCache);
   ImageBlock image("image.jpg", "source.jpg", width, height);
   image.prepareCache();
   ASSERT_EQ(seed.calls, 1);
 
-  const size_t bytesBeforeReload = Storage.data("image.pxc").readBytes;
-  render(renderer, "image.pxc", width, height);
+  const size_t bytesBeforeReload = Storage.data("image.pxt").readBytes;
+  render(renderer, "image.pxt", width, height);
   EXPECT_NE(renderer.bw, stalePixels);
-  EXPECT_EQ(Storage.data("image.pxc").readBytes - bytesBeforeReload,
+  EXPECT_EQ(Storage.data("image.pxt").readBytes - bytesBeforeReload,
             4u + static_cast<size_t>((width + 3) / 4) * height);
+}
+
+TEST_F(RetainedPxcCacheTest, PrepareCacheDropsTheOrderedDitherCache) {
+  // Caches written before tone mapping use the .pxc name; the first prepare of
+  // that image removes it and writes the tone-mapped .pxt in its place.
+  constexpr int width = 40;
+  constexpr int height = 30;
+  Storage.put("image.pxc", cache(width, height, 0));
+  SeedContext seed{.bytes = cache(width, height, 1)};
+  ImageBlock::setExtractor(&seed, nullptr, seedCache);
+  ImageBlock image("image.jpg", "source.jpg", width, height);
+  image.prepareCache();
+  EXPECT_EQ(seed.calls, 1);
+  EXPECT_FALSE(Storage.exists("image.pxc"));
+  EXPECT_TRUE(Storage.exists("image.pxt"));
 }
 
 TEST_F(RetainedPxcCacheTest, ChangedDimensionsBypassThePreviousPathEntry) {

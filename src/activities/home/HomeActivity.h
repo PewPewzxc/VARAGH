@@ -39,6 +39,9 @@ class HomeActivity final : public Activity {
   bool recentsLoading = false;
   bool recentsLoaded = false;
   bool firstRenderDone = false;
+  // Speed log timing of this Home visit (millis() at onEnter, first frame logged).
+  uint32_t homeEnteredMs = 0;
+  bool homeFirstFrameLogged = false;
   // Silent restarts keep the panel's previous frame. The first Home paint may
   // need a clean waveform so X4 panels do not diff against a WiFi screen.
   HalDisplay::RefreshMode initialRefreshMode = HalDisplay::FAST_REFRESH;

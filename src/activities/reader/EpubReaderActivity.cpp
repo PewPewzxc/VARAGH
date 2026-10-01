@@ -13,7 +13,11 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <MemoryBudget.h>
+#include <SpeedLog.h>
 #include <Utf8.h>
+#ifndef SIMULATOR
+#include <HalDisplay.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -1143,7 +1147,7 @@ void applyReaderSettings(const EpubReaderActivity::ReaderSettingsSnapshot& in) {
   SETTINGS.epubRenderMode = normalizeRenderModeRaw(in.epubRenderMode);
   SETTINGS.indexingMethod = in.indexingMethod < CrossPointSettings::INDEXING_METHOD_COUNT
                                 ? in.indexingMethod
-                                : CrossPointSettings::INDEXING_FULL_SECTION;
+                                : CrossPointSettings::INDEXING_AUTOMATIC;
 }
 
 using BookReaderSettingsData = EpubReaderActivity::BookReaderSettingsData;
@@ -1198,7 +1202,7 @@ bool writeReaderSettingsSnapshot(FsFile& file, const EpubReaderActivity::ReaderS
          writeU8(file, in.guideReadingEnabled) && writeU8(file, normalizeRenderModeRaw(in.epubRenderMode)) &&
          writeU8(file, in.indexingMethod < CrossPointSettings::INDEXING_METHOD_COUNT
                            ? in.indexingMethod
-                           : CrossPointSettings::INDEXING_FULL_SECTION) &&
+                           : CrossPointSettings::INDEXING_AUTOMATIC) &&
          writeExact(file, in.sdFontFamilyName, sizeof(in.sdFontFamilyName));
 }
 
@@ -2160,6 +2164,7 @@ void EpubReaderActivity::endGlobalSettingsEditForBookReader(void* ctx) {
 
 void EpubReaderActivity::onEnter() {
   Activity::onEnter();
+  openStartedMs = millis();
   pageLoadRetryCount = 0;
 
   MemoryBudget::logEpubHeapPools("reader enter");
@@ -2562,6 +2567,23 @@ void EpubReaderActivity::showBuildPopup() {
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   pagesUntilFullRefresh = 1;
   buildPopupPending = false;
+}
+
+size_t EpubReaderActivity::spineItemBytes(const int spineIndex) const {
+  if (!epub || spineIndex < 0 || spineIndex >= epub->getSpineItemsCount()) return 0;
+  return epub->getCumulativeSpineItemSize(spineIndex) -
+         (spineIndex > 0 ? epub->getCumulativeSpineItemSize(spineIndex - 1) : 0);
+}
+
+bool EpubReaderActivity::indexesWholeSection(const int spineIndex) const {
+  switch (SETTINGS.indexingMethod) {
+    case CrossPointSettings::INDEXING_INCREMENTAL:
+      return false;
+    case CrossPointSettings::INDEXING_AUTOMATIC:
+      return spineItemBytes(spineIndex) <= QUICK_FULL_BUILD_MAX_BYTES;
+    default:
+      return true;
+  }
 }
 
 bool EpubReaderActivity::backgroundSectionBuildHasHeap() {
@@ -5575,6 +5597,10 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn, const char* source) {
 
 // TODO: Failure handling
 void EpubReaderActivity::render(RenderLock&& lock) {
+  const unsigned long renderStartedMs = millis();
+#ifndef SIMULATOR
+  const uint32_t panelStartedUs = HalDisplay::panelTimeUs();
+#endif
   // The render task now owns the mutex requested by the input action. Background
   // indexing may resume only after this render releases it.
   backgroundBuildYieldForInput.store(false, std::memory_order_relaxed);
@@ -5699,7 +5725,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
             ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     const int readerFontId = SETTINGS.getReaderFontId();
     const EpubRenderMode selectedRenderMode = normalizeRenderMode(SETTINGS.epubRenderMode);
-    const bool fullSectionIndexing = SETTINGS.indexingMethod == CrossPointSettings::INDEXING_FULL_SECTION;
+    const bool fullSectionIndexing = indexesWholeSection(currentSpineIndex);
     EpubRenderMode usedRenderMode = selectedRenderMode;
     const bool buildingFootnotePreview = !pendingFootnotePreviewAnchor.empty();
     bool loadedSection = false;
@@ -5756,10 +5782,6 @@ void EpubReaderActivity::render(RenderLock&& lock) {
         LOG_DBG("ERS", "Cache not found, building... (free=%u, maxAlloc=%u)", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
       }
 
-      const auto popupFn = [this]() {
-        if (renderer.hasFrameBuffer()) GUI.drawPopup(renderer, tr(STR_INDEXING));
-      };
-
       bool layoutAbortedForLowMemory = false;
       bool fallbackBuildSucceeded = false;
       bool usedReadablePartialFallback = false;
@@ -5807,20 +5829,22 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                                     pendingClippingIndex != UINT16_MAX || pendingParagraphIndex != UINT16_MAX;
         bool buildSucceeded = false;
         if (needsFullBuild) {
-          showIndexingPopup();
+          // A normal-size chapter builds in about a second: the popup would
+          // cost a refresh of its own and a cleaning refresh on the next page.
+          if (spineItemBytes(currentSpineIndex) > QUICK_FULL_BUILD_MAX_BYTES) {
+            showIndexingPopup();
+          }
           {
             GfxRenderer::FrameBufferLoan loan(renderer);
             buildSucceeded =
-                section->createSectionFile(spec, popupFn, nullptr, &attemptLayoutAbortedForLowMemory, buildOptions);
+                section->createSectionFile(spec, nullptr, nullptr, &attemptLayoutAbortedForLowMemory, buildOptions);
             if (buildSucceeded && pendingReferenceUnitOffset) {
               pendingResolvedReferencePage = resolvedReferencePage;
             }
           }
         } else {
           const int target = pendingPageJump.has_value() ? *pendingPageJump : (nextPageNumber < 0 ? 0 : nextPageNumber);
-          const size_t spineBytes =
-              epub->getCumulativeSpineItemSize(currentSpineIndex) -
-              (currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0);
+          const size_t spineBytes = spineItemBytes(currentSpineIndex);
           const bool willInflate = !section->hasHtmlCache();
           const bool anchorJump = !pendingAnchor.empty();
           const auto anchorPageReady = [&]() {
@@ -6333,6 +6357,16 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       return;
     }
     lastRenderCompleteMs = millis();
+#ifndef SIMULATOR
+    const auto panelMs = static_cast<int32_t>((HalDisplay::panelTimeUs() - panelStartedUs) / 1000U);
+#else
+    const int32_t panelMs = -1;
+#endif
+    SpeedLog::record(SpeedLog::Event::Page, lastRenderCompleteMs - renderStartedMs, -1, panelMs);
+    if (openStartedMs != 0UL) {
+      SpeedLog::record(SpeedLog::Event::Open, lastRenderCompleteMs - openStartedMs);
+      openStartedMs = 0UL;
+    }
     const uint8_t heapShapeRedrawStages = pendingHeapShapeReaderRedrawStages.exchange(0, std::memory_order_relaxed);
     if (heapShapeRedrawStages & HEAP_SHAPE_REDRAW_CLIP) {
       MemoryBudget::logHeapShape("clip.reader_redrawn");
@@ -6367,7 +6401,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 }
 
 void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportWidth, const uint16_t viewportHeight) {
-  if (SETTINGS.indexingMethod != CrossPointSettings::INDEXING_FULL_SECTION || activeFootnotePreview || !epub ||
+  if (SETTINGS.indexingMethod == CrossPointSettings::INDEXING_INCREMENTAL || activeFootnotePreview || !epub ||
       !section || section->isBuilding() || section->isPartial() || section->pageCount == 0) {
     return;
   }
@@ -6381,6 +6415,11 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
 
   const int nextSpineIndex = currentSpineIndex + 1;
   if (nextSpineIndex < 0 || nextSpineIndex >= epub->getSpineItemsCount()) {
+    return;
+  }
+  // Automatic prepares only a next chapter it would build in full; a large
+  // one opens incrementally, without a long wait, anyway.
+  if (!indexesWholeSection(nextSpineIndex)) {
     return;
   }
   if (preparedNextSpineIndex == nextSpineIndex && preparedNextViewportWidth == viewportWidth &&

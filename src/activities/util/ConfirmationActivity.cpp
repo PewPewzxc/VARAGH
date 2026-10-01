@@ -7,10 +7,12 @@
 
 ConfirmationActivity::ConfirmationActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                            const std::string& heading, const std::string& body,
-                                           bool ignoreInitialConfirmRelease, bool overrideDisabledReaderTouchscreen)
+                                           bool ignoreInitialConfirmRelease, bool overrideDisabledReaderTouchscreen,
+                                           uint32_t autoCancelMs)
     : Activity("Confirmation", renderer, mappedInput),
       ignoreConfirmRelease(ignoreInitialConfirmRelease),
-      overrideDisabledReaderTouchscreen(overrideDisabledReaderTouchscreen) {
+      overrideDisabledReaderTouchscreen(overrideDisabledReaderTouchscreen),
+      autoCancelMs(autoCancelMs) {
   popupTitle.reserve(heading.size() + body.size() + 1);
   popupTitle = heading;
   if (!heading.empty() && !body.empty()) {
@@ -21,6 +23,7 @@ ConfirmationActivity::ConfirmationActivity(GfxRenderer& renderer, MappedInputMan
 
 void ConfirmationActivity::onEnter() {
   Activity::onEnter();
+  enteredAtMs = millis();
   if (overrideDisabledReaderTouchscreen) {
     mappedInput.setReaderTouchscreenOverride(true);
   }
@@ -49,6 +52,14 @@ void ConfirmationActivity::render(RenderLock&&) {
 }
 
 void ConfirmationActivity::loop() {
+  if (autoCancelMs != 0 && millis() - enteredAtMs >= autoCancelMs) {
+    ActivityResult res;
+    res.isCancelled = true;
+    setResult(std::move(res));
+    finish();
+    return;
+  }
+
   if (ignoreConfirmRelease) {
     const bool confirmReleased = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
     if (confirmReleased || !mappedInput.isPressed(MappedInputManager::Button::Confirm)) {

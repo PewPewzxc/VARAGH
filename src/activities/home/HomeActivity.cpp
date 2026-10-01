@@ -10,6 +10,7 @@
 #include <Memory.h>
 #include <MemoryBudget.h>
 #include <Serialization.h>
+#include <SpeedLog.h>
 #include <Utf8.h>
 #include <Xtc.h>
 
@@ -648,6 +649,7 @@ void HomeActivity::loadAllBookStats() {
 }
 
 void HomeActivity::loadRecentCovers(int coverHeight) {
+  const uint32_t coversStartedMs = millis();
   // Thumbnail generation may need a 32 KB contiguous inflate buffer. The Home
   // cover snapshot is only a redraw cache, so release it before ZIP work.
   if (coverBuffer) {
@@ -807,6 +809,12 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
   recentsLoaded = true;
   recentsLoading = false;
+  {
+    int generated = 0;
+    for (const char updated : bookUpdated) generated += updated ? 1 : 0;
+    // Speed log: cover thumbnails checked and made (a = made, b = recent books).
+    SpeedLog::recordNamed("home.covers", millis() - coversStartedMs, generated, static_cast<int32_t>(recentBookCount));
+  }
 
   // Re-render only the affected slots rather than rebuilding the entire cache.
   if (isCarouselTheme) {
@@ -848,10 +856,15 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
       requestUpdate();
     }
   }
+
+  // Speed log: Home entry until covers and Carousel frames are all in place.
+  SpeedLog::recordNamed("home.ready", millis() - homeEnteredMs, SETTINGS.uiTheme);
 }
 
 void HomeActivity::onEnter() {
   Activity::onEnter();
+  homeEnteredMs = millis();
+  homeFirstFrameLogged = false;
 
   hasOpdsServers = OPDS_STORE.hasServers();
   const bool isCarouselTheme =
@@ -928,6 +941,8 @@ void HomeActivity::onEnter() {
     preRenderCarouselFrames(false);
   }
 
+  // Speed log: stores, stats and (Carousel) saved frames read before the first paint.
+  SpeedLog::recordNamed("home.enter", millis() - homeEnteredMs, SETTINGS.uiTheme);
   requestUpdate();
 }
 
@@ -1411,6 +1426,9 @@ int HomeActivity::chooseCarouselEvictionSlot(int centerIdx, int bookCount, std::
 bool HomeActivity::preRenderCarouselFrames(bool showProgressPopup) {
   const int bookCount = static_cast<int>(recentBooks.size());
   if (bookCount == 0) return false;
+  const uint32_t preRenderStartedMs = millis();
+  int framesFromDisk = 0;
+  int framesRendered = 0;
   bool showedProgressPopup = false;
 
   // Build cache key from book paths plus thumb-asset availability so we don't
@@ -1455,6 +1473,9 @@ bool HomeActivity::preRenderCarouselFrames(bool showProgressPopup) {
   auto loadOrRender = [&](int bookIdx, int slot) {
     if (!diskCacheValid || !loadCarouselFrameFromDisk(newKeyHash, bookCount, bookIdx, slot)) {
       renderCarouselFrame(bookIdx, slot);
+      ++framesRendered;
+    } else {
+      ++framesFromDisk;
     }
   };
   loadOrRender(initialBookIdx, 0);
@@ -1478,12 +1499,17 @@ bool HomeActivity::preRenderCarouselFrames(bool showProgressPopup) {
   coverRendered = false;
   coverBufferStored = false;
 
+  // Speed log: the frames around the selected book (a = read from SD, b = drawn).
+  SpeedLog::recordNamed("home.prerender", millis() - preRenderStartedMs, framesFromDisk, framesRendered);
+
   // Persist the freshly-rendered carousel snapshot back to SD after Home is
   // already visible so later reader->Home returns and carousel navigation can
   // bootstrap from disk instead of live-rendering covers again.
   if (!diskCacheValid && gCarouselCache.frameCount > 0) {
     if (hasFullFrameCache) {
+      const uint32_t diskCacheStartedMs = millis();
       const bool cacheBuilt = buildCarouselCacheFile(newKey, newKeyHash, bookCount, showProgressPopup);
+      SpeedLog::recordNamed("home.diskcache", millis() - diskCacheStartedMs, bookCount, cacheBuilt ? 1 : 0);
       if (cacheBuilt) {
         gCarouselCache.keyHash = newKeyHash;
         showedProgressPopup = true;
@@ -2114,6 +2140,11 @@ void HomeActivity::render(RenderLock&&) {
   const auto displayHomeBuffer = [this] {
     renderer.displayBuffer(initialRefreshMode);
     initialRefreshMode = HalDisplay::FAST_REFRESH;
+    if (!homeFirstFrameLogged) {
+      // Speed log: Home entry to the first frame on the panel (b = 1 from a saved Carousel frame).
+      homeFirstFrameLogged = true;
+      SpeedLog::recordNamed("home.first", millis() - homeEnteredMs, SETTINGS.uiTheme, carouselFramesReady ? 1 : 0);
+    }
   };
 
   if (usesMinimalHomeInteraction()) {
@@ -2316,7 +2347,9 @@ void HomeActivity::renderCarouselFrame(int bookIdx, int slotIdx) {
   }
   uint8_t* frameBuffer = renderer.getFrameBuffer();
   if (!frameBuffer || !gCarouselCache.frames[slotIdx]) return;
+  const uint32_t frameStartedMs = millis();
   renderCarouselFrameToCurrentBuffer(bookIdx, nullptr, nullptr, nullptr);
+  SpeedLog::recordNamed("home.frame", millis() - frameStartedMs, bookIdx);
 
   memcpy(gCarouselCache.frames[slotIdx], frameBuffer, renderer.getBufferSize());
   gCarouselCache.frameBookIdx[slotIdx] = bookIdx;

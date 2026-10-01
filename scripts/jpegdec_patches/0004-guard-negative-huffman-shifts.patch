@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: patch <patch@local>
+Date: Fri, 25 Sep 2026 12:00:00 +0200
+Subject: [PATCH] Guard Huffman table shifts against negative counts
+
+JPEGMakeHuffTables*() test `(cc >> (iBitNum - N)) == mask` for every code
+length from 1 bit up, so codes shorter than N bits shift by a negative
+count, which is undefined behaviour (found with -fsanitize=undefined on
+ordinary baseline JPEGs). A code shorter than N bits can never start with
+N one-bits, so the long-table test is simply false there. On Xtensa the
+shift used the low five bits of the count and also came out false; the
+guard keeps that result without relying on undefined behaviour, which
+matters now that VARAGH builds this library at -O2.
+
+---
+ src/jpeg.inl | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/jpeg.inl b/src/jpeg.inl
+index 147b89e..a5c873e 100644
+--- a/src/jpeg.inl
++++ b/src/jpeg.inl
+@@ -923,7 +923,7 @@ static int JPEGMakeHuffTables_Slow(JPEGIMAGE *pJPEG, int bThumbnail)
+                 while (iLen)
+                 {
+                     //               if (iBitNum > 6) // do long table
+-                    if ((cc >> (iBitNum-5)) == 0x1f) // first 5 bits are 1 - use long table
++                    if (iBitNum >= 5 && (cc >> (iBitNum-5)) == 0x1f) // first 5 bits are 1 - use long table
+                     {
+                         count = iMaxLength - iBitNum;
+                         codestart = cc << count;
+@@ -1011,7 +1011,7 @@ static int JPEGMakeHuffTables_Slow(JPEGIMAGE *pJPEG, int bThumbnail)
+                 iLen = *pBits++; // get number of codes for this bit length
+                 while (iLen)
+                 {
+-                    if ((cc >> (iBitNum-4)) == 0xf) // first 4 bits are 1 - use long table
++                    if (iBitNum >= 4 && (cc >> (iBitNum-4)) == 0xf) // first 4 bits are 1 - use long table
+                     {
+                         count = 16 - iBitNum;
+                         codestart = cc << count;
+@@ -1112,7 +1112,7 @@ static int JPEGMakeHuffTables(JPEGIMAGE *pJPEG, int bThumbnail)
+                 while (iLen)
+                 {
+                     //               if (iBitNum > 6) // do long table
+-                    if ((cc >> (iBitNum-5)) == 0x1f) // first 5 bits are 1 - use long table
++                    if (iBitNum >= 5 && (cc >> (iBitNum-5)) == 0x1f) // first 5 bits are 1 - use long table
+                     {
+                         count = iMaxLength - iBitNum;
+                         codestart = cc << count;
+@@ -1197,7 +1197,7 @@ static int JPEGMakeHuffTables(JPEGIMAGE *pJPEG, int bThumbnail)
+                 iLen = *pBits++; // get number of codes for this bit length
+                 while (iLen)
+                 {
+-                    if ((cc >> (iBitNum-6)) == 0x3f) // first 6 bits are 1 - use long table
++                    if (iBitNum >= 6 && (cc >> (iBitNum-6)) == 0x3f) // first 6 bits are 1 - use long table
+                     {
+                         count = 16 - iBitNum;
+                         codestart = cc << count;
+-- 
+2.50.1
+

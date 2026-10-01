@@ -1,5 +1,6 @@
 #include "Hyphenator.h"
 
+#include <SpeedProfile.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -176,6 +177,7 @@ std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& w
   if (word.empty()) {
     return {};
   }
+  const SpeedProfile::Scope profile(SpeedProfile::Hyphenate);
 
   // Convert to codepoints and normalize word boundaries.
   auto cps = collectCodepoints(word);

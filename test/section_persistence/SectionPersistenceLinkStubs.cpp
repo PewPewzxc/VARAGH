@@ -1,6 +1,7 @@
 #include <Epub.h>
 #include <GfxRenderer.h>
 #include <Serialization.h>
+#include <SpeedLog.h>
 
 #include "Epub/Page.h"
 #include "Epub/hyphenation/Hyphenator.h"
@@ -20,8 +21,14 @@ int Epub::getTocIndexForSpineIndex(int) const { return -1; }
 bool Epub::readItemContentsToStream(const std::string&, Print&, size_t, bool) const { return false; }
 
 bool CssParser::loadFromCache() { return false; }
+// Referenced by the inline CssParser::clear() that Section calls.
+size_t CssParser::SvHash::operator()(const std::string& s) const noexcept { return std::hash<std::string>{}(s); }
 
 void Hyphenator::setPreferredLanguage(const std::string&) {}
+
+// The speed log writes to the SD card on device; section tests only need the symbol.
+void SpeedLog::record(SpeedLog::Event, uint32_t, int32_t, int32_t) {}
+void SpeedLog::recordNamed(const char*, uint32_t, int32_t, int32_t) {}
 
 ChapterHtmlSlimParser::~ChapterHtmlSlimParser() = default;
 bool ChapterHtmlSlimParser::beginParse() { return false; }

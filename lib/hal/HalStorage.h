@@ -103,9 +103,16 @@ class HalFile : public Print {
   // SdFat returns an invalid child for both clean end-of-directory and a
   // failed directory read. Preserve which case ended the latest iteration.
   bool iterationFailed_ = false;
+  // Open write batch (see beginWriteBatch); batch_ is null when none is.
+  uint8_t* batch_ = nullptr;
+  size_t batchCapacity_ = 0;
+  size_t batchLength_ = 0;
+  bool batchOk_ = true;
 
   explicit HalFile(ImplPtr impl);
   static void* allocateImplStorage();
+  bool flushWriteBatch();
+  void clearWriteBatch();
 
  public:
   HalFile();
@@ -134,6 +141,15 @@ class HalFile : public Print {
   size_t write(const uint8_t* buf, size_t count) override { return write(static_cast<const void*>(buf), count); }
   size_t write(uint8_t b) override;
   bool sync();
+  // Write batching for runs of small appends, such as one page of a chapter
+  // cache: while a batch is open, write() collects the bytes in `buffer` and
+  // hands them to the card in one call when the batch ends or the buffer
+  // fills, instead of taking the storage lock and a card write per field.
+  // Only write() and position() may be used until endWriteBatch(), which
+  // returns false if any batched bytes did not reach the file. close() ends
+  // an open batch first.
+  void beginWriteBatch(uint8_t* buffer, size_t capacity);
+  bool endWriteBatch();
   bool rename(const char* newPath);
   bool isDirectory() const;
   void rewindDirectory();

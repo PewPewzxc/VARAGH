@@ -107,6 +107,13 @@ def _patch_already_satisfied(jpeg_dir, patch_name):
             and "if (pJPEG->JPCI[2].component_needed) {" in content
         )
 
+    if patch_name.startswith("0004-"):
+        return (
+            "if (iBitNum >= 4 && (cc >> (iBitNum-4)) == 0xf)" in content
+            and "if (iBitNum >= 5 && (cc >> (iBitNum-5)) == 0x1f)" in content
+            and "if (iBitNum >= 6 && (cc >> (iBitNum-6)) == 0x3f)" in content
+        )
+
     return False
 
 

@@ -30,7 +30,7 @@ class HalFile : public Print {
   size_t size() const { return data_ ? data_->bytes.size() : 0; }
   size_t fileSize() const { return size(); }
   int available() const { return data_ && cursor_ < data_->bytes.size(); }
-  size_t position() const { return cursor_; }
+  size_t position() const { return cursor_ + batchLength_; }
 
   int read(void* output, const size_t length) {
     if (!data_) return 0;
@@ -49,6 +49,46 @@ class HalFile : public Print {
 
   size_t write(const uint8_t value) override { return write(&value, 1); }
   size_t write(const uint8_t* input, const size_t length) override {
+    if (batch_) {
+      if (batchLength_ + length > batchCapacity_ && !flushWriteBatch()) return 0;
+      if (length <= batchCapacity_) {
+        std::copy_n(input, length, batch_ + batchLength_);
+        batchLength_ += length;
+        return length;
+      }
+    }
+    return writeThrough(input, length);
+  }
+  size_t write(const void* input, const size_t length) { return write(static_cast<const uint8_t*>(input), length); }
+
+  // Write batching as in lib/hal/HalStorage.h: writes collect in the buffer
+  // and reach the file in one call when the batch ends or fills.
+  void beginWriteBatch(uint8_t* buffer, const size_t capacity) {
+    const bool earlierOk = flushWriteBatch();
+    clearWriteBatch();
+    batchOk_ = earlierOk;
+    if (buffer && capacity > 0) {
+      batch_ = buffer;
+      batchCapacity_ = capacity;
+    }
+  }
+  bool endWriteBatch() {
+    const bool ok = flushWriteBatch();
+    clearWriteBatch();
+    return ok;
+  }
+  bool sync() const { return static_cast<bool>(data_); }
+  bool close() {
+    const bool ok = endWriteBatch();
+    data_.reset();
+    cursor_ = 0;
+    return ok;
+  }
+  bool isOpen() const { return static_cast<bool>(data_); }
+  explicit operator bool() const { return isOpen(); }
+
+ private:
+  size_t writeThrough(const uint8_t* input, const size_t length) {
     if (!data_ || cursor_ >= data_->failAt) return 0;
     const size_t writable = std::min(length, data_->failAt - cursor_);
     if (cursor_ + writable > data_->bytes.size()) data_->bytes.resize(cursor_ + writable);
@@ -56,20 +96,26 @@ class HalFile : public Print {
     cursor_ += writable;
     return writable;
   }
-  size_t write(const void* input, const size_t length) { return write(static_cast<const uint8_t*>(input), length); }
-
-  bool sync() const { return static_cast<bool>(data_); }
-  bool close() {
-    data_.reset();
-    cursor_ = 0;
-    return true;
+  bool flushWriteBatch() {
+    if (batchLength_ > 0) {
+      if (writeThrough(batch_, batchLength_) != batchLength_) batchOk_ = false;
+      batchLength_ = 0;
+    }
+    return batchOk_;
   }
-  bool isOpen() const { return static_cast<bool>(data_); }
-  explicit operator bool() const { return isOpen(); }
+  void clearWriteBatch() {
+    batch_ = nullptr;
+    batchCapacity_ = 0;
+    batchLength_ = 0;
+    batchOk_ = true;
+  }
 
- private:
   std::shared_ptr<HostFileData> data_;
   size_t cursor_ = 0;
+  uint8_t* batch_ = nullptr;
+  size_t batchCapacity_ = 0;
+  size_t batchLength_ = 0;
+  bool batchOk_ = true;
 };
 
 using FsFile = HalFile;

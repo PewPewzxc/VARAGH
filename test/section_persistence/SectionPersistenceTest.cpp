@@ -1,9 +1,26 @@
 #include <gtest/gtest.h>
 
+// Standard headers go in before the access macros below: libstdc++'s parallel
+// algorithm declarations (pulled in by <algorithm> and <numeric> on newer
+// toolchains) do not survive `class` being redefined.
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <functional>
+#include <list>
+#include <map>
 #include <memory>
+#include <numeric>
+#include <optional>
+#include <set>
 #include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #define class struct
@@ -16,8 +33,8 @@
 #include <GfxRenderer.h>
 
 namespace {
-constexpr uint8_t kFullVersion = 77;
-constexpr uint8_t kPartialVersion = 0xF3;
+constexpr uint8_t kFullVersion = 78;
+constexpr uint8_t kPartialVersion = 0xF4;
 constexpr uint8_t kPreviousFullVersion = 76;
 constexpr uint8_t kPreviousPartialVersion = 0xF5;
 
@@ -100,6 +117,30 @@ TEST_F(SectionPersistenceTest, FullCommitReopensAndResolvesMetadataAcrossAChunkB
   EXPECT_EQ(reopened.getPageForListItemIndex(320), 64);
   EXPECT_EQ(reopened.getPageForVisibleTextOffset(1088), 64);
   EXPECT_NE(reopened.loadPage(64), nullptr);
+}
+
+TEST_F(SectionPersistenceTest, WriteBatchAcrossManyPagesKeepsEveryOffset) {
+  // A full build keeps one write batch open across all its pages; with this
+  // many pages it fills and flushes several times, and the batch the commit
+  // opens for the page index must first write out what is still collected.
+  SectionHarness harness;
+  harness.begin({{"chapter", 0}, {"end", 4999}});
+  harness.section.beginFileWriteBatch();
+  harness.section.wholeBuildBatch_ = true;
+  harness.appendPages(5000);
+  harness.section.wholeBuildBatch_ = false;
+  ASSERT_TRUE(harness.commit(kFullVersion));
+  harness.finishSuccessfulCommit();
+
+  Section reopened(harness.epub, 0, harness.renderer);
+  ASSERT_TRUE(reopened.loadSectionFile(harness.spec));
+  EXPECT_EQ(reopened.pageCount, 5000);
+  EXPECT_EQ(reopened.findAnchor("end"), 4999);
+  EXPECT_EQ(reopened.getParagraphIndexForPage(4999), 4999 * 3);
+  EXPECT_EQ(reopened.getVisibleTextOffsetForPage(4999), 4999U * 17U);
+  for (const uint16_t page : {0, 1, 2047, 2048, 4998, 4999}) {
+    EXPECT_NE(reopened.loadPage(page), nullptr) << "page " << page;
+  }
 }
 
 TEST_F(SectionPersistenceTest, PartialCommitFiltersFutureAnchorsAndFallsBackBeyondTheLivePrefix) {

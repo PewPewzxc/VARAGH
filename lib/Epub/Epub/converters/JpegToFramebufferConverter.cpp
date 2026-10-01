@@ -13,6 +13,7 @@
 #include "DirectPixelWriter.h"
 #include "DitherUtils.h"
 #include "PixelCache.h"
+#include "ToneMappedImage.h"
 
 namespace {
 
@@ -46,6 +47,14 @@ struct JpegContext {
   PixelCache cache;
   bool caching{false};
   uint32_t lastYieldMs{0};
+
+  // Tone-mapped path (PSRAM boards): full-width band of the current MCU row.
+  ToneMappedImageWriter* tone{nullptr};
+  uint8_t* band{nullptr};
+  int bandStride{0};
+  int bandY{-1};
+  int bandRows{0};
+  int toneNextRow{0};  // scaled-source rows handed to the tone mapper so far
 };
 
 // File I/O callbacks use pFile->fHandle to access the FsFile*,
@@ -179,6 +188,54 @@ constexpr int FP_SHIFT = 16;
 constexpr int32_t FP_ONE = 1 << FP_SHIFT;
 constexpr int32_t FP_MASK = FP_ONE - 1;
 
+// Tone-mapped path. JPEGDEC hands over each MCU row as left-to-right blocks
+// (raster MCU order), while error diffusion needs whole rows top to bottom. So
+// gather one MCU row across the full width, then pass its rows to the tone
+// mapper once the next MCU row starts or decoding ends.
+constexpr int JPEG_TONE_BAND_ROWS = 16;  // tallest MCU (4:2:0 luma) at 1:1 scale
+
+void flushToneBand(JpegContext* ctx) {
+  if (ctx->bandY < 0) return;
+  // Keep the mapper's row count aligned with the image even if a band ever
+  // arrived out of step: repeat the first row over a gap, skip an overlap.
+  while (ctx->toneNextRow < ctx->bandY && ctx->toneNextRow < ctx->scaledSrcHeight) {
+    ctx->tone->addSourceRow(ctx->band);
+    ++ctx->toneNextRow;
+  }
+  for (int r = 0; r < ctx->bandRows; ++r) {
+    const int srcRow = ctx->bandY + r;
+    if (srcRow < ctx->toneNextRow) continue;
+    ctx->tone->addSourceRow(ctx->band + static_cast<size_t>(r) * ctx->bandStride);
+    ctx->toneNextRow = srcRow + 1;
+  }
+  ctx->bandY = -1;
+  ctx->bandRows = 0;
+}
+
+void addToneBlock(JpegContext* ctx, const uint8_t* pixels, const int stride, const int blockX, const int blockY,
+                  const int validW, const int blockH) {
+  if (blockY != ctx->bandY) {
+    flushToneBand(ctx);
+    int rows = blockH;
+    if (rows > ctx->scaledSrcHeight - blockY) rows = ctx->scaledSrcHeight - blockY;
+    if (rows > JPEG_TONE_BAND_ROWS) {
+      LOG_ERR("JPG", "MCU row taller than tone band (%d > %d); clipping", rows, JPEG_TONE_BAND_ROWS);
+      rows = JPEG_TONE_BAND_ROWS;
+    }
+    if (rows <= 0) return;
+    ctx->bandY = blockY;
+    ctx->bandRows = rows;
+    memset(ctx->band, 0xFF, static_cast<size_t>(rows) * ctx->bandStride);
+  }
+  if (blockX < 0 || blockX >= ctx->bandStride) return;
+  int cols = validW;
+  if (cols > ctx->bandStride - blockX) cols = ctx->bandStride - blockX;
+  for (int r = 0; r < ctx->bandRows; ++r) {
+    memcpy(ctx->band + static_cast<size_t>(r) * ctx->bandStride + blockX, pixels + static_cast<size_t>(r) * stride,
+           static_cast<size_t>(cols));
+  }
+}
+
 int jpegDrawCallback(JPEGDRAW* pDraw) {
   JpegContext* ctx = reinterpret_cast<JpegContext*>(pDraw->pUser);
   if (!ctx || !ctx->config || !ctx->renderer) return 0;
@@ -193,6 +250,11 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   const int blockH = pDraw->iHeight;
 
   if (stride <= 0 || blockH <= 0 || validW <= 0) return 1;
+
+  if (ctx->tone) {
+    addToneBlock(ctx, pixels, stride, pDraw->x, pDraw->y, validW, blockH);
+    return 1;
+  }
 
   const bool useDithering = ctx->config->useDithering;
   bool caching = ctx->caching;
@@ -547,16 +609,35 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
     }
   }
 
+  // Downscales on PSRAM boards take the tone-mapped path (area average +
+  // error diffusion); anything else keeps the ordered-dither paths below.
+  ToneMappedImageWriter tone;
+  HeapByteBuffer toneBand;
+  if (ToneMappedImageWriter::shouldUse(config, ctx.scaledSrcWidth, ctx.scaledSrcHeight, destWidth, destHeight)) {
+    toneBand = makePsramByteBufferNoThrow(static_cast<size_t>(ctx.scaledSrcWidth) * JPEG_TONE_BAND_ROWS);
+    if (toneBand && tone.begin(renderer, config, &ctx.cache, &ctx.caching, ctx.scaledSrcWidth, ctx.scaledSrcHeight,
+                               destWidth, destHeight)) {
+      ctx.tone = &tone;
+      ctx.band = toneBand.get();
+      ctx.bandStride = ctx.scaledSrcWidth;
+    }
+  }
+
   ctx.lastYieldMs = millis();
   const uint32_t decodeStarted = millis();
   rc = jpeg->decode(0, 0, jpegScaleOption);
-  LOG_DBG("JPG", "Decoded %s: ok=%d time=%ums", imagePath.c_str(), rc == 1,
+  LOG_DBG("JPG", "Decoded %s: ok=%d tone=%d time=%ums", imagePath.c_str(), rc == 1, ctx.tone != nullptr,
           static_cast<unsigned>(millis() - decodeStarted));
 
   if (rc != 1) {
     LOG_ERR("JPG", "Decode failed (rc=%d, lastError=%d)", rc, jpeg->getLastError());
     if (ctx.caching) ctx.cache.abort();
     return false;
+  }
+
+  if (ctx.tone) {
+    flushToneBand(&ctx);
+    tone.finish();
   }
 
   // Finalize the streamed cache file. Note: a flush failure mid-decode clears

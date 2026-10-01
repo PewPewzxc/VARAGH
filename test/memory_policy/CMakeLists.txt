@@ -6,6 +6,7 @@ gtest_discover_tests(MemoryPoolPolicyTest PROPERTIES ENVIRONMENT "UBSAN_OPTIONS=
 
 add_executable(JpegDecoderPolicyTest JpegDecoderPolicyTest.cpp
   ${REPO_ROOT}/lib/Epub/Epub/converters/JpegToFramebufferConverter.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/converters/ToneMappedImage.cpp
   ${REPO_ROOT}/lib/Epub/Epub/converters/ImageToFramebufferDecoder.cpp)
 target_include_directories(JpegDecoderPolicyTest PRIVATE jpeg_decoder_stubs stubs
   ${REPO_ROOT}/lib/Epub/Epub/converters ${REPO_ROOT}/lib/Epub ${REPO_ROOT}/lib/Memory
@@ -24,7 +25,8 @@ target_link_libraries(InflateStreamStorageTest PRIVATE crosspoint_test_common GT
 gtest_discover_tests(InflateStreamStorageTest PROPERTIES ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
 
 add_executable(SdFontBitmapStorageTest SdFontBitmapStorageTest.cpp
-  ${REPO_ROOT}/lib/EpdFont/SdCardFont.cpp ${REPO_ROOT}/lib/EpdFont/EpdFont.cpp ${REPO_ROOT}/lib/Utf8/Utf8.cpp)
+  ${REPO_ROOT}/lib/EpdFont/SdCardFont.cpp ${REPO_ROOT}/lib/EpdFont/FontFileMirror.cpp
+  ${REPO_ROOT}/lib/EpdFont/EpdFont.cpp ${REPO_ROOT}/lib/Utf8/Utf8.cpp)
 target_include_directories(SdFontBitmapStorageTest PRIVATE stubs ${REPO_ROOT}/lib/Memory ${REPO_ROOT}/lib/MemoryBudget ${REPO_ROOT}/lib/EpdFont ${REPO_ROOT}/lib/Utf8)
 target_compile_definitions(SdFontBitmapStorageTest PRIVATE ARDUINO_ARCH_ESP32=1 CROSSINK_MEMORY_TEST=1)
 target_link_libraries(SdFontBitmapStorageTest PRIVATE crosspoint_test_common GTest::gtest_main)
@@ -51,3 +53,31 @@ if(PSRAM_REFERENCE_ROOT)
   add_layout_test(TextLayoutReferenceTest ${PSRAM_REFERENCE_ROOT})
   target_compile_definitions(TextLayoutReferenceTest PRIVATE PSRAM_REFERENCE=1)
 endif()
+
+add_executable(FontFileMirrorTest FontFileMirrorTest.cpp ${REPO_ROOT}/lib/EpdFont/FontFileMirror.cpp)
+target_include_directories(FontFileMirrorTest PRIVATE stubs ${REPO_ROOT}/lib/Memory ${REPO_ROOT}/lib/MemoryBudget
+  ${REPO_ROOT}/lib/EpdFont)
+target_compile_definitions(FontFileMirrorTest PRIVATE ARDUINO_ARCH_ESP32=1 CROSSINK_MEMORY_TEST=1)
+target_link_libraries(FontFileMirrorTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(FontFileMirrorTest PROPERTIES ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
+
+add_executable(ToneMappedImageTest ToneMappedImageTest.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/converters/ToneMappedImage.cpp
+  ${REPO_ROOT}/freeink-sdk/libs/assets/ImageToneMapper/src/ImageToneMapper.cpp)
+target_include_directories(ToneMappedImageTest PRIVATE jpeg_decoder_stubs stubs
+  ${REPO_ROOT}/lib/Epub/Epub/converters ${REPO_ROOT}/lib/Epub ${REPO_ROOT}/lib/Memory
+  ${REPO_ROOT}/lib/MemoryBudget ${REPO_ROOT}/freeink-sdk/libs/assets/ImageToneMapper/include)
+target_compile_definitions(ToneMappedImageTest PRIVATE ARDUINO_ARCH_ESP32=1 CROSSINK_MEMORY_TEST=1)
+target_link_libraries(ToneMappedImageTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(ToneMappedImageTest PROPERTIES ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
+
+add_executable(JpegTonePathTest JpegTonePathTest.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/converters/JpegToFramebufferConverter.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/converters/ImageToFramebufferDecoder.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/converters/ToneMappedImage.cpp)
+target_include_directories(JpegTonePathTest PRIVATE jpeg_decoder_stubs stubs
+  ${REPO_ROOT}/lib/Epub/Epub/converters ${REPO_ROOT}/lib/Epub ${REPO_ROOT}/lib/Memory
+  ${REPO_ROOT}/lib/MemoryBudget)
+target_compile_definitions(JpegTonePathTest PRIVATE ARDUINO_ARCH_ESP32=1 CROSSINK_MEMORY_TEST=1)
+target_link_libraries(JpegTonePathTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(JpegTonePathTest PROPERTIES ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")

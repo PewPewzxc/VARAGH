@@ -29,6 +29,7 @@ target_include_directories(crosspoint_test_common INTERFACE
   ${REPO_ROOT}
   ${REPO_ROOT}/lib
   ${REPO_ROOT}/lib/MemoryBudget
+  ${REPO_ROOT}/lib/SpeedLog
 )
 target_compile_options(crosspoint_test_common INTERFACE
   -Wall
@@ -92,3 +93,4 @@ add_subdirectory(koreader_xpath_resolver)
 add_subdirectory(fs_helpers)
 add_subdirectory(persistable_store_atomic)
 add_subdirectory(book_reading_stats_atomic)
+add_subdirectory(speed_log)

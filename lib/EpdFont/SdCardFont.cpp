@@ -4,6 +4,7 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <PoolBudget.h>
+#include <SpeedProfile.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -241,6 +242,7 @@ void SdCardFont::freeStyleAll(PerStyle& s) {
 // --- Global free/cleanup ---
 
 void SdCardFont::freeAll() {
+  mirror_.release();
   clearOverflow();
   clearPersistentCache();
   for (uint8_t i = 0; i < MAX_STYLES; i++) {
@@ -292,8 +294,8 @@ bool SdCardFont::loadStyleKernLigatureData(PerStyle& s, const bool includeKernin
   const bool needLig = s.header.ligaturePairCount > 0 && !s.ligaturesLoaded;
   if (!needKern && !needLig) return true;
 
-  HalFile file;
-  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+  FontFileReader file(mirror_, filePath_);
+  if (!file.open()) {
     LOG_ERR("SDCF", "Failed to open .cpfont for kern/lig: %s", filePath_);
     return false;
   }
@@ -483,8 +485,8 @@ bool SdCardFont::buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, ui
   // Step 6: read the full matrix's rows for each used left class, keep only
   // columns for used right classes. One SD seek + one read per used left class;
   // a row is kernRightClassCount bytes (~200 for Literata).
-  HalFile file;
-  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+  FontFileReader file(mirror_, filePath_);
+  if (!file.open()) {
     LOG_ERR("SDCF", "Failed to open .cpfont for mini kern: %s", filePath_);
     freeStyleMiniKern(s);
     return false;
@@ -576,6 +578,8 @@ bool SdCardFont::load(const char* path) {
     LOG_ERR("SDCF", "Failed to open .cpfont: %s", path);
     return false;
   }
+
+  const size_t fileSize = file.size();
 
   // Read and validate global header
   uint8_t headerBuf[HEADER_SIZE];
@@ -814,7 +818,12 @@ bool SdCardFont::load(const char* path) {
 
   loaded_ = true;
 
-  LOG_DBG("SDCF", "Loaded: %s (v%u, %u styles)", path, CPFONT_VERSION, styleCount_);
+  // Reserve the PSRAM mirror only after the file validated. It fills lazily,
+  // so this adds no SD reads; on failure every read keeps using the card.
+  mirror_.attach(static_cast<uint32_t>(std::min<size_t>(fileSize, FontFileMirror::MAX_FILE_BYTES + 1U)));
+
+  LOG_DBG("SDCF", "Loaded: %s (v%u, %u styles, mirror=%s)", path, CPFONT_VERSION, styleCount_,
+          mirror_.attached() ? "psram" : "off");
   for (uint8_t i = 0; i < MAX_STYLES; i++) {
     if (!styles_[i].present) continue;
     const auto& h = styles_[i].header;
@@ -845,6 +854,7 @@ int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) 
 
 bool SdCardFont::readAdvance(uint32_t codepoint, uint8_t style, uint16_t* outAdvance) const {
   if (!outAdvance || !loaded_) return false;
+  const SpeedProfile::Scope profile(SpeedProfile::Fonts);
 
   const uint8_t styleIdx = resolveStyle(style);
   if (styleIdx >= MAX_STYLES || !styles_[styleIdx].present) return false;
@@ -858,8 +868,8 @@ bool SdCardFont::readAdvance(uint32_t codepoint, uint8_t style, uint16_t* outAdv
   }
   if (glyphIndex < 0) return false;
 
-  HalFile file;
-  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+  FontFileReader file(mirror_, filePath_);
+  if (!file.open()) {
     LOG_ERR("SDCF", "readAdvance: failed to open .cpfont for U+%04X style %u", codepoint, styleIdx);
     return false;
   }
@@ -880,6 +890,7 @@ bool SdCardFont::readAdvance(uint32_t codepoint, uint8_t style, uint16_t* outAdv
 // --- Prewarm ---
 
 int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly, const bool includeKerning) {
+  const SpeedProfile::Scope profile(SpeedProfile::Fonts);
   lastPrewarmFailed_ = false;
   if (!loaded_) return failPrewarm(-1);
   styleMask = resolveStyleMask(styleMask);
@@ -1155,8 +1166,8 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
   std::sort(readOrder.get(), readOrder.get() + validCount,
             [&](uint32_t a, uint32_t b) { return mappings[a].globalIndex < mappings[b].globalIndex; });
 
-  HalFile file;
-  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+  FontFileReader file(mirror_, filePath_);
+  if (!file.open()) {
     LOG_ERR("SDCF", "Failed to reopen .cpfont for prewarm (style %u)", styleIdx);
     freeStyleMiniData(s);
     return failPrewarm(static_cast<int>(cpCount));
@@ -1331,6 +1342,14 @@ void SdCardFont::releaseForLowMemory(const bool preserveAdvanceTable) {
     freeStyleMiniData(styles_[i]);
     freeStyleKernLigatureData(styles_[i]);
     applyGlyphMissCallback(i);
+  }
+
+  // The mirror lives in PSRAM, not the internal heap these callers are short
+  // of. Give it back only when PSRAM itself runs low; dropping it just sends
+  // the next reads back to the SD card.
+  if (mirror_.attached() && byteHeapSnapshot(MemoryPool::Psram).free < FontFileMirror::PSRAM_HEADROOM_BYTES / 2) {
+    LOG_DBG("SDCF", "Releasing font mirror: PSRAM low");
+    mirror_.release();
   }
 }
 
@@ -1523,8 +1542,8 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
               [](const CpIdx& a, const CpIdx& b) { return a.glyphIndex < b.glyphIndex; });
 
     // Open file once and read advanceX for each needed glyph.
-    HalFile file;
-    if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+    FontFileReader file(mirror_, filePath_);
+    if (!file.open()) {
       LOG_ERR("SDCF", "buildAdvanceTable: failed to open .cpfont for style %u", si);
       continue;
     }
@@ -1574,6 +1593,7 @@ template <typename Iter>
 int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, bool includeHyphen, uint8_t styleMask,
                                        const char* extraText) {
   if (!loaded_) return -1;
+  const SpeedProfile::Scope profile(SpeedProfile::Fonts);
   styleMask = resolveStyleMask(styleMask);
   if (styleMask == 0) return 0;
 
@@ -1632,6 +1652,7 @@ int SdCardFont::buildAdvanceTable(const std::deque<std::string>& words, bool inc
 int SdCardFont::buildAdvanceTableForCodepoints(const uint32_t* sourceCodepoints, uint32_t cpCount, bool includeSpace,
                                                bool includeHyphen, uint8_t styleMask) {
   if (!loaded_) return -1;
+  const SpeedProfile::Scope profile(SpeedProfile::Fonts);
   styleMask = resolveStyleMask(styleMask);
   if (styleMask == 0) return 0;
 
@@ -1665,6 +1686,11 @@ int SdCardFont::buildAdvanceTableForCodepoints(const uint32_t* sourceCodepoints,
 void SdCardFont::logStats(const char* label) {
   LOG_DBG("SDCF", "[%s] total=%ums sd_read=%ums seeks=%u glyphs=%u bitmap=%u bytes", label, stats_.prewarmTotalMs,
           stats_.sdReadTimeMs, stats_.seekCount, stats_.uniqueGlyphs, stats_.bitmapBytes);
+  if (mirror_.attached()) {
+    const auto& m = mirror_.stats();
+    LOG_DBG("SDCF", "[%s] mirror: hits=%u sd_fills=%u sd_bytes=%u sd_ms=%u", label, m.hitReads, m.sdFills, m.sdBytes,
+            m.sdFillMs);
+  }
 }
 
 void SdCardFont::resetStats() { stats_ = Stats{}; }
@@ -1709,6 +1735,7 @@ uint8_t SdCardFont::resolveStyleMask(uint8_t styleMask) const {
 // --- On-demand glyph loading (overflow buffer) ---
 
 const EpdGlyph* SdCardFont::onGlyphMiss(void* ctx, uint32_t codepoint) {
+  const SpeedProfile::Scope profile(SpeedProfile::Fonts);
   auto* oc = static_cast<OverflowContext*>(ctx);
   auto* self = oc->self;
   uint8_t styleIdx = oc->styleIdx;
@@ -1735,8 +1762,8 @@ const EpdGlyph* SdCardFont::onGlyphMiss(void* ctx, uint32_t codepoint) {
   bool wasAtCapacity = (self->overflowCount_ == OVERFLOW_CAPACITY);
 
   // Read glyph metadata into temporary
-  HalFile file;
-  if (!Storage.openFileForRead("SDCF", self->filePath_, file)) {
+  FontFileReader file(self->mirror_, self->filePath_);
+  if (!file.open()) {
     LOG_ERR("SDCF", "Overflow: failed to open .cpfont");
     return nullptr;
   }
