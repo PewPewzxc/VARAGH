@@ -2655,6 +2655,12 @@ void EpubReaderActivity::openReaderMenu() {
       endGlobalSettingsEditForBookReader, this, bookSettings.dictionarySdFontFamilyName,
       bookSettings.dictionaryFontPointSize, bookSettings.hasDictionaryFontOverride, saveDictionaryFontForBookReader,
       this, touchReaderDrawerState, std::move(buttonPreviewModel));
+  if (menuActivity) {
+    // The reader stays below the drawer, so `this` outlives the provider.
+    landingCache = LandingCache{};
+    menuActivity->setLandingProvider(
+        [this](const float percent, PercentLanding& out) { return describePercentTarget(percent, out); });
+  }
   if (!menuActivity) {
     LOG_ERR("ERS", "Could not allocate reader drawer");
     resumeReadingPaceTimer("reader_menu_oom");
@@ -3611,7 +3617,7 @@ void EpubReaderActivity::jumpToPercent(float percent) {
   armReadingPaceWarmup("percent_jump");
 }
 
-bool EpubReaderActivity::describePercentTarget(const float percent, EpubReaderPercentSelectionActivity::Landing& out) {
+bool EpubReaderActivity::describePercentTarget(const float percent, PercentLanding& out) {
   int spineIndex = 0;
   float spineProgress = 0.0f;
   if (!epub || !resolvePercentTarget(percent, spineIndex, spineProgress)) return false;
@@ -3954,7 +3960,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuAction action, const 
       auto selector = std::make_unique<EpubReaderPercentSelectionActivity>(renderer, mappedInput, bookProgress);
       // The reader stays below the selector, so `this` outlives the provider.
       landingCache = LandingCache{};
-      selector->setLandingProvider([this](const float percent, EpubReaderPercentSelectionActivity::Landing& out) {
+      selector->setLandingProvider([this](const float percent, PercentLanding& out) {
         return describePercentTarget(percent, out);
       });
       startActivityForResult(std::move(selector),

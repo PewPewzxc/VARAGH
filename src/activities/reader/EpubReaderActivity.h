@@ -430,7 +430,7 @@ class EpubReaderActivity final : public Activity {
   // Chapter (spine) and position within it for a book percent. Caller holds the render lock.
   bool resolvePercentTarget(float percent, int& spineIndex, float& spineProgress) const;
   // Go to % preview: chapter title and page for a percent (render lock held).
-  bool describePercentTarget(float percent, EpubReaderPercentSelectionActivity::Landing& out);
+  bool describePercentTarget(float percent, PercentLanding& out);
   struct LandingCache {
     int spineIndex = -1;
     std::string title;

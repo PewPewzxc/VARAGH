@@ -4,10 +4,10 @@
 #include <FreeInkUIGfxRenderer.h>
 
 #include <atomic>
-#include <functional>
 #include <string>
 
 #include "MappedInputManager.h"
+#include "PercentLanding.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
@@ -20,14 +20,8 @@ class EpubReaderPercentSelectionActivity final : public Activity {
                                      uint32_t pageCount);
 
   // VARAGH: where a percent lands, shown under the readout (CrossPoint #3739).
-  struct Landing {
-    std::string chapter;    // chapter title; empty when the book has none
-    uint32_t page = 0;      // 1-based page within the chapter; 0 = unknown
-    uint32_t pageCount = 0; // pages in that chapter; 0 = unknown
-    bool estimated = false; // true when the chapter is not laid out yet
-  };
-  // Called while the render lock is held (from render()); must not take it again.
-  using LandingProvider = std::function<bool(float percent, Landing& out)>;
+  using Landing = PercentLanding;
+  using LandingProvider = PercentLandingProvider;
   void setLandingProvider(LandingProvider provider) { landingProvider = std::move(provider); }
 
   void onEnter() override;

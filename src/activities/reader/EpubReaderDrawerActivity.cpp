@@ -1192,7 +1192,31 @@ void EpubReaderDrawerActivity::buildPercentPane(UiApp::ScreenType& screen) {
   } else {
     std::snprintf(value, sizeof(value), "%d.%02d%%", percent / 100, percent % 100);
   }
-  buildDrawerKeypad(screen, /*allowDecimal=*/true, value);
+  // A keypad opened on a button device shows "0%" until a digit is typed, so it
+  // has no destination to describe yet.
+  buildDrawerKeypad(screen, /*allowDecimal=*/true, value, /*showLanding=*/!(percentKeypadActive && entryLen == 0));
+}
+
+void EpubReaderDrawerActivity::buildPercentLanding(UiApp::ScreenType& screen) {
+  if (!landingProvider) return;
+  PercentLanding landing;
+  if (!landingProvider(static_cast<float>(percent) / 100.0f, landing)) return;
+  const auto& theme = screen.theme();
+  fui::TextStyle style = theme.smallText;
+  style.align = fui::TextAlign::Center;
+  const int16_t lineHeight = screen.target().lineHeight(style.font);
+  const fui::Insets sideInset{0, theme.spaceLg, 0, theme.spaceLg};
+  if (!landing.chapter.empty()) {
+    fui::TextStyle title = style;
+    title.bold = true;
+    screen.target().text(screen.takeTop(lineHeight, theme.spaceSm).inset(sideInset), landing.chapter.c_str(), title);
+  }
+  if (landing.page > 0 && landing.pageCount > 0) {
+    char line[48];
+    std::snprintf(line, sizeof(line), landing.estimated ? tr(STR_LANDING_PAGE_ESTIMATE) : tr(STR_LANDING_PAGE),
+                  static_cast<unsigned>(landing.page), static_cast<unsigned>(landing.pageCount));
+    screen.target().text(screen.takeTop(lineHeight, theme.spaceSm).inset(sideInset), line, style);
+  }
 }
 
 void EpubReaderDrawerActivity::buildPercentSlider(UiApp::ScreenType& screen) {
@@ -1208,6 +1232,7 @@ void EpubReaderDrawerActivity::buildPercentSlider(UiApp::ScreenType& screen) {
   char value[16];
   std::snprintf(value, sizeof(value), "%d.%02d%%", percent / 100, percent % 100);
   screen.target().text(screen.takeTop(readoutHeight, theme.spaceLg), value, readout);
+  buildPercentLanding(screen);
 
   // The slider is visual only on button devices. Physical buttons change the
   // value directly, preserving the old selector's 1% and 10% steps.
@@ -1246,7 +1271,7 @@ void EpubReaderDrawerActivity::buildStablePagePane(UiApp::ScreenType& screen) {
 // instead, matching EpubReaderPercentSelectionActivity's non-touch keypad. The
 // button device moves focus through the grid and uses Confirm on the selected key.
 void EpubReaderDrawerActivity::buildDrawerKeypad(UiApp::ScreenType& screen, const bool allowDecimal,
-                                                 const char* value) {
+                                                 const char* value, const bool showLanding) {
   const auto& theme = screen.theme();
   fui::TextStyle readout = theme.titleText;
   readout.align = fui::TextAlign::Center;
@@ -1269,6 +1294,7 @@ void EpubReaderDrawerActivity::buildDrawerKeypad(UiApp::ScreenType& screen, cons
     backspaceBtn.enabled = entryLen > 0;
     screen.button(backspaceBtn, iconRect);
   }
+  if (showLanding) buildPercentLanding(screen);
 
   fui::Rect gridArea = screen.body().inset(fui::Insets{0, theme.spaceLg, theme.spaceLg, theme.spaceLg});
   gridArea.height = std::max<int16_t>(0, gridArea.height);

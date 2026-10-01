@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "EpubReaderMenuModel.h"
+#include "PercentLanding.h"
 #include "ReaderOptionsActivity.h"
 #include "TouchReaderPreviewModel.h"
 #include "activities/Activity.h"
@@ -71,8 +72,11 @@ class EpubReaderDrawerActivity final : public Activity {
   // preserving the capacitive Home key's existing drawer-back behavior.
   bool allowGlobalHomeSwipeGesture() const override { return false; }
   bool handleHomeGesture() override;
+  // VARAGH: Go to % shows the chapter and page a percent lands on.
+  void setLandingProvider(PercentLandingProvider provider) { landingProvider = std::move(provider); }
 
  private:
+  PercentLandingProvider landingProvider;
   using RowId = ReaderDrawerCatalogItem;
 
   using UiApp = freeink::ui::FreeInkApp<48, 11>;
@@ -214,7 +218,9 @@ class EpubReaderDrawerActivity final : public Activity {
   // Shared by both panes: a readout with a backspace icon, and a 4x3 grid (1-9 / 0,
   // ., OK; Percent only enables "."). There is no separate Confirm button; button
   // devices move focus through the grid and press Confirm on OK.
-  void buildDrawerKeypad(UiApp::ScreenType& screen, bool allowDecimal, const char* value);
+  void buildDrawerKeypad(UiApp::ScreenType& screen, bool allowDecimal, const char* value, bool showLanding = false);
+  // Chapter and page lines for the Go to % pane, from landingProvider.
+  void buildPercentLanding(UiApp::ScreenType& screen);
   void buildAutoPageTurnPane(UiApp::ScreenType& screen);
   void buildConfirmButton(UiApp::ScreenType& screen);
   void buildDictionaryPane(UiApp::ScreenType& screen);
