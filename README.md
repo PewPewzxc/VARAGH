@@ -24,6 +24,31 @@ their features are kept.
   Home once instead of two or three times.
 - **Clock & Calendar sleep screen**, with the Persian date.
 
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/apps-menu.png" width="250" alt="The Apps menu with tiles for Wordle, Sudoku, Chess, Checkers and Clock"><br><b>Apps</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/wordle.png" width="250" alt="Wordle with two guesses made and the keyboard showing what is known about each letter"><br><b>Wordle</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/sudoku.png" width="250" alt="A Medium Sudoku with a cell selected and the number keys and tools below"><br><b>Sudoku</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/chess.png" width="250" alt="Chess against the computer after two moves each"><br><b>Chess</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/checkers.png" width="250" alt="Checkers against the computer after the first moves"><br><b>Checkers</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/apps-manage.png" width="250" alt="Manage apps: a switch for each app and Settings for the Clock"><br><b>Manage</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/clock-large-digits.png" width="250" alt="Clock with large digits above the date, the Persian date and a month calendar"><br><b>Clock: large digits</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/clock-analog.png" width="250" alt="Clock with an analog face above the month calendar"><br><b>Clock: analog</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/clock-persian-days.png" width="250" alt="Clock with a calendar that shows the Persian day under each date"><br><b>Clock: Persian days</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/switch-dictionary-list.png" width="250" alt="Switch Dictionary list ending with Online (Wiktionary)"><br><b>Switch Dictionary → Online</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/online-dictionary.png" width="250" alt="A Wiktionary answer for the word fortune shown over the book page"><br><b>Online dictionary</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.0/sleep-clock-calendar.png" width="250" alt="Sleep screen with the weekday, a large day number, the Persian date and the month calendar"><br><b>Clock &amp; Calendar sleep screen</b></td>
+  </tr>
+</table>
+
+<sub>Screens captured from the 1.2.0 firmware running in the PC simulator.</sub>
+
 ## Since 1.1.0 "Tiger"
 
 - **Smoother, sharper pictures in books:** no more crosshatch pattern, clean white paper.
