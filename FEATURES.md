@@ -31,8 +31,10 @@ pronunciation, dictionary entry, highlight and flashcard displays correctly.
 9. [Pronunciations in menus](#9-pronunciations-in-menus)
 10. [VARAGH name and logo](#10-varagh-name-and-logo)
 11. [Safe updates](#11-safe-updates)
-12. [For developers](#12-for-developers)
-13. [Planned](#13-planned)
+12. [Apps](#12-apps)
+13. [Online dictionary](#13-online-dictionary)
+14. [For developers](#14-for-developers)
+15. [Planned](#15-planned)
 
 ---
 
@@ -417,7 +419,91 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
 
 ---
 
-## 12. For developers
+## 12. Apps
+
+New in 1.2.0. **Apps** on the Home screen opens a tile per app (touch readers,
+every theme; in Cover Grid it is the icon of four squares under the covers). **Manage**, top right, lists the apps with a
+switch each: an app that is switched off is hidden. The apps are part of the
+firmware; a hidden or closed app uses no memory, processor time or battery.
+Every game is saved after each move, so leaving it or letting the reader sleep
+loses nothing.
+
+### Wordle
+
+- Find the five-letter English word in six tries. Black = right letter in the
+  right place, grey = in the word but elsewhere, faded = not in the word. The
+  keyboard keys carry the same marks.
+- Tap any box of the row you are typing to put the next letter there.
+- About 1,900 everyday answers; about 22,000 English words are accepted as
+  guesses.
+- **Give up** (top right) has to be held. After a round: your statistics, and
+  **Look up word** opens the answer in your English dictionary.
+
+### Sudoku
+
+- Tap a cell, then a number. Three levels; every puzzle has exactly one
+  solution, and Easy and Medium can be solved without guessing.
+- **Notes**: switch it on and the number keys write small numbers into the
+  cell, or hold a number key for half a second to write the other kind without
+  switching. **Fill** writes every still possible number into all empty cells.
+- Undo, Erase and Hint. Each number key shows how many of that digit are still
+  missing.
+- A wrong digit is not marked and mistakes are not counted while you play.
+- **New** (top right) has to be held.
+
+### Chess
+
+- Against the computer (Easy, Medium, Hard) or two people on one reader, as
+  White or Black.
+- Tap a piece and dots show where it may go; the last move is marked.
+- All rules, including castling, en passant, promotion with a choice of piece
+  and the draws.
+- Undo, Hint and Flip. The computer answers within 1.5, 2.5 or 5 seconds,
+  depending on the level.
+
+### Checkers
+
+- American / English rules: pieces move and capture forwards, kings one square
+  in any direction, a capture must be taken and a multiple jump finished.
+- Against the computer or two players. Undo and Hint.
+
+### Clock
+
+- The time above a month calendar, repainted once a minute while it is open.
+  It uses the reader's clock; set it once with Settings → Sync Clock.
+- Tap the clock to step through three faces: large digits, an analog clock, and
+  a calendar with the Persian day under every date.
+- The arrows or a swipe turn the months; tap the month's name to return to
+  today.
+- **Manage → Clock → Settings**: clock face, Persian date on or off, first day
+  of the week (Monday, Saturday or Sunday), week number on or off.
+- **Sleep screen**: Settings → Display → Sleep Screen → **Clock & Calendar**
+  shows the weekday, a large day number, the month, the Persian date and the
+  month's calendar. The reader is off while it sleeps, so there is no time on
+  it, and the date is the one of the moment it went to sleep.
+
+---
+
+## 13. Online dictionary
+
+New in 1.2.0. In a word lookup, **Switch Dictionary** ends with **Online
+(Wiktionary)**.
+
+- It asks Wiktionary in the language of the word (English, German or Persian)
+  and, when Wiktionary has no entry, Wikipedia for a short summary.
+- The answer is laid out like the VARAGH dictionaries and saved on the card, so
+  the same word is answered offline from then on.
+- Normally Wi-Fi is only on for the lookup: the reader restarts into its Wi-Fi
+  mode and back into the book, about 10 to 15 seconds for a new word.
+- **Settings → Reader → Online Lookup: Keep Wi-Fi On** (off by default,
+  experimental): Wi-Fi is joined in the background while a book is open and a
+  new word is fetched in a few seconds, without the restarts. Reading uses the
+  battery faster while it is on; the reader asks before switching it on. When
+  Wi-Fi is not there, the lookup takes the restart route.
+
+---
+
+## 14. For developers
 
 - Licences: MIT like CrossInk and CrossPoint. Every library, font and data
   source is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), OFL
@@ -429,7 +515,9 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
   changes is in each release's full-source zip.
 - Unit tests: German stemming, summer-time rules, glyph drawing, highlight file
   format and storage, lookup-word cleanup; in 1.1.0 also the font memory copy,
-  picture shading, the speed log and chapter-file writing.
+  picture shading, the speed log and chapter-file writing; in 1.2.0 the rules
+  of Wordle, Sudoku, chess (move generator checked against published position
+  counts) and checkers, the calendar arithmetic and the online dictionary text.
 - Book page caches were rebuilt once when installing 1.0.0 (layout format v78);
   1.1.0 keeps that format, so books are not indexed again.
 - Guides: [fonts](docs/varagh/FONTS.md), [dictionaries](docs/varagh/DICTIONARIES.md),
@@ -438,7 +526,7 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
 
 ---
 
-## 13. Planned
+## 15. Planned
 
 - English, German and Persian dictionaries built from Wiktionary, trimmed for
   the reader and published separately under CC BY-SA 4.0.

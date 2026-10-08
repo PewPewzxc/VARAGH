@@ -13,7 +13,18 @@ their features are kept.
 > VARAGH is an independent community project, not affiliated with or endorsed by
 > Xteink, CrossInk or CrossPoint.
 
-## New in 1.1.0 "Tiger"
+## New in 1.2.0 "Tiger"
+
+- **Apps on the Home screen:** Wordle, Sudoku, Chess, Checkers and a Clock with
+  a calendar, made for the touch screen. Hide the ones you do not use.
+- **Online dictionary:** look a word up on Wiktionary in English, German or
+  Persian from inside a book; every answer is kept for offline use. With the
+  optional **Keep Wi-Fi On** a new word takes a few seconds.
+- **Faster Home:** the Carousel follows a swipe at once, and every theme paints
+  Home once instead of two or three times.
+- **Clock & Calendar sleep screen**, with the Persian date.
+
+## Since 1.1.0 "Tiger"
 
 - **Smoother, sharper pictures in books:** no more crosshatch pattern, clean white paper.
 - **Chapters open faster:** long chapters show their first page right away
@@ -35,6 +46,9 @@ All changes: [CHANGELOG.md](CHANGELOG.md).
   with pronunciations.
 - **Highlights and flashcards:** Favorite Lines, your own categories, **Add to…**
   from the dictionary, flashcards with *Again* / *Know it*.
+- **Online dictionary:** Wiktionary and Wikipedia over Wi-Fi, saved on the card
+  after the first lookup.
+- **Apps:** Wordle, Sudoku, Chess, Checkers, Clock & Calendar.
 - **Touch:** adjustable hold to select, selection handles, swipe left to delete.
 - **Battery and speed:** the display powers down when idle, smoother pictures,
   faster chapters.

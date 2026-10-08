@@ -987,6 +987,25 @@ void SettingsActivity::loop() {
   }
 }
 
+// Switching on asks first: it trades battery for faster online lookups.
+void SettingsActivity::toggleOnlineWifi() {
+  if (SETTINGS.onlineDictWifiAlwaysOn != 0) {
+    SETTINGS.onlineDictWifiAlwaysOn = 0;
+    SETTINGS.saveToFile();
+    requestUpdate();
+    return;
+  }
+  startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, tr(STR_ONLINE_WIFI_ALWAYS),
+                                                                tr(STR_ONLINE_WIFI_WARNING)),
+                         [this](const ActivityResult& result) {
+                           if (!result.isCancelled) {
+                             SETTINGS.onlineDictWifiAlwaysOn = 1;
+                             SETTINGS.saveToFile();
+                           }
+                           requestUpdate();
+                         });
+}
+
 void SettingsActivity::toggleFastScreenLink() {
 #ifndef SIMULATOR
   if (SETTINGS.fastScreenLink != 0) {
@@ -1089,6 +1108,10 @@ void SettingsActivity::toggleCurrentSetting() {
   }
   if (setting.valuePtr == &CrossPointSettings::fastScreenLink) {
     toggleFastScreenLink();
+    return;
+  }
+  if (setting.valuePtr == &CrossPointSettings::onlineDictWifiAlwaysOn) {
+    toggleOnlineWifi();
     return;
   }
   if (setting.nameId == StrId::STR_FONT_FAMILY && setting.type == SettingType::ENUM) {

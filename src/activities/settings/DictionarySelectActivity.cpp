@@ -1,4 +1,5 @@
 #include "DictionarySelectActivity.h"
+#include "network/OnlineDictionary.h"
 
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -111,7 +112,8 @@ void DictionarySelectActivity::onEnter() {
     currentEffectiveDictPath = Dictionary::readDictPath(bookCachePath.c_str());
   }
 
-  totalItems = 1 + static_cast<int>(dictFolders.size());
+  // A lookup switcher also offers the online dictionary, after the installed ones.
+  totalItems = 1 + static_cast<int>(dictFolders.size()) + (temporarySelection ? 1 : 0);
   if (disableCurrentSelection) {
     selectedIndex = firstSelectableIndexFrom(selectedIndex);
   }
@@ -168,6 +170,7 @@ void DictionarySelectActivity::scanDictionaries() {
 // ---------------------------------------------------------------------------
 
 std::string DictionarySelectActivity::folderForIndex(int index) const {
+  if (temporarySelection && index == static_cast<int>(dictFolders.size()) + 1) return OnlineDictionary::kSwitchPath;
   if (index <= 0 || index > static_cast<int>(dictFolders.size())) return "";
   return dictRoot + "/" + dictFolders[index - 1] + "/" + dictStems[index - 1];
 }
@@ -194,6 +197,7 @@ int DictionarySelectActivity::firstSelectableIndexFrom(int start) const {
 const char* DictionarySelectActivity::nameForIndex(int index) const {
   if (index == 0) return bookCachePath.empty() ? tr(STR_DICT_NONE) : useGlobalLabel.c_str();
   if (index <= static_cast<int>(dictFolders.size())) return dictFolders[index - 1].c_str();
+  if (temporarySelection && index == static_cast<int>(dictFolders.size()) + 1) return tr(STR_DICT_ONLINE);
   return "";
 }
 

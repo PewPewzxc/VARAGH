@@ -6,6 +6,8 @@
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalClock.h>
+
+#include "activities/apps/ClockFace.h"
 #include <HalDisplay.h>
 #include <HalGPIO.h>
 #include <HalStorage.h>
@@ -581,6 +583,8 @@ void SleepActivity::onEnter() {
       return renderMinimalStatsSleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::DASHBOARD_SLEEP):
       return renderDashboardSleepScreen();
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::CLOCK_SLEEP):
+      return renderClockSleepScreen();
     default:
       return renderDefaultSleepScreen();
   }
@@ -919,6 +923,18 @@ void SleepActivity::renderDashboardSleepScreen() const {
   DashboardTheme theme;
   theme.drawSleepScreen(renderer, book, &bookStats, &globalStats, progressPercent, chapterTitle.c_str(),
                         sleepCoverFilterInvertsGeneratedScreen());
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
+}
+
+// VARAGH: the Clock app's calendar. The reader is off while it sleeps, so the
+// screen carries the date, which stays right until midnight, and no time.
+void SleepActivity::renderClockSleepScreen() const {
+  calmath::DateTime time;
+  if (!clockface::now(time)) return renderDefaultSleepScreen();
+  clockface::Options options;
+  clockface::loadOptions(options);
+  renderer.clearScreen();
+  clockface::drawSleepCalendar(renderer, options, time);
   renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
 }
 

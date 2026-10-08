@@ -170,6 +170,7 @@ class MappedInputManager {
   bool wasHomeGesture() const;
   // Deliver a delayed capacitive Home-key tap through the usual activity route.
   void queueDeferredHomeGesture() { deferredHomeGesture = true; }
+  bool hasDeferredHomeGesture() const { return deferredHomeGesture; }
   void clearDeferredHomeGesture() const { deferredHomeGesture = false; }
   // Contextual menu intent (the reader menu). Home-key boards move this to the
   // bottom-edge up-swipe (freed by the home key); others keep the top-edge
@@ -228,6 +229,7 @@ class MappedInputManager {
   constexpr bool wasBottomEdgeUpSwipe() const { return false; }
   constexpr bool wasHomeGesture() const { return false; }
   constexpr void queueDeferredHomeGesture() {}
+  constexpr bool hasDeferredHomeGesture() const { return false; }
   constexpr void clearDeferredHomeGesture() const {}
   constexpr bool wasMenuGesture() const { return false; }
   constexpr bool wasLightPanelGesture() const { return false; }

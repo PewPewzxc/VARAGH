@@ -52,6 +52,10 @@ Page** controls taps and left swipes; **Previous Page** controls taps and right
 swipes. Right-to-left EPUBs reverse the normal tap zones and horizontal swipe
 directions to follow reading order.
 
+VARAGH adds **Mirror RTL Page Turns** in the same menu (on by default). Turn it
+off to keep the same tap zones and swipe directions in Persian, Arabic and
+Hebrew books as in every other book.
+
 Both settings offer the same options:
 
 | Option | Taps | Swipes |
@@ -224,6 +228,17 @@ shortcut.
 The shortcut can run many of the same actions available for the Power button,
 including **Quick Lock**. The existing **Power + Volume Down** screenshot
 shortcut is unchanged.
+
+## Home Key: Back and Home (X4 Pro)
+
+In **Settings > Controls > Home Button**, the tap, double-tap and long-press
+actions of the Home key each offer **Back** and **Home** as separate choices:
+
+- **Back** goes one step back; from a book it returns to the Home screen. This
+  is the default tap action (it was named "Back/Home").
+- **Home** returns to the Home screen from anywhere. It walks back through the
+  open screens one after another, so each of them closes and saves the same way
+  it does for Back.
 
 ## Quick Actions Triggers
 

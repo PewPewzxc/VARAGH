@@ -709,6 +709,11 @@ void ActivityManager::loop() {
           if (resume.overlay == PendingOverlayType::ReaderDrawer && currentActivity->restorePendingOverlay(resume)) {
             PendingOverlayResume consumed;
             APP_STATE.consumePendingOverlayResume(consumed);
+          } else if (resume.overlay == PendingOverlayType::OnlineDefinition) {
+            // Consumed first: an answer that cannot be shown must not be tried again on every loop.
+            PendingOverlayResume consumed;
+            APP_STATE.consumePendingOverlayResume(consumed);
+            currentActivity->restorePendingOverlay(resume);
           } else if (resume.overlay == PendingOverlayType::FrontlightDrawer &&
                      supportsFrontlightDrawer(mappedInput.hasTouchHardware(), Frontlight.present(),
                                               hasStickyReaderDetailsPanel())) {

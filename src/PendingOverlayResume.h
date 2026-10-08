@@ -5,7 +5,9 @@
 #include <utility>
 
 enum class PendingOverlayOrigin : uint8_t { None = 0, Reader, Home };
-enum class PendingOverlayType : uint8_t { None = 0, ReaderDrawer, FrontlightDrawer };
+// OnlineDefinition: the reader shows the answer the online dictionary saved
+// while the device was in its network boot.
+enum class PendingOverlayType : uint8_t { None = 0, ReaderDrawer, FrontlightDrawer, OnlineDefinition };
 
 struct PendingOverlayResume {
   PendingOverlayOrigin origin = PendingOverlayOrigin::None;

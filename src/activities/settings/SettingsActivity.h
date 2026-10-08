@@ -312,6 +312,7 @@ class SettingsActivity final : public Activity {
   // Faster Screen Link: turning it on applies the faster clock, then keeps it
   // only if the user confirms the screen still looks right (auto-undo).
   void toggleFastScreenLink();
+  void toggleOnlineWifi();
   void openSleepTimeoutPicker();
   void openLineHeightPicker();
   void openFrontlightScheduleTimePicker(uint16_t CrossPointSettings::* valuePtr, StrId titleId);

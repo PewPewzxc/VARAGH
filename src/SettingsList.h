@@ -3,6 +3,7 @@
 #include <CrossInkHalFrontlight.h>
 #include <HalClock.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <SdCardFontRegistry.h>
@@ -334,7 +335,8 @@ inline SettingInfo buildSleepScreenSetting() {
       StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
       {StrId::STR_NONE_OPT, StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER,
        StrId::STR_COVER_CUSTOM, StrId::STR_PAGE_OVERLAY, StrId::STR_READING_STATS, StrId::STR_THEME_MINIMAL,
-       StrId::STR_THEME_MINIMAL_STATS, StrId::STR_THEME_DASHBOARD, StrId::STR_QUICK_RESUME},
+       StrId::STR_THEME_MINIMAL_STATS, StrId::STR_THEME_DASHBOARD, StrId::STR_SLEEP_CLOCK,
+       StrId::STR_QUICK_RESUME},
       "sleepScreen", StrId::STR_CAT_DISPLAY);
   s.withEnumRawValues({
       static_cast<uint8_t>(CrossPointSettings::BLANK),
@@ -348,6 +350,7 @@ inline SettingInfo buildSleepScreenSetting() {
       static_cast<uint8_t>(CrossPointSettings::MINIMAL_SLEEP),
       static_cast<uint8_t>(CrossPointSettings::MINIMAL_STATS_SLEEP),
       static_cast<uint8_t>(CrossPointSettings::DASHBOARD_SLEEP),
+      static_cast<uint8_t>(CrossPointSettings::CLOCK_SLEEP),
       static_cast<uint8_t>(CrossPointSettings::QUICK_RESUME),
   });
   return s;
@@ -513,12 +516,16 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
 
 inline void appendShortcutOptions(SettingInfo& setting, const ShortcutOptionCatalog catalog) {
   const size_t extraOptions = catalog == ShortcutOptionCatalog::PowerButton ? 2 : 0;
-  setting.enumValues.reserve(QuickActions::shortcutActionOrder.size() + 3 + extraOptions);
-  setting.enumRawValues.reserve(QuickActions::shortcutActionOrder.size() + 3 + extraOptions);
+  setting.enumValues.reserve(QuickActions::shortcutActionOrder.size() + 4 + extraOptions);
+  setting.enumRawValues.reserve(QuickActions::shortcutActionOrder.size() + 4 + extraOptions);
 
   if (catalog == ShortcutOptionCatalog::HomeButton) {
-    setting.enumValues.push_back(StrId::STR_BACK_HOME);
+    // VARAGH: Back (one step; from a book it returns Home) and Home (straight
+    // to the Home screen) are separate choices.
+    setting.enumValues.push_back(StrId::STR_BACK);
     setting.enumRawValues.push_back(CrossPointSettings::HOME_BUTTON_BACK_HOME);
+    setting.enumValues.push_back(StrId::STR_HOME);
+    setting.enumRawValues.push_back(CrossPointSettings::HOME_BUTTON_HOME);
     if (Frontlight.present()) {
       setting.enumValues.push_back(StrId::STR_TOGGLE_FRONTLIGHT);
       setting.enumRawValues.push_back(CrossPointSettings::HOME_BUTTON_TOGGLE_FRONTLIGHT);
@@ -705,6 +712,11 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
     add(SettingInfo::Enum(StrId::STR_WORD_SELECT_HOLD, &CrossPointSettings::wordSelectHold,
                           {StrId::STR_HOLD_FAST, StrId::STR_HOLD_NORMAL, StrId::STR_HOLD_SLOW, StrId::STR_HOLD_VERY_SLOW},
                           "wordSelectHold", StrId::STR_CAT_READER));
+    // VARAGH: only on the boards where Wi-Fi fits next to an open book.
+    if constexpr (HalPowerManager::LOW_POWER_FREQ >= 80) {
+      add(SettingInfo::Toggle(StrId::STR_ONLINE_WIFI_ALWAYS, &CrossPointSettings::onlineDictWifiAlwaysOn,
+                              "onlineDictWifiAlwaysOn", StrId::STR_CAT_READER));
+    }
     add(SettingInfo::Toggle(StrId::STR_DISABLE_TOUCHSCREEN, &CrossPointSettings::disableReaderTouchscreen,
                             "disableReaderTouchscreen", StrId::STR_CAT_READER));
     add(SettingInfo::Toggle(StrId::STR_EXTRA_SPACING, &CrossPointSettings::extraParagraphSpacing,
@@ -818,6 +830,8 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           {StrId::STR_TAP_AND_SWIPE, StrId::STR_TAP_ONLY, StrId::STR_SWIPE_ONLY,
                            StrId::STR_INVERTED_TAP, StrId::STR_DISABLED},
                           "previousPageGesture", StrId::STR_CAT_CONTROLS));
+    add(SettingInfo::Toggle(StrId::STR_RTL_MIRROR_PAGE_TURNS, &CrossPointSettings::rtlBookMirrorPageTurns,
+                            "rtlBookMirrorPageTurns", StrId::STR_CAT_CONTROLS));
     add(SettingInfo::Toggle(StrId::STR_TAP_HIDE_STATUS_BAR, &CrossPointSettings::tapToHideStatusBar,
                             "tapToHideStatusBar", StrId::STR_CAT_CONTROLS));
 
@@ -1049,6 +1063,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                                     s.nameId == StrId::STR_WORD_SELECT_HOLD ||
                                     s.nameId == StrId::STR_DISABLE_TOUCHSCREEN || s.nameId == StrId::STR_NEXT_PAGE ||
                                     s.nameId == StrId::STR_PREV_PAGE || s.nameId == StrId::STR_TAP_HIDE_STATUS_BAR ||
+                                    s.nameId == StrId::STR_RTL_MIRROR_PAGE_TURNS ||
                                     s.nameId == StrId::STR_PINCH_FONT_RESIZE ||
                                     s.nameId == StrId::STR_TWO_FINGER_ROTATION ||
                                     s.nameId == StrId::STR_TWO_FINGER_SWIPE_UP ||
@@ -1191,7 +1206,7 @@ inline void addSettingByName(std::vector<SettingInfo>& target, const std::vector
 
 inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> readerSettings;
-  readerSettings.reserve(12);
+  readerSettings.reserve(13);
   readerSettings.push_back(SettingInfo::Submenu(StrId::STR_READER_FONT_OPTIONS, SettingAction::ReaderFontOptions));
   readerSettings.push_back(SettingInfo::Submenu(StrId::STR_READER_PAGE_LAYOUT, SettingAction::ReaderPageLayout));
   readerSettings.push_back(SettingInfo::Action(StrId::STR_STATUS_BARS, SettingAction::CustomiseStatusBar));
@@ -1203,6 +1218,7 @@ inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<
   addSettingByName(readerSettings, allSettings, StrId::STR_GUIDE_READING);
   addSettingByName(readerSettings, allSettings, StrId::STR_DICTIONARY);
   addSettingByName(readerSettings, allSettings, StrId::STR_WORD_SELECT_HOLD);
+  addSettingByName(readerSettings, allSettings, StrId::STR_ONLINE_WIFI_ALWAYS);
   addSettingByName(readerSettings, allSettings, StrId::STR_INDEXING_METHOD);
   return readerSettings;
 }
@@ -1302,10 +1318,11 @@ inline std::vector<SettingInfo> buildControlsTapsGesturesSettingsList(const std:
   const bool hasRotation = hasSettingByName(allSettings, StrId::STR_TWO_FINGER_ROTATION);
   const bool hasTwoFingerSwipe = hasSettingByName(allSettings, StrId::STR_TWO_FINGER_SWIPE_UP);
   const bool hasEdgeGestures = hasSettingByName(allSettings, StrId::STR_LEFT_EDGE_UP);
-  settings.reserve(3 + (hasPinch ? 1u : 0u) + (hasRotation ? 1u : 0u) + (hasTwoFingerSwipe ? 1u : 0u) +
+  settings.reserve(4 + (hasPinch ? 1u : 0u) + (hasRotation ? 1u : 0u) + (hasTwoFingerSwipe ? 1u : 0u) +
                    (hasEdgeGestures ? 1u : 0u));
   addSettingByName(settings, allSettings, StrId::STR_NEXT_PAGE);
   addSettingByName(settings, allSettings, StrId::STR_PREV_PAGE);
+  addSettingByName(settings, allSettings, StrId::STR_RTL_MIRROR_PAGE_TURNS);
   if (hasPinch) addSettingByName(settings, allSettings, StrId::STR_PINCH_FONT_RESIZE);
   if (hasRotation) addSettingByName(settings, allSettings, StrId::STR_TWO_FINGER_ROTATION);
   addSettingByName(settings, allSettings, StrId::STR_TAP_HIDE_STATUS_BAR);

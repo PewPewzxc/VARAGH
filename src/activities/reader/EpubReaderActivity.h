@@ -564,6 +564,10 @@ class EpubReaderActivity final : public Activity {
   bool handleFrontlightPanelResult(const FrontlightPanelResult& result) override;
   bool handleExternalReaderMenuAction(uint8_t action) override;
   bool restorePendingOverlay(const PendingOverlayResume& resume) override;
+  // Opens the entry the online dictionary saved before the device came back to this book.
+  bool showSavedOnlineDefinition();
+  // The definition screen borrows its font name, so the name lives here.
+  char onlineDefinitionFontFamily_[64] = "";
   void setAutoPageTurnIntervalSeconds(uint16_t seconds);
   uint16_t getAutoPageTurnIntervalSeconds() const;
 

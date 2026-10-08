@@ -811,15 +811,17 @@ bool MappedInputManager::wasHomeGesture() const {
     clearDeferredHomeGesture();
     return false;
   }
-  if (SETTINGS.homeButtonTapAction != CrossPointSettings::HOME_BUTTON_BACK_HOME) return false;
   // A swipe starting on the lower bezel can also report a short capacitive Home
   // tap on the X4 Pro. The screen gesture belongs to the active list/reader, so
   // give it priority over the global Home route for this release frame.
   if (wasSwipe() != SwipeDir::None) return false;
+  // A queued gesture counts whatever the tap is bound to: main.cpp queues it
+  // for a Back tap and for each step of the Home action.
   if (deferredHomeGesture) {
     deferredHomeGesture = false;
     return true;
   }
+  if (SETTINGS.homeButtonTapAction != CrossPointSettings::HOME_BUTTON_BACK_HOME) return false;
 #ifdef SIMULATOR
   return simulatorHomeKeyInput.wasTapped();
 #else

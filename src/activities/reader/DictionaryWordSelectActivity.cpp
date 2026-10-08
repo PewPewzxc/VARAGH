@@ -18,6 +18,7 @@
 #include <limits>
 #include <type_traits>
 
+#include "../network/OnlineDictionaryActivity.h"
 #include "../settings/DictionarySelectActivity.h"
 #include "ClipSelectionPaging.h"
 #include "CrossPointSettings.h"
@@ -1020,6 +1021,19 @@ void DictionaryWordSelectActivity::openDictionarySwitch() {
     if (!selection) {
       LOG_ERR("DICT", "Dictionary switch returned no path");
       requestUpdate();
+      return;
+    }
+    if (selection->path == OnlineDictionary::kSwitchPath) {
+      // A word already fetched is read from the card; otherwise the device
+      // is now on its way into the Wi-Fi boot.
+      const std::string saved =
+          OnlineDictionaryActivity::begin(renderer, mappedInput, controller.getLookupWord(), cachePath);
+      if (saved.empty()) {
+        requestUpdate();
+        return;
+      }
+      Dictionary::setLookupDictPathOverride(saved.c_str());
+      controller.startLookup(onlinedict::normalizeWord(controller.getLookupWord()), false);
       return;
     }
     Dictionary::setLookupDictPathOverride(selection->path.c_str());

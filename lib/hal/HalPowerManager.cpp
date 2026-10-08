@@ -42,6 +42,11 @@ void HalPowerManager::begin() {
   assert(modeMutex != nullptr);
 }
 
+bool HalPowerManager::wifiBlocksLowPower() const {
+  if (WiFi.getMode() == WIFI_MODE_NULL) return false;
+  return !(LOW_POWER_FREQ >= 80 && wifiIdleLowPowerAllowed);
+}
+
 void HalPowerManager::setPowerSaving(bool enabled) {
   if (normalFreq <= 0) {
     return;  // invalid state
@@ -51,8 +56,7 @@ void HalPowerManager::setPowerSaving(bool enabled) {
     xSemaphoreTake(modeMutex, portMAX_DELAY);
   }
 
-  auto wifiMode = WiFi.getMode();
-  if (wifiMode != WIFI_MODE_NULL) {
+  if (wifiBlocksLowPower()) {
     // Wifi is active, force disabling power saving
     enabled = false;
   }
@@ -97,7 +101,7 @@ void HalPowerManager::beginPanelWait() {
   if (normalFreq <= 0 || modeMutex == nullptr) return;
   xSemaphoreTake(modeMutex, portMAX_DELAY);
   // Wi-Fi needs the full clock (setPowerSaving() refuses low power then too).
-  if (!isLowPower && !panelWaitLowered && WiFi.getMode() == WIFI_MODE_NULL) {
+  if (!isLowPower && !panelWaitLowered && !wifiBlocksLowPower()) {
     if (setCpuFrequencyMhz(LOW_POWER_FREQ)) {
       panelWaitLowered = true;
     }

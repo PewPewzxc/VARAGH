@@ -40,6 +40,8 @@
 #include "RecentBooksStore.h"
 #include "HighlightsHubActivity.h"
 #include "SavedItemsHomeActivity.h"
+#include "activities/apps/AppsActivity.h"
+#include "components/TouchRegistry.h"
 #include "components/UITheme.h"
 #include "components/themes/dashboard/DashboardTheme.h"
 #include "components/themes/lyra/LyraCarouselTheme.h"
@@ -55,6 +57,8 @@ constexpr char LEGACY_CAROUSEL_CACHE_PATH[] = "/.crosspoint/home_carousel_cache.
 constexpr char CAROUSEL_CACHE_TMP_PATH[] = "/.crosspoint/home_carousel_cache.tmp";
 constexpr uint32_t CAROUSEL_FRAME_MIN_FREE_AFTER_ALLOC = 64U * 1024U;
 constexpr uint32_t CAROUSEL_FRAME_MIN_MAX_ALLOC_AFTER_ALLOC = 24U * 1024U;
+// Same travel the SDK asks of a flick, without its time limit.
+constexpr int CAROUSEL_SLOW_DRAG_MIN_PX = 60;
 constexpr unsigned long HOME_BOOK_SWAP_LONG_PRESS_MS = 1000;
 constexpr int HOME_BOOK_SWAP_RECENT_COUNT = 2;
 
@@ -65,6 +69,7 @@ enum class HomeMenuAction {
   OpdsBrowser,
   ReadingStats,
   Bookmarks,
+  Apps,
   FileTransfer,
   Settings,
 };
@@ -76,7 +81,7 @@ struct HomeMenuEntry {
 };
 
 struct HomeMenuEntries {
-  static constexpr int kCapacity = 8;
+  static constexpr int kCapacity = 10;
   std::array<HomeMenuEntry, kCapacity> entries{};
   int count = 0;
 
@@ -236,6 +241,33 @@ bool ensureReusableCoverPath(RecentBook& book) {
 // and "By Book" for per-book bookmarks and highlights), so it is always shown.
 const char* savedItemsLabel(bool /*hasBookmarks*/, bool /*hasClippings*/) { return tr(STR_HIGHLIGHTS_HUB); }
 
+// Books whose cover thumbnail could not be made since power-on. Home still
+// retries them after it has painted, but does not hold its first paint behind
+// a "Preparing covers" message for a cover that will not come.
+constexpr size_t kRememberedCoverFailures = 4;
+size_t failedCoverBooks[kRememberedCoverFailures] = {};
+size_t failedCoverNext = 0;
+
+void rememberCoverFailure(const RecentBook& book) {
+  const size_t hash = std::hash<std::string>{}(book.path);
+  for (const size_t known : failedCoverBooks) {
+    if (known == hash) return;
+  }
+  failedCoverBooks[failedCoverNext] = hash;
+  failedCoverNext = (failedCoverNext + 1) % kRememberedCoverFailures;
+}
+
+bool coverFailedBefore(const RecentBook& book) {
+  const size_t hash = std::hash<std::string>{}(book.path);
+  for (const size_t known : failedCoverBooks) {
+    if (known == hash) return true;
+  }
+  return false;
+}
+
+// The built-in apps are worked by touch.
+bool homeShowsApps() { return gpio.hasTouch(); }
+
 void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasReadingStats, bool hasBookmarks,
                          bool hasClippings) {
   items.push({tr(STR_BROWSE_FILES), Folder, HomeMenuAction::BrowseFiles});
@@ -248,6 +280,9 @@ void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasRe
     items.push({tr(STR_READING_STATS), Chart, HomeMenuAction::ReadingStats});
   }
   items.push({savedItemsLabel(hasBookmarks, hasClippings), BookmarkIcon, HomeMenuAction::Bookmarks});
+  if (homeShowsApps()) {
+    items.push({tr(STR_APPS), Apps, HomeMenuAction::Apps});
+  }
 
   items.push({tr(STR_FILE_TRANSFER), Transfer, HomeMenuAction::FileTransfer});
   items.push({tr(STR_SETTINGS_TITLE), Settings, HomeMenuAction::Settings});
@@ -269,6 +304,9 @@ HomeMenuEntries buildMinimalMenuItems(bool hasOpdsServers, bool hasReadingStats,
   items.push({savedItemsLabel(hasBookmarks, hasClippings), BookmarkIcon, HomeMenuAction::Bookmarks});
   if (hasReadingStats) {
     items.push({tr(STR_READING_STATS), Chart, HomeMenuAction::ReadingStats});
+  }
+  if (homeShowsApps()) {
+    items.push({tr(STR_APPS), Apps, HomeMenuAction::Apps});
   }
 
   items.push({tr(STR_FILE_TRANSFER), Transfer, HomeMenuAction::FileTransfer});
@@ -491,7 +529,7 @@ class CarouselCache {
   // because this cache deliberately survives HomeActivity recreation.
   HeapByteBuffer frameStorage[HomeActivity::kCarouselFrameCount];
   uint8_t* frames[HomeActivity::kCarouselFrameCount] = {};
-  int frameBookIdx[HomeActivity::kCarouselFrameCount] = {-1};
+  int frameBookIdx[HomeActivity::kCarouselFrameCount] = {-1, -1, -1};
   int frameCount = 0;
   int lastCenterIdx = -1;
   std::string key;
@@ -500,6 +538,13 @@ class CarouselCache {
   int findFrameSlot(int bookIdx) const {
     for (int i = 0; i < HomeActivity::kCarouselFrameCount; ++i) {
       if (frameBookIdx[i] == bookIdx && frames[i] != nullptr) return i;
+    }
+    return -1;
+  }
+
+  int findEmptySlot() const {
+    for (int i = 0; i < HomeActivity::kCarouselFrameCount; ++i) {
+      if (frames[i] != nullptr && frameBookIdx[i] < 0) return i;
     }
     return -1;
   }
@@ -522,9 +567,10 @@ CarouselCache gCarouselCache;
 
 static_assert(HomeActivity::kMaxCachedBooks >= LyraCarouselMetrics::values.homeRecentBooksCount,
               "kMaxCachedBooks must cover all carousel slots");
+static_assert(HomeActivity::kCarouselFrameCount == 3, "CarouselCache::frameBookIdx initialises three slots");
 
 int HomeActivity::getMenuItemCount() const {
-  if (coverGridUi) return static_cast<int>(recentBooks.size()) + (hasOpdsServers ? 5 : 4);
+  if (coverGridUi) return static_cast<int>(recentBooks.size()) + coverGridUi->tabCount();
   const auto& metrics = UITheme::getInstance().getMetrics();
   int count = 4;  // File Browser, Library, File transfer, Settings
   if (!metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -681,25 +727,31 @@ void HomeActivity::loadAllBookStats() {
   LOG_DBG("HOME", "carousel: cached stats/progress for %d book(s) in %lums", count, millis() - start);
 }
 
-void HomeActivity::loadRecentCovers(int coverHeight) {
+bool HomeActivity::loadRecentCovers(int coverHeight, const bool checkOnly) {
   const uint32_t coversStartedMs = millis();
   // Thumbnail generation may need a 32 KB contiguous inflate buffer. The Home
   // cover snapshot is only a redraw cache, so release it before ZIP work.
-  if (coverBuffer) {
+  if (!checkOnly && coverBuffer) {
     freeCoverBuffer();
     coverRendered = false;
   }
 
-  recentsLoading = true;
+  if (!checkOnly) recentsLoading = true;
   bool showingLoading = false;
+  uint32_t popupShownMs = 0;
   Rect popupRect;
+  // Each panel refresh costs about as long as making half a cover, so the
+  // popup is painted once and its bar only moves again on a long wait.
+  constexpr uint32_t kPopupRefreshIntervalMs = 2500;
   auto showLoadingProgress = [&](const int value) {
+    if (showingLoading && millis() - popupShownMs < kPopupRefreshIntervalMs) return;
     if (!showingLoading) {
       showingLoading = true;
-      popupRect = GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+      popupRect = GUI.drawPopup(renderer, tr(STR_PREPARING_COVERS));
     }
     GUI.fillPopupProgress(renderer, popupRect, std::clamp(value, 0, 100));
     renderer.displayBuffer();
+    popupShownMs = millis();
   };
 
   const bool isCarouselTheme =
@@ -730,11 +782,16 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
         const bool centerMissing = !Storage.exists(centerPath.c_str());
         const bool sideMissing = !Storage.exists(sidePath.c_str());
 
+        if (checkOnly && (centerMissing || sideMissing) && !coverFailedBefore(book) &&
+            (FsHelpers::hasEpubExtension(book.path) || FsHelpers::hasXtcExtension(book.path))) {
+          return true;
+        }
         if (centerMissing || sideMissing) {
           if (FsHelpers::hasEpubExtension(book.path)) {
             Epub epub(book.path, "/.crosspoint");
             showLoadingProgress(10 + progress * progressIncrement);
             if (!epub.load(true, true, Epub::XLocationLoadMode::Skip)) {
+              rememberCoverFailure(book);
               LOG_ERR("HOME", "carousel: failed to load EPUB cache for thumb generation: %s", book.path.c_str());
               coverRendered = false;
               requestUpdate();
@@ -751,6 +808,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
                                               SETTINGS.getReaderFontId()) &&
                         success;
             if (!success) {
+              rememberCoverFailure(book);
               if (!epub.hasCoverImage()) markCoverMissing(book);
             } else if (bookIdx < bookUpdated.size()) {
               bookUpdated[bookIdx] = true;
@@ -787,11 +845,14 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
             useDashboardThumb ? dashboardHomeCoverPath(book, coverHeight)
                               : (useMinimalThumb ? minimalHomeCoverPath(book, coverHeight)
                                                  : UITheme::getCoverThumbPath(book.coverBmpPath, coverHeight));
-        if (coverPath.empty() || !Storage.exists(coverPath.c_str())) {
+        const bool coverMissing = coverPath.empty() || !Storage.exists(coverPath.c_str());
+        if (checkOnly && coverMissing && supportsExactHomeThumb && !coverFailedBefore(book)) return true;
+        if (coverMissing) {
           if (FsHelpers::hasEpubExtension(book.path)) {
             Epub epub(book.path, "/.crosspoint");
             showLoadingProgress(10 + progress * progressIncrement);
             if (!epub.load(true, true, Epub::XLocationLoadMode::Skip)) {
+              rememberCoverFailure(book);
               LOG_ERR("HOME", "failed to load EPUB cache for thumb generation: %s", book.path.c_str());
               coverRendered = false;
               requestUpdate();
@@ -809,6 +870,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
                                                            SETTINGS.getReaderFontId())
                            : epub.generateThumbBmp(0, coverHeight, &renderer, SETTINGS.getReaderFontId()));
             if (!success) {
+              rememberCoverFailure(book);
               if (!epub.hasCoverImage()) markCoverMissing(book);
             } else if (bookIdx < bookUpdated.size()) {
               bookUpdated[bookIdx] = true;  // non-carousel path reuses same tracking
@@ -839,6 +901,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
     }
     progress++;
   }
+  if (checkOnly) return false;
 
   recentsLoaded = true;
   recentsLoading = false;
@@ -861,6 +924,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
   // Speed log: Home entry until covers and Carousel frames are all in place.
   SpeedLog::recordNamed("home.ready", millis() - homeEnteredMs, SETTINGS.uiTheme);
+  return showingLoading;
 }
 
 void HomeActivity::onEnter() {
@@ -882,9 +946,10 @@ void HomeActivity::onEnter() {
 
   selectorIndex = 0;
   lastCarouselBookIndex = 0;
-  carouselCoverTouchDownIndex = -1;
-  carouselCoverTouchDownWasSelected = false;
+  carouselDragActive = false;
   carouselMenuTouchDownIndex = -1;
+  carouselNeighboursPending = false;
+  coversCheckedBeforePaint = false;
   minimalMenuOpen = false;
   minimalSuppressInitialFrontRelease = usesMinimalHomeInteraction();
   backPressSeen = false;
@@ -936,28 +1001,33 @@ void HomeActivity::onEnter() {
   updateHighlightedBookContext(false);
 
   if (coverGridUi) {
+    coverGridUi->begin(recentBooks, hasOpdsServers, homeShowsApps(), gridHasContinueReading,
+                       gridHasContinueReading ? loadRecentBookProgress(recentBooks.front()) : -1.0f);
+    // The tab Home was left through is selected again.
     const int base = static_cast<int>(recentBooks.size());
+    const auto selectTab = [this, base](const CoverGridHomeUi::Tab tab) {
+      const int index = coverGridUi->tabIndexOf(tab);
+      if (index >= 0) selectorIndex = base + index;
+    };
     switch (initialMenuItem) {
       case HomeMenuItem::FILE_BROWSER:
-        selectorIndex = base;
+        selectTab(CoverGridHomeUi::Tab::Files);
         break;
       case HomeMenuItem::LIBRARY:
-        selectorIndex = base + 1;
+        selectTab(CoverGridHomeUi::Tab::Library);
         break;
       case HomeMenuItem::OPDS_BROWSER:
-        selectorIndex = base + 2;
+        selectTab(CoverGridHomeUi::Tab::Opds);
         break;
       case HomeMenuItem::FILE_TRANSFER:
-        selectorIndex = base + (hasOpdsServers ? 3 : 2);
+        selectTab(CoverGridHomeUi::Tab::Transfer);
         break;
       case HomeMenuItem::SETTINGS_MENU:
-        selectorIndex = base + (hasOpdsServers ? 4 : 3);
+        selectTab(CoverGridHomeUi::Tab::Settings);
         break;
       case HomeMenuItem::NONE:
         break;
     }
-    coverGridUi->begin(recentBooks, hasOpdsServers, gridHasContinueReading,
-                       gridHasContinueReading ? loadRecentBookProgress(recentBooks.front()) : -1.0f);
   } else if (initialMenuItem != HomeMenuItem::NONE) {
     const bool includeContinueReading = metrics.homeContinueReadingInMenu && !recentBooks.empty();
     const auto menuItems = buildSelectableHomeMenuItems(hasOpdsServers, hasReadingStats, hasBookmarks, hasClippings,
@@ -1303,8 +1373,8 @@ bool HomeActivity::saveCarouselFrameToDisk(uint64_t cacheKeyHash, int bookCount,
   }
 
   const auto start = millis();
-  // Save only the viewed position. Other positions are prepared when selected,
-  // so entering Home never renders or writes the entire carousel in advance.
+  // One file per position: the viewed one is written here, the others when
+  // they are prepared after Home has appeared.
   const bool writeFailed = file.write(carouselFrames[slotIdx], renderer.getBufferSize()) != renderer.getBufferSize();
 
   const bool syncOk = file.sync();
@@ -1407,6 +1477,7 @@ void HomeActivity::preRenderCarouselFrames() {
     for (int i = 0; i < gCarouselCache.frameCount; ++i) carouselFrames[i] = gCarouselCache.frames[i];
     carouselFramesReady = true;
     carouselFramesInverted = SETTINGS.screenInverted != 0;
+    carouselNeighboursPending = gCarouselCache.findEmptySlot() >= 0;
     coverRendered = false;
     coverBufferStored = false;
     return;
@@ -1417,7 +1488,8 @@ void HomeActivity::preRenderCarouselFrames() {
   freeCoverBuffer();  // reclaim 48KB before allocating frames
   gCarouselCache.invalidate();
 
-  if (!allocateCarouselFrameSlots(1)) return;
+  // Internal heap cannot spare 48 KB per position; PSRAM can.
+  if (!allocateCarouselFrameSlots(psramHeapAvailable() ? std::min(bookCount, kCarouselFrameCount) : 1)) return;
 
   const int initialBookIdx = getHighlightedBookIndex();
   const bool loaded = loadCarouselFrameFromDisk(newKeyHash, bookCount, initialBookIdx, 0);
@@ -1427,12 +1499,60 @@ void HomeActivity::preRenderCarouselFrames() {
   gCarouselCache.keyHash = newKeyHash;
   carouselFramesReady = true;
   carouselFramesInverted = SETTINGS.screenInverted != 0;
+  carouselNeighboursPending = gCarouselCache.frameCount > 1;
   coverRendered = false;
   coverBufferStored = false;
   if (!loaded) saveCarouselFrameToDisk(newKeyHash, bookCount, initialBookIdx, 0);
 
   // Speed log: the selected book's frame (a = read from SD, b = drawn).
   SpeedLog::recordNamed("home.prerender", millis() - preRenderStartedMs, loaded ? 1 : 0, loaded ? 0 : 1);
+}
+
+// Fills the remaining frame slots, nearest position first, so a swipe never
+// has to read or draw artwork. Draws into the live framebuffer: the caller
+// must repaint the viewed position (and its touch areas) afterwards.
+void HomeActivity::warmCarouselNeighbours() {
+  carouselNeighboursPending = false;
+  const int bookCount = static_cast<int>(recentBooks.size());
+  if (!carouselFramesReady || gCarouselCache.keyHash == 0 || bookCount < 2 || !renderer.getFrameBuffer()) return;
+
+  const uint32_t warmStartedMs = millis();
+  const int centerIdx = std::clamp(getHighlightedBookIndex(), 0, bookCount - 1);
+  int loadedCount = 0;
+  int drawnCount = 0;
+  for (int step = 1; step < bookCount; ++step) {
+    const int offset = (step + 1) / 2;
+    const int bookIdx = (centerIdx + ((step & 1) ? offset : bookCount - offset)) % bookCount;
+    if (gCarouselCache.findFrameSlot(bookIdx) >= 0) continue;
+    const int slotIdx = gCarouselCache.findEmptySlot();
+    if (slotIdx < 0) break;
+    if (loadCarouselFrameFromDisk(gCarouselCache.keyHash, bookCount, bookIdx, slotIdx)) {
+      ++loadedCount;
+      continue;
+    }
+    renderCarouselFrame(bookIdx, slotIdx);
+    saveCarouselFrameToDisk(gCarouselCache.keyHash, bookCount, bookIdx, slotIdx);
+    ++drawnCount;
+  }
+  LyraCarouselTheme::setPreRenderIndex(centerIdx);
+
+  // Speed log: the other carousel positions (a = read from SD, b = drawn).
+  SpeedLog::recordNamed("home.warm", millis() - warmStartedMs, loadedCount, drawnCount);
+}
+
+void HomeActivity::requestQuietPass() {
+  quietPassRequested.store(true);
+  Activity::requestUpdate();
+}
+
+void HomeActivity::requestUpdate(const bool immediate) {
+  visibleUpdatePending.store(true);
+  Activity::requestUpdate(immediate);
+}
+
+RequestUpdateResult HomeActivity::requestUpdateAndWait() {
+  visibleUpdatePending.store(true);
+  return Activity::requestUpdateAndWait();
 }
 
 void HomeActivity::loop() {
@@ -1472,7 +1592,7 @@ void HomeActivity::loop() {
     }
 
     const int bookCount = static_cast<int>(recentBooks.size());
-    const int tabCount = hasOpdsServers ? 5 : 4;
+    const int tabCount = coverGridUi->tabCount();
     const auto cycleBand = [this](const int base, const int count, const int dir) {
       if (count <= 0) return;
       const int current = selectorIndex - base;
@@ -1541,6 +1661,9 @@ void HomeActivity::loop() {
             break;
           case HomeMenuAction::Bookmarks:
             onSavedItemsOpen();
+            break;
+          case HomeMenuAction::Apps:
+            onAppsOpen();
             break;
           case HomeMenuAction::FileTransfer:
             onFileTransferOpen();
@@ -1740,9 +1863,36 @@ void HomeActivity::loop() {
   int carouselSwipeStartY = 0;
   int carouselSwipeEndX = 0;
   int carouselSwipeEndY = 0;
-  const bool hasCarouselSwipe =
+  bool hasCarouselSwipe =
       carouselTouchOnly && mappedInput.wasSwipeWithPoints(carouselSwipe, carouselSwipeStartX, carouselSwipeStartY,
                                                           carouselSwipeEndX, carouselSwipeEndY);
+  if (carouselTouchOnly) {
+    // The SDK only reports a swipe finished within its flick window. Follow the
+    // finger here so an unhurried drag across the covers moves the carousel too.
+    int touchX = 0;
+    int touchY = 0;
+    if (mappedInput.wasScreenTouchDown(touchX, touchY)) {
+      carouselDragActive = true;
+      carouselDragStartX = carouselDragLastX = touchX;
+      carouselDragStartY = carouselDragLastY = touchY;
+    } else if (carouselDragActive && mappedInput.isScreenTouchHeld(touchX, touchY)) {
+      carouselDragLastX = touchX;
+      carouselDragLastY = touchY;
+    }
+    if (carouselDragActive && mappedInput.wasScreenTouchReleased()) {
+      carouselDragActive = false;
+      const int dragX = carouselDragLastX - carouselDragStartX;
+      const int dragY = carouselDragLastY - carouselDragStartY;
+      if (!hasCarouselSwipe && std::abs(dragX) >= CAROUSEL_SLOW_DRAG_MIN_PX && std::abs(dragX) >= 2 * std::abs(dragY)) {
+        hasCarouselSwipe = true;
+        carouselSwipe = dragX < 0 ? MappedInputManager::SwipeDir::Left : MappedInputManager::SwipeDir::Right;
+        carouselSwipeStartX = carouselDragStartX;
+        carouselSwipeStartY = carouselDragStartY;
+        carouselSwipeEndX = carouselDragLastX;
+        carouselSwipeEndY = carouselDragLastY;
+      }
+    }
+  }
   const bool carouselSwipeStartsInMenu =
       hasCarouselSwipe && containsPoint(LyraCarouselTheme::buttonMenuTouchRect(renderer, carouselMenuItemCount),
                                         carouselSwipeStartX, carouselSwipeStartY);
@@ -1786,6 +1936,9 @@ void HomeActivity::loop() {
         break;
       case HomeMenuAction::Bookmarks:
         onSavedItemsOpen();
+        break;
+      case HomeMenuAction::Apps:
+        onAppsOpen();
         break;
       case HomeMenuAction::FileTransfer:
         onFileTransferOpen();
@@ -1855,36 +2008,21 @@ void HomeActivity::loop() {
         return true;
       }
 
+      // Covers answer to a finished tap only. Selecting on touch-down moved
+      // the carousel before a swipe could be recognised at finger lift, so a
+      // swipe that began on a side cover moved it twice.
       int bookIndex = -1;
-      if (bookCount > 0 &&
-          (activate ? mappedInput.wasCoverTapped(bookIndex) : mappedInput.wasCoverTouchedDown(bookIndex))) {
+      if (activate && bookCount > 0 && mappedInput.wasCoverTapped(bookIndex)) {
         bookIndex = std::clamp(bookIndex, 0, bookCount - 1);
-        const int previousSelectorIndex = selectorIndex;
-        const bool wasSelectedAtTouchStart = !activate && inCarouselRow && previousSelectorIndex == bookIndex;
-        const bool shouldActivateBook =
-            activate && ((carouselCoverTouchDownIndex == bookIndex && carouselCoverTouchDownWasSelected) ||
-                         (carouselCoverTouchDownIndex < 0 && inCarouselRow && previousSelectorIndex == bookIndex));
+        if (inCarouselRow && selectorIndex == bookIndex) {
+          activateSelectedHomeItem();
+          return true;
+        }
         selectorIndex = bookIndex;
         lastCarouselBookIndex = bookIndex;
-        if (!activate) {
-          carouselCoverTouchDownIndex = bookIndex;
-          carouselCoverTouchDownWasSelected = wasSelectedAtTouchStart;
-        } else {
-          carouselCoverTouchDownIndex = -1;
-          carouselCoverTouchDownWasSelected = false;
-        }
-        if (selectorIndex != previousSelectorIndex) {
-          invalidateCoverCache();
-          // Touch-down returns early so the selected cover can repaint before
-          // the finger lifts; keep the stats/context used by the next action
-          // in sync with that new selection.
-          updateHighlightedBookContext(false);
-        }
-        if (shouldActivateBook) {
-          activateSelectedHomeItem();
-        } else if (selectorIndex != previousSelectorIndex) {
-          requestUpdate();
-        }
+        invalidateCoverCache();
+        updateHighlightedBookContext(false);
+        requestUpdate();
         return true;
       }
       return false;
@@ -2050,29 +2188,25 @@ void HomeActivity::activateCoverGridSelection() {
     return;
   }
   const int tab = selectorIndex - static_cast<int>(recentBooks.size());
-  switch (tab) {
-    case 0:
+  if (tab >= coverGridUi->tabCount()) return;
+  switch (coverGridUi->tabAt(tab)) {
+    case CoverGridHomeUi::Tab::Files:
       onFileBrowserOpen();
       break;
-    case 1:
+    case CoverGridHomeUi::Tab::Library:
       onLibraryOpen();
       break;
-    case 2:
-      if (hasOpdsServers) {
-        onOpdsBrowserOpen();
-      } else {
-        onFileTransferOpen();
-      }
+    case CoverGridHomeUi::Tab::Opds:
+      onOpdsBrowserOpen();
       break;
-    case 3:
-      if (hasOpdsServers) {
-        onFileTransferOpen();
-      } else {
-        onSettingsOpen();
-      }
+    case CoverGridHomeUi::Tab::Apps:
+      onAppsOpen();
       break;
-    case 4:
-      if (hasOpdsServers) onSettingsOpen();
+    case CoverGridHomeUi::Tab::Transfer:
+      onFileTransferOpen();
+      break;
+    case CoverGridHomeUi::Tab::Settings:
+      onSettingsOpen();
       break;
   }
 }
@@ -2112,6 +2246,11 @@ bool HomeActivity::handleShortcutAction(const CrossPointSettings::SHORT_PWRBTN a
 }
 
 void HomeActivity::render(RenderLock&&) {
+  // Read both flags up front: a pass is only quiet when nothing has asked for
+  // a visible update since the previous one.
+  const bool visibleUpdate = visibleUpdatePending.exchange(false);
+  const bool quietPass = quietPassRequested.exchange(false) && !visibleUpdate;
+
   if (quickActionsPopup.processRender(renderer, mappedInput)) {
     return;
   }
@@ -2121,7 +2260,10 @@ void HomeActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
-  const auto displayHomeBuffer = [this] {
+  const auto displayHomeBuffer = [this, quietPass] {
+    // A quiet pass only rebuilds the framebuffer and touch areas; the panel
+    // already shows this picture.
+    if (quietPass) return;
     renderer.displayBuffer(initialRefreshMode);
     initialRefreshMode = HalDisplay::FAST_REFRESH;
     if (!homeFirstFrameLogged) {
@@ -2131,10 +2273,40 @@ void HomeActivity::render(RenderLock&&) {
     }
   };
 
+  if (!coversCheckedBeforePaint) {
+    coversCheckedBeforePaint = true;
+    // A theme change or a newly added book leaves cover thumbnails to make.
+    // Make them behind one message first, so Home is painted once, complete,
+    // instead of placeholders, three progress refreshes and a repaint.
+    if (!coverGridUi && !recentBooks.empty() && loadRecentCovers(metrics.homeCoverHeight, /*checkOnly=*/true)) {
+      renderer.clearScreen();
+      loadRecentCovers(metrics.homeCoverHeight);
+      // Its update requests are served by the paint below; what remains for
+      // the follow-up pass is the quiet work.
+      visibleUpdatePending.store(false);
+      requestQuietPass();
+    }
+  }
+
   if (coverGridUi) {
     renderer.clearScreen();
     coverGridUi->setSelection(selectorIndex);
     coverGridUi->render();
+    if (!firstRenderDone) {
+      // VARAGH: the grid only learns the size of its cover slots while it is
+      // drawn. Draw it once without showing it, make sure every cover exists
+      // in that size, then draw and show the finished Home a single time.
+      // Before, Home was painted, painted again unchanged and painted a third
+      // time with the covers, and was deaf to touches until the last one.
+      firstRenderDone = true;
+      coverGridUi->takeThumbHeightsChanged();
+      coverGridUi->refreshCoverPaths();
+      loadCoverGridThumbnails();
+      coverGridUi->refreshCoverPaths();
+      renderer.clearScreen();
+      coverGridUi->setSelection(selectorIndex);
+      coverGridUi->render();
+    }
     const auto labels = mappedInput.mapLabels(gridHasContinueReading ? tr(STR_READ) : "", tr(STR_SELECT),
                                               tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -2144,10 +2316,7 @@ void HomeActivity::render(RenderLock&&) {
       coverGridUi->refreshCoverPaths();
       recentsLoaded = false;
     }
-    if (!firstRenderDone) {
-      firstRenderDone = true;
-      requestUpdate();
-    } else if (!recentsLoaded && !recentsLoading) {
+    if (!recentsLoaded && !recentsLoading) {
       loadCoverGridThumbnails();
       coverGridUi->refreshCoverPaths();
       requestUpdate();
@@ -2201,12 +2370,9 @@ void HomeActivity::render(RenderLock&&) {
 
     displayHomeBuffer();
 
-    if (!firstRenderDone) {
-      firstRenderDone = true;
-      requestUpdate();
-      return;
-    }
-
+    // The panel shows Home now, so the cover check can follow directly; a
+    // second pass only repeated the same refresh and held up the first touch.
+    firstRenderDone = true;
     if (!recentsLoaded && !recentsLoading) {
       recentsLoading = true;
       loadRecentCovers(metrics.homeCoverHeight);
@@ -2216,6 +2382,12 @@ void HomeActivity::render(RenderLock&&) {
 
   // Fast path: restore artwork and draw current progress and controls.
   if (carouselFramesReady) {
+    if (quietPass && carouselNeighboursPending) {
+      warmCarouselNeighbours();
+      // Drawing those positions registered their touch areas; start over so
+      // only the viewed position's areas are published.
+      TouchRegistry::getInstance().beginFrame();
+    }
     uint8_t* frameBuffer = renderer.getFrameBuffer();
     const int bookCount = static_cast<int>(recentBooks.size());
     const bool inCarouselRow = (selectorIndex < bookCount);
@@ -2259,15 +2431,12 @@ void HomeActivity::render(RenderLock&&) {
 
       displayHomeBuffer();
       if (saveViewedFrame) saveCarouselFrameToDisk(gCarouselCache.keyHash, bookCount, centerIdx, slotIdx);
-      // Mirror the slow-path trigger: generate missing thumbnails on the second
-      // render so the E-ink is already showing something before the SD work starts.
-      if (!firstRenderDone) {
-        firstRenderDone = true;
-        requestUpdate();
-      } else if (!recentsLoaded && !recentsLoading) {
+      firstRenderDone = true;
+      if (!recentsLoaded && !recentsLoading) {
         recentsLoading = true;
         loadRecentCovers(metrics.homeCoverHeight);
       }
+      if (recentsLoaded && carouselNeighboursPending) requestQuietPass();
       return;
     }
   }
@@ -2327,12 +2496,7 @@ void HomeActivity::render(RenderLock&&) {
 
   displayHomeBuffer();
 
-  if (!firstRenderDone) {
-    firstRenderDone = true;
-    requestUpdate();
-    return;
-  }
-
+  firstRenderDone = true;
   if (!recentsLoaded && !recentsLoading) {
     recentsLoading = true;
     loadRecentCovers(metrics.homeCoverHeight);
@@ -2343,9 +2507,9 @@ void HomeActivity::render(RenderLock&&) {
     // Cover generation needs more contiguous heap than the frame cache path.
     carouselWarmupPending = false;
     preRenderCarouselFrames();
-    if (carouselFramesReady) {
-      requestUpdate();
-    }
+    // The panel already shows this position. The quiet pass rebuilds the
+    // framebuffer and touch areas from the snapshot and warms the other ones.
+    if (carouselFramesReady) requestQuietPass();
   }
 }
 
@@ -2454,5 +2618,10 @@ void HomeActivity::onReadingStatsOpen() {
 
 void HomeActivity::onSavedItemsOpen() {
   startActivityForResult(std::make_unique<HighlightsHubActivity>(renderer, mappedInput),
+                         [this](const ActivityResult&) { requestUpdate(); });
+}
+
+void HomeActivity::onAppsOpen() {
+  startActivityForResult(std::make_unique<AppsActivity>(renderer, mappedInput),
                          [this](const ActivityResult&) { requestUpdate(); });
 }

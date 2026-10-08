@@ -25,6 +25,12 @@ class HalPowerManager {
   int normalFreq = 0;  // MHz
   bool isLowPower = false;
   bool panelWaitLowered = false;  // CPU lowered by beginPanelWait(), not setPowerSaving()
+  // VARAGH: set while Wi-Fi is only kept associated in the background (the
+  // online dictionary's "keep Wi-Fi on"), not carrying a transfer.
+  bool wifiIdleLowPowerAllowed = false;
+  // Wi-Fi needs the 80 MHz bus clock, which the S3 boards keep at their low
+  // CPU clock. The C3's 10 MHz low clock cannot carry it.
+  bool wifiBlocksLowPower() const;
 
   mutable int _batteryCachedPercent = 0;  // Last read battery percentage * 10 (0-1000); callers divide by 10 (ADC/X4
                                           // path only — I2C/X3 path stores 0-100 directly)
@@ -47,6 +53,9 @@ class HalPowerManager {
   static constexpr unsigned long BATTERY_POLL_MS = 1500;       // ms
 
   void begin();
+  // VARAGH: lets the idle clock drop while Wi-Fi is merely kept associated.
+  // Every other Wi-Fi user leaves this off and keeps the full clock.
+  void setWifiIdleLowPowerAllowed(bool allowed) { wifiIdleLowPowerAllowed = allowed; }
 
   // Control CPU frequency for power saving
   void setPowerSaving(bool enabled);

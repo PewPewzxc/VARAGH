@@ -69,6 +69,23 @@ it by hand, and note "ported from CrossPoint #N" in the commit message and
 contains CrossPoint #3616 (shared font interval tables) and #3633 (faster glyph
 drawing).
 
+## What 1.2.0 touches in upstream files
+
+Keep these in mind when merging a newer CrossInk; everything else of 1.2.0 is
+in files of its own (`src/activities/apps`, `src/games`, `src/network/Online*`,
+`src/util/CalendarMath.h`, `src/util/OnlineDictionaryText.*`).
+
+- `src/activities/home/HomeActivity.*`: the Apps entry, the Carousel frame
+  cache and touch handling, covers prepared before the first paint, a single
+  paint for Cover Grid.
+- `lib/hal/HalPowerManager.*`: `setWifiIdleLowPowerAllowed`.
+- `src/SettingsList.h`, `src/CrossPointSettings.*`: "Online Lookup: Keep Wi-Fi
+  On" and the Clock & Calendar sleep screen (`CLOCK_SLEEP`, also in the sleep
+  screen storage order).
+- `src/activities/boot_sleep/SleepActivity.*`: `renderClockSleepScreen`.
+- `src/activities/reader/EpubReaderActivity.cpp`, the dictionary activities and
+  `src/main.cpp`: the online dictionary hooks.
+
 ## Release
 
 1. Raise `version` in `platformio.ini` (for example `1.0.1`) and add a

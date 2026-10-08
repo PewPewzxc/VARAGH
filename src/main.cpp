@@ -99,6 +99,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "activities/reader/ReaderUtils.h"
 #include "activities/reader/ReadingStatsUtils.h"
 #include "activities/reader/StatsBackup.h"
+#include "activities/network/OnlineDictionaryActivity.h"
 #include "activities/settings/FontDownloadActivity.h"
 #include "activities/settings/KOReaderAuthActivity.h"
 #include "activities/settings/KOReaderSettingsActivity.h"
@@ -836,11 +837,39 @@ void putTiltSensorToSleepForDeepSleep() {
   LOG_ERR("MAIN", "Tilt sensor did not confirm sleep before deep sleep");
 }
 
+// VARAGH "Home" action. It repeats the Back step until the Home screen shows, so
+// every screen on the way closes through its own back route and saves what it
+// must; jumping straight to Home would skip that for the reader option screens.
+constexpr uint8_t X4PRO_GO_HOME_MAX_STEPS = 12;
+constexpr unsigned long X4PRO_GO_HOME_TIMEOUT_MS = 4000;
+uint8_t x4ProGoHomeStepsLeft = 0;
+unsigned long x4ProGoHomeStartedAt = 0;
+
+void cancelX4ProGoHome() { x4ProGoHomeStepsLeft = 0; }
+
+void advanceX4ProGoHome() {
+  if (x4ProGoHomeStepsLeft == 0) return;
+  if (activityManager.isHomeActivity() || millis() - x4ProGoHomeStartedAt > X4PRO_GO_HOME_TIMEOUT_MS) {
+    x4ProGoHomeStepsLeft = 0;
+    mappedInputManager.clearDeferredHomeGesture();
+    return;
+  }
+  // The previous step has not been taken yet (a screen change is still pending).
+  if (mappedInputManager.hasDeferredHomeGesture()) return;
+  --x4ProGoHomeStepsLeft;
+  mappedInputManager.queueDeferredHomeGesture();
+}
+
 bool executeX4ProHomeButtonAction(const uint8_t action,
                                   const QuickLockTrigger quickLockTrigger = QuickLockTrigger::None) {
   switch (action) {
     case CrossPointSettings::HOME_BUTTON_BACK_HOME:
       return activityManager.handleHomeButtonBackOrHome();
+    case CrossPointSettings::HOME_BUTTON_HOME:
+      if (activityManager.isHomeActivity()) return false;
+      x4ProGoHomeStepsLeft = X4PRO_GO_HOME_MAX_STEPS;
+      x4ProGoHomeStartedAt = millis();
+      return true;
     case CrossPointSettings::HOME_BUTTON_TOGGLE_FRONTLIGHT: {
       const bool lightOn = !Frontlight.isOn();
       Frontlight.setOn(lightOn);
@@ -938,6 +967,7 @@ bool handleX4ProHomeKeyShortcuts() {
   if (activityManager.blocksGlobalInput()) {
     const bool hadPendingTap = x4ProHomeKeyTapPending;
     x4ProHomeKeyTapPending = false;
+    cancelX4ProGoHome();
     mappedInputManager.clearDeferredHomeGesture();
     return hadPendingTap || wasX4ProHomeKeyTapped() || wasX4ProHomeKeyLongPressed();
   }
@@ -948,6 +978,7 @@ bool handleX4ProHomeKeyShortcuts() {
   if (mappedInputManager.isHomeButtonLockedInReader()) {
     const bool hadPendingTap = x4ProHomeKeyTapPending;
     x4ProHomeKeyTapPending = false;
+    cancelX4ProGoHome();
     mappedInputManager.clearDeferredHomeGesture();
     return hadPendingTap || wasX4ProHomeKeyTapped() || wasX4ProHomeKeyLongPressed();
   }
@@ -957,9 +988,12 @@ bool handleX4ProHomeKeyShortcuts() {
   // cannot navigate Home after the list has already handled the swipe.
   if (mappedInputManager.wasSwipe() != MappedInputManager::SwipeDir::None) {
     x4ProHomeKeyTapPending = false;
+    cancelX4ProGoHome();
     mappedInputManager.clearDeferredHomeGesture();
     return false;
   }
+
+  advanceX4ProGoHome();
 
   const unsigned long now = millis();
   bool completedPendingTap = false;
@@ -1567,6 +1601,18 @@ void setup() {
         } else {
           LOG_ERR("MAIN", "OOM: Manage Fonts activity after minimal boot (free=%u maxAlloc=%u)", ESP.getFreeHeap(),
                   ESP.getMaxAllocHeap());
+        }
+        break;
+      }
+      case NetworkBootTarget::ONLINE_DICTIONARY: {
+        auto onlineActivity = makeUniqueNoThrow<OnlineDictionaryActivity>(renderer, mappedInputManager,
+                                                                         OnlineDictionaryActivity::Mode::Fetch);
+        if (onlineActivity) {
+          activityManager.replaceActivity(std::move(onlineActivity));
+          launched = true;
+        } else {
+          LOG_ERR("MAIN", "OOM: online dictionary activity after minimal boot (free=%u maxAlloc=%u)",
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap());
         }
         break;
       }

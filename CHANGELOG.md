@@ -2,6 +2,116 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.2.0 "Tiger"] - 2026-10-07
+
+Based on VARAGH 1.1.1. Updating keeps your settings, books, reading progress,
+highlights and flashcards. Built and tuned for the X4 Pro.
+
+### Added
+
+- **Apps** on the Home screen (touch readers, every theme; in Cover Grid it is
+  the icon of four squares in the row under the covers):
+  a tile per app with its icon and a line about what is going on in it.
+  **Manage** (top right) lists the apps with a switch each; an app that is
+  switched off is only hidden. Apps are part of the firmware: a hidden or
+  closed app uses no memory, processor time or battery. **New** and **Give
+  up**, in the top right corner, have to be held and fill while you hold them.
+  Every app screen uses the same margins and gaps.
+  - **Wordle**: a full QWERTY keyboard with tall keys that show what is known
+    about each letter (black = right place, grey = other place, faded = not in
+    the word). About 1,900 everyday answer words, and every five-letter English
+    word of the VARAGH English dictionary (about 22,000) is accepted as a guess.
+    Tap any box of the row you are typing to put the next letter there, so the
+    boxes can be filled in any order. Taps made while the screen is still
+    refreshing are kept. **Give up** sits in the top right corner and has to be
+    held; it fills while you hold it. The round is saved; after it, the keyboard
+    gives way to your statistics, and **Look up word** opens the answer in your
+    English dictionary.
+  - **Sudoku**: tap a cell, then a number. Every puzzle has exactly one
+    solution; Easy and Medium can be solved without guessing. A cell can hold
+    several small numbers until you write its answer: switch **Notes** on and
+    the number keys write small numbers, or hold a number key for half a second
+    to write the other kind without switching. **Fill** writes the still
+    possible numbers into every empty cell at once, and an answer removes its
+    number from the small numbers in the same row, column and box. Also Undo,
+    Erase and Hint; the row, column and box of the selected cell are tinted and
+    equal digits are ringed; each number key shows how many of that digit are
+    still missing. A wrong digit is not marked and mistakes are not counted
+    while you play: finding them is part of the puzzle (the count is shown once
+    the puzzle is solved). The level stands in the header, next to **New**,
+    which has to be held. The grid, the solving time and the best time per
+    level are saved.
+  - **Chess**: against the computer (Easy, Medium, Hard) or two people on one
+    reader, as White or Black. Tap a piece and dots show where it may go; the
+    last move is marked. Full rules, including castling, en passant, promotion
+    with a choice of piece, stalemate and the draws by repetition, by 50 moves
+    and by too few pieces. Undo, Hint and Flip. The computer thinks for at most
+    1.5, 2.5 or 5 seconds, depending on the level, on a task of its own, so
+    Back always answers. The game is saved after every move.
+  - **Checkers** (American / English rules): against the computer or two
+    players. Pieces move and capture forwards, kings one square in any
+    direction; a capture must be taken and a multiple jump finished; a piece
+    reaching the far row is crowned and its move ends. Undo and Hint.
+  - **Clock**: the time above a month calendar, repainted once a minute while it
+    is open. A tap on the clock steps through three faces: large digits, an
+    analog clock, and a calendar with the Persian day under every date. The
+    Persian (Solar Hijri) date is shown in Latin letters ("14 Mehr 1405"). The
+    arrows or a swipe turn the months; a tap on the month's name returns to
+    today. It uses the reader's clock, time zone and summer time from Settings
+    and does not keep the reader awake. **Settings** on the Clock's row in
+    Manage: the clock face, the Persian date on or off, the first day of the
+    week (Monday, Saturday or Sunday) and the week number on or off.
+- **Clock & Calendar sleep screen** (Settings > Display > Sleep Screen): the
+  weekday, a large day number, the month, the Persian date and the month's
+  calendar with today marked, following the Clock settings. The reader is off
+  while it sleeps, so the screen shows no time; the date is the one of the
+  moment it went to sleep.
+- **Online dictionary**: in a word lookup, Switch Dictionary now ends with
+  **Online (Wiktionary)**. It asks Wiktionary in the language of the word
+  (English, German or Persian) and, when Wiktionary has no entry, Wikipedia for
+  a short summary. The answer is laid out like the VARAGH dictionaries and saved
+  on the card, so the same word is answered offline from then on. Wi-Fi is only
+  on for the lookup: the reader restarts into its Wi-Fi mode and back into the
+  book, which takes roughly 10 to 15 seconds for a new word.
+- **Online Lookup: Keep Wi-Fi On** (Settings > Reader, off by default,
+  experimental): Wi-Fi is joined in the background while a book is open and a
+  new word is fetched with the book open, without the two restarts. This costs
+  battery for as long as a book is open; switching it on asks first. Whenever
+  Wi-Fi is not there (no saved network, out of range, too little memory) the
+  lookup takes the restart route as before.
+- **Mirror RTL Page Turns** (Settings > Controls > Taps & Gestures, on by
+  default) and a separate **Home** choice for the Home key; see
+  [docs/controls.md](docs/controls.md).
+
+### Changed
+
+- **Carousel theme**:
+  - A swipe that begins on a side cover moves the carousel once. Covers now
+    answer to a finished tap only; before, touching a side cover selected it and
+    the swipe then moved it a second time.
+  - A slow drag across the covers counts as a swipe (before, only a flick
+    finished within 0.7 s did).
+  - Readers with PSRAM keep the picture of every carousel position in memory
+    and prepare the other positions right after Home appears, so a swipe only
+    waits for the screen. Before, each swipe drew or read the next picture and
+    wrote it to the card.
+- **Home, all themes**: Home no longer repeats its first screen refresh, which
+  made it deaf to touches for about 0.7 s after it appeared.
+- **Cover Grid theme**: Home is painted once when it opens. Before, it was
+  painted, painted again unchanged and painted a third time with the covers.
+- **Changing the theme**: the cover pictures of the new theme are prepared
+  behind a single "Preparing covers" message and Home is then painted once,
+  complete, instead of placeholders, a progress refresh per book and a repaint.
+
+### For developers
+
+- New host tests: the chess move generator against the published position
+  counts (perft), chess and checkers games played out by the computer, the
+  calendar arithmetic including Persian dates, Wordle, Sudoku and the text
+  handling of the online dictionary.
+- `HalPowerManager::setWifiIdleLowPowerAllowed` lets the idle clock drop while
+  Wi-Fi is only kept associated; only the "Keep Wi-Fi On" setting uses it.
+
 ## [VARAGH v1.1.1 "Tiger"] - unreleased
 
 Based on CrossInk v1.6.1 (release candidate) and VARAGH 1.1.0. Still "Tiger". Everything

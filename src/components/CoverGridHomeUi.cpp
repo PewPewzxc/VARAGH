@@ -10,6 +10,7 @@
 
 #include "MappedInputManager.h"
 #include "UITheme.h"
+#include "components/icons/appsIcon.h"
 #include "components/icons/listIcons.h"
 
 namespace fui = freeink::ui;
@@ -21,9 +22,16 @@ constexpr int16_t COVER_CELL_INSET = 6;
 CoverGridHomeUi::CoverGridHomeUi(GfxRenderer& renderer)
     : UiAppHost(renderer), coverCache(renderer), renderer(renderer) {}
 
-void CoverGridHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bool continuing, float featuredProgress) {
+void CoverGridHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bool apps, bool continuing,
+                            float featuredProgress) {
   books = &recent;
-  hasOpds = opds;
+  tabKindCount = 0;
+  tabKinds[tabKindCount++] = Tab::Files;
+  tabKinds[tabKindCount++] = Tab::Library;
+  if (opds) tabKinds[tabKindCount++] = Tab::Opds;
+  if (apps) tabKinds[tabKindCount++] = Tab::Apps;
+  tabKinds[tabKindCount++] = Tab::Transfer;
+  tabKinds[tabKindCount++] = Tab::Settings;
   if (!recent.empty()) coverCache.begin();
   reset();
   app.on(SELECT, &CoverGridHomeUi::onAction, this);
@@ -31,6 +39,13 @@ void CoverGridHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bo
   refreshCoverPaths();
   progress = continuing && featuredProgress >= 0 ? static_cast<int>(featuredProgress + 0.5f) : -1;
   if (progress >= 0) snprintf(progressText, sizeof(progressText), "%d%%", progress);
+}
+
+int CoverGridHomeUi::tabIndexOf(const Tab tab) const {
+  for (int i = 0; i < tabKindCount; ++i) {
+    if (tabKinds[i] == tab) return i;
+  }
+  return -1;
 }
 
 void CoverGridHomeUi::refreshCoverPaths() {
@@ -227,19 +242,14 @@ void CoverGridHomeUi::drawGrid(UiScreen& screen) {
 }
 
 void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
-  static constexpr const freeink::Icon* ICONS[] = {&icon_folder_32, &icon_landmark_32, &icon_lyra_library_32,
-                                                   &icon_lyra_transfer_32, &icon_lyra_settings_32};
-  int count = 0;
-  for (int i = 0; i < 5; ++i) {
-    if (i == 2 && !hasOpds) continue;
-    auto& tab = tabItems[count];
-    tab.value = books->size() + count;
+  for (int i = 0; i < tabKindCount; ++i) {
+    auto& tab = tabItems[i];
+    tab.value = books->size() + i;
     tab.selected = selected == tab.value;
     tab.label = nullptr;
-    ++count;
   }
   tabs.tabs = tabItems.data();
-  tabs.count = count;
+  tabs.count = tabKindCount;
   tabs.layout = fui::TabBarLayout::SpaceBetween;
   tabs.action = SELECT;
   tabs.inputMask = fui::InputTouch;
@@ -247,9 +257,13 @@ void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
   tabs.iconPainterUserData = this;
   tabs.iconPainter = [](fui::DrawTarget&, fui::Rect iconRect, const fui::TabItem& tab, uint8_t, void* user) {
     const auto& self = *static_cast<CoverGridHomeUi*>(user);
+    // In the order of the Tab values.
+    static constexpr const freeink::Icon* ICONS[MAX_TABS] = {&icon_folder_32,       &icon_landmark_32,
+                                                             &icon_lyra_library_32, &icon_apps_32,
+                                                             &icon_lyra_transfer_32, &icon_lyra_settings_32};
     const int index = tab.value - static_cast<int>(self.books->size());
-    const int icon = !self.hasOpds && index >= 2 ? index + 1 : index;
-    drawLucideIcon(self.renderer, *ICONS[icon], iconRect.x, iconRect.y);
+    if (index < 0 || index >= self.tabKindCount) return true;
+    drawLucideIcon(self.renderer, *ICONS[static_cast<int>(self.tabKinds[index])], iconRect.x, iconRect.y);
     return true;
   };
   tabs.tabStyles.normal.background = fui::Paint::solid(fui::Color::White);

@@ -37,7 +37,10 @@
 #include "ClippingStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "DictionaryDefinitionActivity.h"
 #include "DictionaryWordSelectActivity.h"
+#include "network/OnlineDictionary.h"
+#include "network/OnlineWifi.h"
 #include "EpubGrayscale.h"
 #include "EpubReaderBookmarkListActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
@@ -2341,6 +2344,8 @@ void EpubReaderActivity::onEnter() {
   touchReaderDrawerState = initialReaderDrawerState(mappedInput.hasTouchHardware());
 
   MemoryBudget::logEpubHeapPools("reader enter");
+  // VARAGH: with "keep Wi-Fi on", start joining now so a lookup finds it ready.
+  OnlineWifi::readerOpened();
 
   // epub is a required collaborator: ReaderActivity dereferences it before handing it
   // over, and onExit() unconditionally tears down the setup below. Returning early here
@@ -2487,6 +2492,7 @@ void EpubReaderActivity::onEnter() {
 }
 
 void EpubReaderActivity::onExit() {
+  OnlineWifi::readerClosed();
   sdFontSystem.setSettingsPersistenceCallback(nullptr, nullptr);
   // Drop the scalable-family catalog retained during reading. The active font
   // and its PSRAM face lifetime remain managed by SdCardFontSystem.
@@ -2872,6 +2878,7 @@ bool EpubReaderActivity::transientFeedbackDismissed(const unsigned long showTime
 }
 
 void EpubReaderActivity::loop() {
+  OnlineWifi::tick();
   syncStatsTrackingState();
   bool rawTouchInput = false;
 #if CROSSINK_APP_CAP_TOUCH
@@ -2902,8 +2909,9 @@ void EpubReaderActivity::loop() {
   }
 #endif
 
-  const auto touch = ReaderUtils::detectTouchPageTurn(renderer, mappedInput,
-                                                      epub && ReaderUtils::isRtlBookLanguage(epub->getLanguage()));
+  const auto touch = ReaderUtils::detectTouchPageTurn(
+      renderer, mappedInput,
+      epub && SETTINGS.rtlBookMirrorPageTurns && ReaderUtils::isRtlBookLanguage(epub->getLanguage()));
   const int bottomTapHeight =
       automaticPageTurnActive
           ? std::max(UITheme::getStatusBarHeight(),
@@ -4654,7 +4662,46 @@ bool EpubReaderActivity::handleExternalReaderMenuAction(const uint8_t action) {
   return true;
 }
 
+bool EpubReaderActivity::showSavedOnlineDefinition() {
+  OnlineDictionary::Request request;
+  const bool pending = OnlineDictionary::loadRequest(request);
+  OnlineDictionary::clearRequest();
+  if (!pending || !request.answered || !epub) return false;
+
+  // The saved answers are a small dictionary of their own. The definition
+  // screen clears this override again when it closes.
+  Dictionary::setLookupDictPathOverride(OnlineDictionary::storePath(request.lang).c_str());
+  const DictLocation location = Dictionary::locate(request.word);
+  if (!location.found) {
+    Dictionary::clearLookupDictPathOverride();
+    LOG_ERR("ERS", "Saved online answer not found again");
+    return false;
+  }
+
+  const std::string bookCachePath = epub->getCachePath();
+  const BookReaderSettingsData bookSettings = loadBookReaderSettingsFile(bookCachePath);
+  snprintf(onlineDefinitionFontFamily_, sizeof(onlineDefinitionFontFamily_), "%s",
+           bookSettings.dictionarySdFontFamilyName);
+  auto definition = makeUniqueNoThrow<DictionaryDefinitionActivity>(
+      renderer, mappedInput, location.headword, location, false, bookCachePath, false, "",
+      LookupHistory::Status::NotFound, nullptr, nullptr, onlineDefinitionFontFamily_,
+      bookSettings.dictionaryFontPointSize);
+  if (!definition) {
+    Dictionary::clearLookupDictPathOverride();
+    LOG_ERR("ERS", "OOM allocating DictionaryDefinitionActivity");
+    return false;
+  }
+  pauseReadingPaceTimer("online_definition");
+  startActivityForResult(std::move(definition), [this](const ActivityResult&) {
+    resumeReadingPaceTimer("online_definition_return");
+    releaseReaderSdFontCachesForLowMemory(renderer, "DICT", "online definition exit");
+    requestUpdate();
+  });
+  return true;
+}
+
 bool EpubReaderActivity::restorePendingOverlay(const PendingOverlayResume& resume) {
+  if (resume.overlay == PendingOverlayType::OnlineDefinition) return showSavedOnlineDefinition();
   if (!epub || resume.overlay != PendingOverlayType::ReaderDrawer || resume.bookPath != epub->getPath()) return false;
   touchReaderDrawerState.tab =
       static_cast<ReaderDrawerTab>(std::min<uint8_t>(resume.tab, static_cast<uint8_t>(ReaderDrawerTab::Count) - 1));

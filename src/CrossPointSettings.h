@@ -37,6 +37,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     QUICK_RESUME = 9,
     MINIMAL_STATS_SLEEP = 10,
     DASHBOARD_SLEEP = 11,
+    // VARAGH: today's date over the month's calendar, as the Clock app draws it.
+    CLOCK_SLEEP = 12,
     SLEEP_SCREEN_MODE_COUNT
   };
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
@@ -330,7 +332,11 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     HOME_BUTTON_BACK_HOME = 23,
     HOME_BUTTON_TOGGLE_FRONTLIGHT = 24,
     HOME_BUTTON_READER_MENU = 25,
-    HOME_BUTTON_ACTION_COUNT = 26
+    HOME_BUTTON_ACTION_COUNT = 26,
+    // VARAGH: go straight to the Home screen from anywhere. HOME_BUTTON_BACK_HOME
+    // stays the one-step Back action. The value sits far above the shared
+    // power-button actions so an upstream addition can never collide with it.
+    HOME_BUTTON_HOME = 250
   };
 
   static constexpr uint8_t QUICK_ACTION_SLOT_ACTION_COUNT = 23;
@@ -519,6 +525,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Page-turn gestures remain independently configurable while touch reader controls stay enabled.
   uint8_t pageTurnGesture = TAP_AND_SWIPE;
   uint8_t previousPageGesture = TAP_AND_SWIPE;
+  // VARAGH: right-to-left books (Persian, Arabic, Hebrew) swap the touch page-turn
+  // sides, so the left side is "next". 0 keeps the same sides as every other book.
+  uint8_t rtlBookMirrorPageTurns = 1;
+  // VARAGH (experimental): keep Wi-Fi joined while a book is open, so the
+  // online dictionary answers in place instead of restarting twice. Costs
+  // battery for as long as a book is open. See network/OnlineWifi.h.
+  uint8_t onlineDictWifiAlwaysOn = 0;
   uint8_t customBootscreenEnabled = 1;
   uint8_t tapToHideStatusBar = 1;
   // Disables all touchscreen input while a reader is active. Reader menus temporarily override this.

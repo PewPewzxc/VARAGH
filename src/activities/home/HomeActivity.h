@@ -2,6 +2,7 @@
 #include <HalDisplay.h>
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
@@ -22,9 +23,10 @@ struct Rect;
 
 class HomeActivity final : public Activity {
  public:
-  // Keep one rendered carousel frame in RAM. Additional frames remain available
-  // through the SD snapshot cache and are paged in on demand.
-  static constexpr int kCarouselFrameCount = 1;
+  // Rendered carousel frames kept in RAM. Readers with PSRAM hold one per
+  // position, so a swipe only waits for the panel; without PSRAM a single
+  // frame is kept and the others are paged in from the SD snapshot cache.
+  static constexpr int kCarouselFrameCount = 3;
   // Must be >= LyraCarouselMetrics::values.homeRecentBooksCount (asserted in .cpp)
   static constexpr int kMaxCachedBooks = 3;
 
@@ -34,8 +36,13 @@ class HomeActivity final : public Activity {
   bool gridHasContinueReading = false;
   int selectorIndex = 0;
   int lastCarouselBookIndex = 0;  // remembered position when leaving carousel row
-  int carouselCoverTouchDownIndex = -1;
-  bool carouselCoverTouchDownWasSelected = false;
+  // Finger travel on Carousel, so a drag slower than the SDK's flick window
+  // still counts as a swipe.
+  bool carouselDragActive = false;
+  int carouselDragStartX = 0;
+  int carouselDragStartY = 0;
+  int carouselDragLastX = 0;
+  int carouselDragLastY = 0;
   // Touch menus use a momentary pressed state. Keep it separate from the
   // keyboard selection so a returned Home screen cannot retain an icon tint.
   int carouselMenuTouchDownIndex = -1;
@@ -92,6 +99,14 @@ class HomeActivity final : public Activity {
   bool carouselFramesReady = false;
   bool carouselFramesInverted = false;
   bool carouselWarmupPending = false;
+  // Positions other than the viewed one still have to be read or drawn.
+  bool carouselNeighboursPending = false;
+  // A quiet pass rebuilds the framebuffer and touch areas (and warms the other
+  // carousel positions) without refreshing the panel, which already shows this
+  // picture. Any ordinary update request turns the next pass into a normal one.
+  std::atomic<bool> quietPassRequested{false};
+  std::atomic<bool> visibleUpdatePending{false};
+  bool coversCheckedBeforePaint = false;
 
   std::vector<RecentBook> recentBooks;
   const HomeMenuItem initialMenuItem;
@@ -106,6 +121,7 @@ class HomeActivity final : public Activity {
   void onOpdsBrowserOpen();
   void onReadingStatsOpen();
   void onSavedItemsOpen();
+  void onAppsOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image
@@ -114,6 +130,8 @@ class HomeActivity final : public Activity {
   void invalidateCoverCache();
   void invalidatePolarityMismatchedCaches();
   void preRenderCarouselFrames();
+  void warmCarouselNeighbours();
+  void requestQuietPass();
   void freeCarouselFrames();
   bool allocateCarouselFrameSlots(int targetFrameCount);
   bool saveCarouselFrameToDisk(uint64_t cacheKeyHash, int bookCount, int bookIdx, int slotIdx);
@@ -132,7 +150,9 @@ class HomeActivity final : public Activity {
   void loadCoverGridThumbnails();
   void activateCoverGridSelection();
   void loadAllBookStats();
-  void loadRecentCovers(int coverHeight);
+  // checkOnly: report whether a cover thumbnail for the active theme still has
+  // to be made, without making it.
+  bool loadRecentCovers(int coverHeight, bool checkOnly = false);
 
  public:
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -147,6 +167,8 @@ class HomeActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  void requestUpdate(bool immediate = false) override;
+  RequestUpdateResult requestUpdateAndWait() override;
   bool isHomeActivity() const override { return true; }
   bool allowPowerAsConfirmInReaderMode() const override { return quickActionsPopup.isActive(); }
   bool blocksGlobalInput() const override { return quickActionsPopup.isActive(); }

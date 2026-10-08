@@ -19,8 +19,17 @@ class CoverGridHomeUi final : public UiAppHost<16, 1> {
   static constexpr int GRID_ROWS = 2;
   static constexpr int MAX_BOOKS = 1 + GRID_COLUMNS * GRID_ROWS;
   static_assert(MAX_BOOKS <= HomeCoverCache::MAX_COVERS);
+  // VARAGH: the tabs under the covers. OPDS and Apps are only there when they
+  // can be used, so Home asks which tab sits where instead of counting.
+  enum class Tab : uint8_t { Files, Library, Opds, Apps, Transfer, Settings };
+  static constexpr int MAX_TABS = 6;
   explicit CoverGridHomeUi(GfxRenderer& renderer);
-  void begin(const std::vector<RecentBook>& books, bool hasOpds, bool hasContinueReading, float featuredProgress);
+  void begin(const std::vector<RecentBook>& books, bool hasOpds, bool hasApps, bool hasContinueReading,
+             float featuredProgress);
+  int tabCount() const { return tabKindCount; }
+  Tab tabAt(int index) const { return tabKinds[index]; }
+  // Position of a tab in the row, or -1 when it is not shown.
+  int tabIndexOf(Tab tab) const;
   void refreshCoverPaths();
   void setSelection(int selection) { selected = selection; }
   int selectedAction(const MappedInputManager& input);
@@ -54,12 +63,13 @@ class CoverGridHomeUi final : public UiAppHost<16, 1> {
   int selected = 0;
   int pending = -1;
   int progress = -1;
-  bool hasOpds = false;
+  std::array<Tab, MAX_TABS> tabKinds{};
+  int tabKindCount = 0;
   char progressText[12]{};
   // Component styles and interaction tables stay off the render task's stack.
   freeink::ui::BookCardProps card;
   freeink::ui::CoverGridProps grid;
   freeink::ui::Rect gridBounds{};
   freeink::ui::TabBarProps tabs;
-  std::array<freeink::ui::TabItem, 5> tabItems;
+  std::array<freeink::ui::TabItem, MAX_TABS> tabItems;
 };
