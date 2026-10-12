@@ -19,6 +19,8 @@ their features are kept.
   (Settings → Reader, off by default; swipe to turn pages while it is on).
 - **Long Press on a Word:** choose what a long press does: look the word up,
   highlight it, add it to a category, or **Ask** with a bubble at the words.
+  **Hold to Select** still sets only how long you hold; see
+  [how the three settings work together](FEATURES.md#three-settings-three-questions-121).
 - **Book ratings:** five stars with halves, at the end of a book, in the book
   menu, on Reading Stats and in the Library list. Kept as plain text on the card.
 - **Apps stay open across sleep**, and a **stronger chess computer**.

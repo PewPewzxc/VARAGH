@@ -164,7 +164,50 @@ out. It never draws a box.
   </tr>
 </table>
 
-### Hold to Select (new setting)
+### Three settings, three questions (1.2.1)
+From 1.2.1 three settings in **Settings → Reader** share the work. Each answers
+one question, and they do not change one another:
+
+| Setting | The question it answers | Choices | Default |
+|---|---|---|---|
+| **Hold to Select** | How long must my finger rest on a word before it is selected? | Fast, Normal, Slow, Very slow | Normal |
+| **Long Press on a Word** | What happens when I lift my finger after selecting? | Look Up, Ask, Highlight, Add to… | Look Up |
+| **Tap to Look Up** | Does a short tap on a word open its meaning? | Off, On | Off |
+
+**What changed for Hold to Select.** Up to 1.2.0, holding a word had one
+result: lifting your finger opened the dictionary. Hold to Select still sets
+only the waiting time, exactly as before, but what follows the hold is now
+your choice in **Long Press on a Word**. With the defaults nothing is
+different from 1.2.0. And with **Tap to Look Up** on, a hold is no longer the
+only way to a meaning: a tap looks a single word up, and the hold is left for
+several words, for highlighting, or for whatever Long Press on a Word is set
+to.
+
+What each touch does in a book:
+
+| Touch | Tap to Look Up off (default) | Tap to Look Up on |
+|---|---|---|
+| Short tap on a word | turns the page | opens the word's meaning |
+| Short tap beside the text | turns the page | nothing |
+| Tap on a link or footnote | follows it | follows it |
+| Swipe left or right | turns the page | turns the page |
+| Page buttons | turn the page | turn the page |
+| Hold a word (for the Hold to Select time) | selects it; slide for more words | the same |
+| Lift after a hold | does what Long Press on a Word says | the same |
+
+A tap always looks up, whatever Long Press on a Word is set to. So you can, for
+example, set Long Press on a Word to **Highlight** and Tap to Look Up to
+**On**: a tap gives the meaning, a hold marks the passage.
+
+<p>
+  <img src="docs/images/varagh/v1.2.1/reader-settings.png" width="230" alt="Settings, Reader, with Hold to Select, Long Press on a Word and Tap to Look Up one under the other">
+</p>
+
+All three are shown only on readers with a touchscreen, and all three need a
+dictionary for the book (see [Remembers your dictionary](#remembers-your-dictionary)).
+Without one, a hold does nothing and taps keep turning pages.
+
+### Hold to Select
 **Settings → Reader → Hold to Select** sets how long you hold a finger on a
 word before it is selected:
 
@@ -180,7 +223,13 @@ look that word up too. The setting is shown only on readers with a touchscreen.
 
 **How to use it:** hold a word until it is selected. Keep your finger down and
 slide it to select more words; the selection can continue onto the next page.
-Lift your finger to look up the word or phrase.
+Lift your finger, and the reader does what **Long Press on a Word** is set to
+(below): by default it looks the word or phrase up, as it always did.
+
+If pages turn when you meant to select, choose a shorter time; if words get
+selected when you only rested your finger, choose a longer one. With Tap to
+Look Up on, a touch shorter than this time counts as a tap and looks the word
+up, so the time also decides where a tap ends and a hold begins.
 
 ### Selection handles
 While you select with your finger, each end of the selection has a bar, with a
@@ -190,7 +239,7 @@ the knobs themselves cannot be dragged.
 
 ### Long Press on a Word (1.2.1)
 **Settings → Reader → Long Press on a Word** sets what happens when you lift
-your finger after selecting:
+your finger after selecting (how long you hold first is Hold to Select, above):
 
 | Option | What it does |
 |---|---|
@@ -210,11 +259,25 @@ is looked up first, so the card gets its meaning.
 </p>
 
 ### Tap to Look Up (1.2.1)
-**Settings → Reader → Tap to Look Up** (off by default): a tap on a word opens
-its meaning at once, with no holding. While it is on, a tap never turns the
-page; swipe left or right to turn. Holding still selects several words, and a
-tap on a link or a footnote still follows it. It needs a dictionary: without
-one, taps keep turning pages.
+**Settings → Reader → Tap to Look Up** (a switch, off by default): a tap on a
+word opens its meaning at once, with no holding. It is made for reading in a
+language you are learning, where you look up many single words.
+
+While it is on:
+
+- **A tap never turns the page.** Swipe left or right, or use the page
+  buttons. A tap beside the text does nothing.
+- **A tap always looks up**, also when Long Press on a Word is set to Ask,
+  Highlight or Add to…. The popup is the usual one, with **Highlight**,
+  **Add to…** and **Switch Dictionary**.
+- **Holding works as before:** hold for the Hold to Select time to select a
+  word, slide for more words, and lifting does what Long Press on a Word says.
+  To look up a phrase of several words, hold and slide.
+- **Links and footnotes** still open with a tap.
+- **The end-of-book screen** is not affected.
+
+It needs a dictionary for the book: without one, taps keep turning pages.
+Switch it off again in the same place to get tap-to-turn back.
 
 <p>
   <img src="docs/images/varagh/v1.2.1/tap-to-look-up.png" width="230" alt="The meaning of a tapped word shown over the page">

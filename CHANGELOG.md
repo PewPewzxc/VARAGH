@@ -24,6 +24,11 @@ highlights, flashcards and saved games. Built and tuned for the X4 Pro.
   - **Add to…** opens the list of Highlights categories at once.
   A word sent to **Flashcards** this way is looked up first, so the card gets
   its meaning; the dictionary popup opens and says that the card was added.
+- **Hold to Select** is unchanged: it still sets only how long a finger rests
+  on a word before it is selected. What lifting does is now Long Press on a
+  Word, and a tap (shorter than that time) is Tap to Look Up. A tap always
+  looks up, whatever a long press is set to; with the defaults everything
+  behaves as in 1.2.0. FEATURES.md, section 3, has a table of every touch.
 - **Book ratings.** Five stars with halves: tap the left half of a star for
   half of it, the right half for all of it, and the value that is set to take
   the rating away.
