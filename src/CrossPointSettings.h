@@ -522,6 +522,20 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
         return 450;
     }
   }
+  // VARAGH: what lifting the finger does once a long press has selected a word
+  // or more: look it up (as before), ask with a bubble of choices, or highlight
+  // or file it at once. Persisted by index: append only.
+  enum WORD_HOLD_ACTION : uint8_t {
+    HOLD_LOOK_UP = 0,
+    HOLD_ASK = 1,
+    HOLD_HIGHLIGHT = 2,
+    HOLD_ADD_TO = 3,
+    HOLD_ACTION_COUNT
+  };
+  uint8_t wordHoldAction = HOLD_LOOK_UP;
+  // VARAGH: a tap on a word looks it up. Taps then no longer turn the page in
+  // a book (swipes still do); a long press still selects several words.
+  uint8_t tapToLookUp = 0;
   // Page-turn gestures remain independently configurable while touch reader controls stay enabled.
   uint8_t pageTurnGesture = TAP_AND_SWIPE;
   uint8_t previousPageGesture = TAP_AND_SWIPE;

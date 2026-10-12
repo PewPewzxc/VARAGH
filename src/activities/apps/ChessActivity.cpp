@@ -22,6 +22,10 @@ constexpr int kToolHeight = 100;
 constexpr int kToolGap = 8;
 constexpr int kSmallStep = 20;
 constexpr uint8_t kFileMagic[4] = {'V', 'C', 'A', '1'};
+// Room for the computer to remember this many positions, from the reader's
+// large memory (PSRAM); boards without it play without. In matches on a PC a
+// table a quarter of this size did as well, so there is no call for more.
+constexpr size_t kSearchTableBytes = 16384 * chess::kTableEntryBytes;
 
 // The artwork lists the kinds as king, queen, rook, bishop, knight, pawn.
 int artIndex(const chess::Piece piece) { return 6 - piece; }
@@ -84,6 +88,8 @@ void ChessActivity::save() {
 void ChessActivity::onEnter() {
   Activity::onEnter();
   if (!load()) LOG_DBG("CHESS", "No saved game");
+  searchTable = makePsramByteBufferNoThrow(kSearchTableBytes);
+  if (searchTable) memset(searchTable.get(), 0, kSearchTableBytes);
   draft = settings;
   panel = game->started() ? Panel::Board : Panel::NewGame;
   selected = -1;
@@ -96,6 +102,7 @@ void ChessActivity::onEnter() {
 void ChessActivity::onExit() {
   thinker.cancel();
   thinking = false;
+  searchTable.reset();
   save();
   Activity::onExit();
 }
@@ -235,11 +242,16 @@ void ChessActivity::startThinking(const bool forHint) {
     options.maxDepth = 4;
     options.margin = opening ? 15 : 0;
   } else {
-    options.maxDepth = 8;
+    // As deep as the time allows.
+    options.maxDepth = 16;
     options.margin = opening ? 10 : 0;
     timeLimitMs = 5000;
   }
   if (forHint) options.margin = 0;
+  if (searchTable) {
+    options.table = searchTable.get();
+    options.tableBytes = kSearchTableBytes;
+  }
   options.seed = esp_random() | 1U;
 
   hinting = forHint;

@@ -33,6 +33,9 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   uint8_t recentBootFill = 0;                         // valid entries (0..BOOT_RECENT_COUNT)
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
+  // VARAGH: the app that was open when sleep began (one of AppsActivity's
+  // resume numbers, 0 for none), so waking returns to it as it does to a book.
+  uint8_t lastSleepApp = 0;
   bool showBootScreen = true;
   // One-shot marker set when a Quick Lock timeout puts the device to sleep.
   // The next boot uses it only to discard Quick Lock's temporary frontlight state.

@@ -99,6 +99,8 @@ void HalPowerManager::beginPanelWait() {
   // peripherals in the middle of a render.
   if constexpr (LOW_POWER_FREQ < 80) return;
   if (normalFreq <= 0 || modeMutex == nullptr) return;
+  // A background job is using the time this wait leaves free.
+  if (backgroundJobs.load(std::memory_order_acquire) != 0) return;
   xSemaphoreTake(modeMutex, portMAX_DELAY);
   // Wi-Fi needs the full clock (setPowerSaving() refuses low power then too).
   if (!isLowPower && !panelWaitLowered && !wifiBlocksLowPower()) {
@@ -107,6 +109,12 @@ void HalPowerManager::beginPanelWait() {
     }
   }
   xSemaphoreGive(modeMutex);
+}
+
+void HalPowerManager::beginBackgroundJob() {
+  backgroundJobs.fetch_add(1, std::memory_order_acq_rel);
+  // A refresh that is already being waited for gives the clock back now.
+  endPanelWait();
 }
 
 void HalPowerManager::endPanelWait() {

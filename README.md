@@ -13,7 +13,39 @@ their features are kept.
 > VARAGH is an independent community project, not affiliated with or endorsed by
 > Xteink, CrossInk or CrossPoint.
 
-## New in 1.2.0 "Tiger"
+## New in 1.2.1 "Tiger"
+
+- **Tap to Look Up:** a tap on a word opens its meaning, with no holding
+  (Settings → Reader, off by default; swipe to turn pages while it is on).
+- **Long Press on a Word:** choose what a long press does: look the word up,
+  highlight it, add it to a category, or **Ask** with a bubble at the words.
+- **Book ratings:** five stars with halves, at the end of a book, in the book
+  menu, on Reading Stats and in the Library list. Kept as plain text on the card.
+- **Apps stay open across sleep**, and a **stronger chess computer**.
+- **Online lookups cannot hang** any more: Back gives one up at once.
+- **A new logo** on the boot and sleep screens.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/tap-to-look-up.png" width="250" alt="The meaning of a tapped word shown over the book page"><br><b>Tap to Look Up</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/long-press-ask.png" width="250" alt="A selected word with the bubble Look Up, Highlight, Add to"><br><b>Long press: Ask</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/long-press-setting.png" width="250" alt="Settings, Reader: the four choices of Long Press on a Word"><br><b>Long Press on a Word</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/rating-screen.png" width="250" alt="The rating screen with three and a half stars"><br><b>Book rating</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/end-of-book-rating.png" width="250" alt="End of book with the title, the rating and what to continue with"><br><b>End of book</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/library-stars.png" width="250" alt="Library with a book's stars at the end of its row"><br><b>Stars in Library</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/boot-logo.png" width="250" alt="Boot screen with the open-book logo, VARAGH, Booting and 1.2.1 Tiger"><br><b>New logo</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/sleep-logo.png" width="250" alt="Dark sleep screen with the logo in light lines"><br><b>Sleep screen</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.2.1/book-menu-rating.png" width="250" alt="The book menu with Rating and its stars as the first row"><br><b>Rating in the book menu</b></td>
+  </tr>
+</table>
+
+<sub>Screens captured from the 1.2.1 firmware running in the PC simulator.</sub>
+
+## Since 1.2.0 "Tiger"
 
 - **Apps on the Home screen:** Wordle, Sudoku, Chess, Checkers and a Clock with
   a calendar, made for the touch screen. Hide the ones you do not use.

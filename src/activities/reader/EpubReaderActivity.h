@@ -152,6 +152,9 @@ class EpubReaderActivity final : public Activity {
   uint16_t cachedPageParagraphOffset = 0;
   uint16_t cachedPageParagraphSpan = 0;
   std::atomic<uint8_t> pendingHeapShapeReaderRedrawStages{0};
+  // VARAGH: the next render is the one that follows a touch which found no word:
+  // the panel and the framebuffer still hold this page, so nothing is drawn.
+  std::atomic<bool> skipRenderAfterMissedWord{false};
   static constexpr uint8_t HEAP_SHAPE_REDRAW_CLIP = 1U << 0;
   static constexpr uint8_t HEAP_SHAPE_REDRAW_DICT = 1U << 1;
   unsigned long lastPageTurnTime = 0UL;
@@ -460,8 +463,10 @@ class EpubReaderActivity final : public Activity {
   bool executeLongPowerButtonAction();
   void handleClippingJump(const ClippingJumpResult& clipping);
   bool handleTouchDictionaryLookup();
+  // releaseAction: what lifting the finger does once words are selected (one
+  // of CrossPointSettings::WORD_HOLD_ACTION).
   void openWordSelect(bool framebufferContainsPage, int initialTouchX = -1, int initialTouchY = -1,
-                      bool autoLookupInitialWord = false);
+                      bool autoLookupInitialWord = false, uint8_t releaseAction = 0);
   std::unique_ptr<Page> reloadDictionaryLookupPage(int pageOffset = 0);
   static std::unique_ptr<Page> reloadDictionaryLookupPageCallback(void* context, int pageOffset);
   void onReaderMenuConfirm(EpubReaderMenuAction action, bool returnToReaderMenu = false,

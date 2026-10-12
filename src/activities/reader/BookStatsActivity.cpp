@@ -4,8 +4,11 @@
 
 #include "BookStatsView.h"
 #include "MappedInputManager.h"
+#include "activities/home/BookRatingActivity.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
+#include "util/BookRatingText.h"
+#include "util/BookRatings.h"
 #include "util/InputReleaseGuard.h"
 
 namespace {
@@ -276,6 +279,7 @@ void BookStatsActivity::onEnter() {
   ignoreInitialConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
   ignoreInitialPowerRelease = mappedInput.isPressed(MappedInputManager::Button::Power);
   if (bookCachePath.empty()) page = Page::ThisDevice;
+  if (!ratedBookPath.empty()) rating = BookRatings::get(ratedBookPath);
   previousOrientation = renderer.getOrientation();
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   requestUpdate();
@@ -360,6 +364,29 @@ void BookStatsActivity::loop() {
     }
     return;
   }
+#if CROSSINK_APP_CAP_TOUCH
+  // VARAGH: a tap on the title strip of the book's card, where its stars are.
+  if (page == Page::PerBook && !ratedBookPath.empty() && !usesNoRtcSingleScreenLayout()) {
+    int tapX = 0;
+    int tapY = 0;
+    if (mappedInput.wasScreenTapped(tapX, tapY)) {
+      int x = 0;
+      int y = 0;
+      int width = 0;
+      int height = 0;
+      perBookTitleStripRect(renderer, &mappedInput, x, y, width, height);
+      if (tapX >= x && tapX < x + width && tapY >= y - 8 && tapY < y + height + 8) {
+        startActivityForResult(
+            std::make_unique<BookRatingActivity>(renderer, mappedInput, ratedBookPath, bookTitle, ratedBookAuthor),
+            [this](const ActivityResult&) {
+              rating = BookRatings::get(ratedBookPath);
+              requestUpdate();
+            });
+        return;
+      }
+    }
+  }
+#endif
   if (usesNoRtcSingleScreenLayout()) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       mappedInput.suppressNextBackRelease();
@@ -493,10 +520,13 @@ void BookStatsActivity::render(RenderLock&&) {
   }
 
   switch (page) {
-    case Page::PerBook:
+    case Page::PerBook: {
+      // Five stars even for a book that is not rated yet: they are what is tapped.
+      const std::string ratingStars = ratedBookPath.empty() ? std::string() : bookrating::stars(rating);
       renderPerBookStatsPage(renderer, &mappedInput, bookTitle, stats, progressPercent, hasEstimatedTimeLeft,
-                             estimatedTimeLeftSeconds, true, hasEditableBook(), true);
+                             estimatedTimeLeftSeconds, true, hasEditableBook(), true, ratingStars.c_str());
       break;
+    }
     case Page::ThisDevice:
       renderGlobalStatsPage(renderer, &mappedInput, tr(STR_STATS_THIS_DEVICE_SCREEN), globalStats, true,
                             showAllDevicesStats);

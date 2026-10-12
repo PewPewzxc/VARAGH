@@ -290,13 +290,20 @@ void drawHorizontalBars(GfxRenderer& renderer, const int x, const int y, const i
 void drawPerBookStatsCard(GfxRenderer& renderer, const int x, const int y, const int w, const int h,
                           const std::string& bookTitle, const BookReadingStats& stats, const float progressPercent,
                           const bool hasEstimatedTimeLeft, const uint32_t estimatedTimeLeftSeconds,
-                          const StatsLayout& layout) {
+                          const StatsLayout& layout, const char* titleSuffix = nullptr) {
   renderer.drawRect(x, y, w, h);
   renderer.drawLine(x, y + layout.topCardTitleH, x + w, y + layout.topCardTitleH);
+  const int titleY = y + (layout.topCardTitleH - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
+  int titleWidth = w - 20;
+  if (titleSuffix && titleSuffix[0] != '\0') {
+    // The title stays centred, so it gives up the suffix's room on both sides.
+    const int suffixWidth = renderer.getTextWidth(UI_10_FONT_ID, titleSuffix);
+    renderer.drawText(UI_10_FONT_ID, x + w - 12 - suffixWidth, titleY, titleSuffix, true);
+    titleWidth = std::max(40, w - 2 * (suffixWidth + 22));
+  }
   const std::string visibleTitle =
-      renderer.truncatedText(UI_10_FONT_ID, bookTitle.c_str(), w - 20, EpdFontFamily::BOLD);
-  drawCenteredLabel(renderer, UI_10_FONT_ID, x, w,
-                    y + (layout.topCardTitleH - renderer.getLineHeight(UI_10_FONT_ID)) / 2, visibleTitle.c_str(), true);
+      renderer.truncatedText(UI_10_FONT_ID, bookTitle.c_str(), titleWidth, EpdFontFamily::BOLD);
+  drawCenteredLabel(renderer, UI_10_FONT_ID, x, w, titleY, visibleTitle.c_str(), true);
 
   const bool showRtcStats = shouldShowRtcBasedStats();
   const int thirdW = w / 3;
@@ -466,7 +473,7 @@ void drawDateAdjustButton(const GfxRenderer& renderer, const int x, const int y,
 void renderPerBookStatsPage(GfxRenderer& renderer, const MappedInputManager* mappedInput, const std::string& bookTitle,
                             const BookReadingStats& stats, const float progressPercent, const bool hasEstimatedTimeLeft,
                             const uint32_t estimatedTimeLeftSeconds, const bool showButtonHints,
-                            const bool showEditButton, const bool showMoreButton) {
+                            const bool showEditButton, const bool showMoreButton, const char* titleSuffix) {
   renderer.clearScreen();
   const bool showRtcStats = shouldShowRtcBasedStats();
   const auto& metrics = UITheme::getInstance().getMetrics();
@@ -500,7 +507,7 @@ void renderPerBookStatsPage(GfxRenderer& renderer, const MappedInputManager* map
     topCardH += extraTopCardHeight;
 
     drawPerBookStatsCard(renderer, cardX, y, cardW, topCardH, bookTitle, stats, progressPercent, hasEstimatedTimeLeft,
-                         estimatedTimeLeftSeconds, layout);
+                         estimatedTimeLeftSeconds, layout, titleSuffix);
     y += topCardH + layout.cardGap;
 
     drawSectionCard(renderer, cardX, y, cardW, timeOfDayCardH, tr(STR_STATS_TIME_OF_DAY), layout);
@@ -525,7 +532,7 @@ void renderPerBookStatsPage(GfxRenderer& renderer, const MappedInputManager* map
       y += std::min(unusedExtraHeight / 3, kStandaloneNoRtcMaxVerticalOffset);
     }
     drawPerBookStatsCard(renderer, cardX, y, cardW, topCardH, bookTitle, stats, progressPercent, hasEstimatedTimeLeft,
-                         estimatedTimeLeftSeconds, layout);
+                         estimatedTimeLeftSeconds, layout, titleSuffix);
   }
 
   if (showButtonHints && mappedInput) {
@@ -534,6 +541,17 @@ void renderPerBookStatsPage(GfxRenderer& renderer, const MappedInputManager* map
                                showMoreButton ? tr(STR_MORE) : "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
   }
+}
+
+void perBookTitleStripRect(const GfxRenderer& renderer, const MappedInputManager* mappedInput, int& x, int& y,
+                           int& width, int& height) {
+  // As renderPerBookStatsPage() lays its first card out, with button hints.
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const auto& layout = getStatsLayout(renderer, mappedInput, false, true, shouldShowRtcBasedStats());
+  x = metrics.contentSidePadding;
+  y = metrics.topPadding + statsHeaderHeight(metrics, layout, mappedInput) + layout.topGap;
+  width = renderer.getScreenWidth() - metrics.contentSidePadding * 2;
+  height = layout.topCardTitleH;
 }
 
 void renderGlobalStatsPage(GfxRenderer& renderer, const MappedInputManager* mappedInput, const char* screenTitle,

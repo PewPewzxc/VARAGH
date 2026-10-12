@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <string>
 
 #include "util/OnlineDictionaryText.h"
@@ -35,8 +37,19 @@ bool hasSaved(onlinedict::Lang lang, const std::string& word);
 // Adds or replaces an answer. html is an entry in the layout of the VARAGH dictionaries.
 bool save(onlinedict::Lang lang, const std::string& word, const std::string& html);
 
-enum class Outcome : uint8_t { Found, NotFound, NoConnection };
+enum class Outcome : uint8_t { Found, NotFound, NoConnection, Cancelled };
+
+struct FetchOptions {
+  // The longest wait for the site at any one step of a request. A site that
+  // does not answer ends the lookup (NoConnection) instead of being asked the
+  // remaining questions as well.
+  uint32_t timeoutMs = 10000;
+  // Polled while a request waits; true gives the lookup up (Cancelled).
+  std::function<bool()> cancelled;
+};
+
 // Needs Wi-Fi to be connected. On Found, word is the spelling the entry was found under.
-Outcome fetch(onlinedict::Lang lang, std::string& word, std::string& html);
+Outcome fetch(onlinedict::Lang lang, std::string& word, std::string& html,
+              const FetchOptions& options = FetchOptions());
 
 }  // namespace OnlineDictionary

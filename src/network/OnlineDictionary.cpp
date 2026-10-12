@@ -20,7 +20,6 @@ constexpr char kRequestPath[] = "/.crosspoint/online-lookup.txt";
 constexpr char kStoreDir[] = "/.crosspoint/online-dict";
 // An answer larger than this is not a dictionary entry worth waiting for.
 constexpr size_t kMaxAnswerBytes = 600U * 1024U;
-constexpr size_t kMaxSavedWords = 4000;
 constexpr size_t kMaxWordBytes = 200;
 
 struct SavedWord {
@@ -61,32 +60,67 @@ void writeBigEndian(uint8_t* bytes, const uint32_t value) {
   bytes[3] = static_cast<uint8_t>(value);
 }
 
-// Reads the saved words of a language. False only when an existing index
-// cannot be read; a language with nothing saved yet is an empty list.
-bool readIndex(const std::string& idxPath, std::vector<SavedWord>& words) {
-  words.clear();
-  if (!Storage.exists(idxPath.c_str())) return true;
-  HalFile file;
-  if (!Storage.openFileForRead("ODICT", idxPath, file)) return false;
-  std::string word;
-  while (words.size() < kMaxSavedWords) {
-    word.clear();
-    int c = file.read();
-    if (c < 0) break;  // clean end of file
-    while (c > 0 && word.size() < kMaxWordBytes) {
-      word += static_cast<char>(c);
-      c = file.read();
+// Reads the index of saved words an entry at a time (a word, a zero byte, then
+// its offset and size), so that any number of saved words costs the same small
+// amount of memory.
+class IndexReader {
+ public:
+  explicit IndexReader(HalFile& file) : file_(file) {}
+
+  // False at the end of the file; cutShort() then tells a clean end from one
+  // in the middle of an entry.
+  bool next(SavedWord& entry) {
+    entry.word.clear();
+    int c = get();
+    if (c < 0) return false;
+    while (c > 0 && entry.word.size() < kMaxWordBytes) {
+      entry.word += static_cast<char>(c);
+      c = get();
     }
     uint8_t tail[8];
-    if (c != 0 || file.read(tail, sizeof(tail)) != static_cast<int>(sizeof(tail))) {
-      LOG_ERR("ODICT", "Saved-answers index is cut short: %s", idxPath.c_str());
-      file.close();
+    for (size_t i = 0; c == 0 && i < sizeof(tail); ++i) {
+      const int byte = get();
+      if (byte < 0) {
+        c = -1;
+      } else {
+        tail[i] = static_cast<uint8_t>(byte);
+      }
+    }
+    if (c != 0) {
+      cutShort_ = true;
       return false;
     }
-    words.push_back(SavedWord{word, readBigEndian(tail), readBigEndian(tail + 4)});
+    entry.offset = readBigEndian(tail);
+    entry.size = readBigEndian(tail + 4);
+    return true;
   }
-  file.close();
-  return true;
+  bool cutShort() const { return cutShort_; }
+
+ private:
+  int get() {
+    if (at_ == filled_) {
+      const int count = file_.read(block_, sizeof(block_));
+      if (count <= 0) return -1;
+      filled_ = static_cast<size_t>(count);
+      at_ = 0;
+    }
+    return block_[at_++];
+  }
+
+  HalFile& file_;
+  uint8_t block_[128];
+  size_t at_ = 0;
+  size_t filled_ = 0;
+  bool cutShort_ = false;
+};
+
+void appendEntry(std::string& out, const SavedWord& entry) {
+  out += entry.word;
+  out += '\0';
+  uint8_t tail[8];
+  writeBigEndian(tail, entry.offset);
+  writeBigEndian(tail + 4, entry.size);
+  out.append(reinterpret_cast<const char*>(tail), sizeof(tail));
 }
 
 bool writeWholeFile(const std::string& path, const std::string& content) {
@@ -95,6 +129,117 @@ bool writeWholeFile(const std::string& path, const std::string& content) {
   const bool ok = file.write(content.data(), content.size()) == content.size();
   file.close();
   return ok;
+}
+
+// Counts the entries of an index and its bytes. False when it cannot be read
+// or ends in the middle of an entry.
+bool measureIndex(const std::string& idxPath, uint32_t& wordCount, uint32_t& indexBytes) {
+  wordCount = 0;
+  indexBytes = 0;
+  HalFile file;
+  if (!Storage.openFileForRead("ODICT", idxPath, file)) return false;
+  IndexReader reader(file);
+  SavedWord entry;
+  while (reader.next(entry)) {
+    ++wordCount;
+    indexBytes += static_cast<uint32_t>(entry.word.size() + 9);
+  }
+  file.close();
+  return !reader.cutShort();
+}
+
+// Writes the old index to newPath with `added` in its place in the order, in
+// place of an entry for exactly the same word if there is one. The old index is
+// read and the new one written an entry at a time.
+bool mergeIndex(const std::string& oldPath, const std::string& newPath, const SavedWord& added, uint32_t& wordCount,
+                uint32_t& indexBytes) {
+  wordCount = 0;
+  indexBytes = 0;
+  HalFile out;
+  if (!Storage.openFileForWrite("ODICT", newPath, out)) return false;
+  std::string pending;
+  pending.reserve(768);
+  bool ok = true;
+  const auto write = [&](const SavedWord& entry) {
+    appendEntry(pending, entry);
+    ++wordCount;
+    indexBytes += static_cast<uint32_t>(entry.word.size() + 9);
+    if (pending.size() >= 512) {
+      ok = ok && out.write(pending.data(), pending.size()) == pending.size();
+      pending.clear();
+    }
+  };
+
+  bool placed = false;
+  if (Storage.exists(oldPath.c_str())) {
+    HalFile in;
+    if (!Storage.openFileForRead("ODICT", oldPath, in)) {
+      out.close();
+      return false;
+    }
+    IndexReader reader(in);
+    SavedWord entry;
+    while (ok && reader.next(entry)) {
+      if (!placed) {
+        const int order = compareWords(added.word, entry.word);
+        if (order <= 0) {
+          write(added);
+          placed = true;
+          if (order == 0) continue;  // the same word: its old entry goes
+        }
+      }
+      write(entry);
+    }
+    in.close();
+    // A damaged index keeps the words that could still be read rather than
+    // refusing every new answer from now on.
+    if (reader.cutShort()) LOG_ERR("ODICT", "Saved-answers index is cut short, the rest is dropped: %s", oldPath.c_str());
+  }
+  if (!placed) write(added);
+  if (ok && !pending.empty()) ok = out.write(pending.data(), pending.size()) == pending.size();
+  out.close();
+  return ok;
+}
+
+bool writeInfo(const DictPaths& paths, const onlinedict::Lang lang, const uint32_t wordCount,
+               const uint32_t indexBytes) {
+  char info[320];
+  snprintf(info, sizeof(info),
+           "StarDict's dict ifo file\nversion=2.4.2\nwordcount=%u\nidxfilesize=%u\n"
+           "bookname=Online (Wiktionary)\nsametypesequence=h\nlang=%s-%s\n"
+           "description=Answers saved by the VARAGH online dictionary. Wiktionary and Wikipedia, CC BY-SA 4.0.\n",
+           static_cast<unsigned>(wordCount), static_cast<unsigned>(indexBytes), onlinedict::code(lang),
+           onlinedict::code(lang));
+  return writeWholeFile(paths.ifo(), info);
+}
+
+// A lookup aid built for an earlier index would point at the wrong words.
+void removeLookupAids(const DictPaths& paths) {
+  for (const std::string& stale : {paths.quickIdx(), paths.idxOft(), paths.idxOftCspt()}) {
+    if (Storage.exists(stale.c_str())) Storage.remove(stale.c_str());
+  }
+}
+
+std::string temporaryIndexPath(const DictPaths& paths) { return paths.idx() + ".tmp"; }
+
+// save() takes the old index away and then gives the new one its name. Power
+// lost between the two leaves only the finished new index, under its temporary
+// name: it is put in place here. (Power lost earlier leaves the old index and
+// an unfinished temporary one, which the next save simply writes again.)
+void recoverIndex(const DictPaths& paths, const onlinedict::Lang lang) {
+  const std::string tmpPath = temporaryIndexPath(paths);
+  if (Storage.exists(paths.idx().c_str()) || !Storage.exists(tmpPath.c_str())) return;
+  uint32_t wordCount = 0;
+  uint32_t indexBytes = 0;
+  // The very first save has no old index to protect it: only a whole one counts.
+  if (!measureIndex(tmpPath, wordCount, indexBytes) || wordCount == 0 ||
+      !Storage.rename(tmpPath.c_str(), paths.idx().c_str())) {
+    Storage.remove(tmpPath.c_str());
+    return;
+  }
+  LOG_INF("ODICT", "Put back a saved-answers index of %u words", static_cast<unsigned>(wordCount));
+  removeLookupAids(paths);
+  writeInfo(paths, lang, wordCount, indexBytes);
 }
 
 }  // namespace
@@ -136,9 +281,18 @@ std::string storePath(const onlinedict::Lang lang) {
 }
 
 bool hasSaved(const onlinedict::Lang lang, const std::string& word) {
-  std::vector<SavedWord> words;
-  if (!readIndex(DictPaths(storePath(lang)).idx(), words)) return false;
-  return std::any_of(words.begin(), words.end(), [&](const SavedWord& saved) { return sameWord(saved.word, word); });
+  const std::string base = storePath(lang);
+  const DictPaths paths(base);
+  recoverIndex(paths, lang);
+  if (!Storage.exists(paths.idx().c_str())) return false;
+  HalFile file;
+  if (!Storage.openFileForRead("ODICT", paths.idx(), file)) return false;
+  IndexReader reader(file);
+  SavedWord entry;
+  bool found = false;
+  while (!found && reader.next(entry)) found = sameWord(entry.word, word);
+  file.close();
+  return found;
 }
 
 bool save(const onlinedict::Lang lang, const std::string& word, const std::string& html) {
@@ -146,9 +300,7 @@ bool save(const onlinedict::Lang lang, const std::string& word, const std::strin
   Storage.mkdir(kStoreDir);
   const std::string base = storePath(lang);
   const DictPaths paths(base);
-
-  std::vector<SavedWord> words;
-  if (!readIndex(paths.idx(), words)) return false;
+  recoverIndex(paths, lang);
 
   // Definitions are only ever appended; a replaced answer leaves its old bytes behind.
   HalFile dict = Storage.open(paths.dict().c_str(), O_WRONLY | O_CREAT | O_AT_END);
@@ -161,64 +313,57 @@ bool save(const onlinedict::Lang lang, const std::string& word, const std::strin
   dict.close();
   if (!written) return false;
 
-  const auto existing =
-      std::find_if(words.begin(), words.end(), [&](const SavedWord& saved) { return saved.word == word; });
-  if (existing != words.end()) {
-    existing->offset = offset;
-    existing->size = static_cast<uint32_t>(html.size());
-  } else {
-    words.push_back(SavedWord{word, offset, static_cast<uint32_t>(html.size())});
-  }
-  std::sort(words.begin(), words.end(),
-            [](const SavedWord& a, const SavedWord& b) { return compareWords(a.word, b.word) < 0; });
-
-  std::string index;
-  for (const SavedWord& saved : words) {
-    index += saved.word;
-    index += '\0';
-    uint8_t tail[8];
-    writeBigEndian(tail, saved.offset);
-    writeBigEndian(tail + 4, saved.size);
-    index.append(reinterpret_cast<const char*>(tail), sizeof(tail));
-  }
-  // Write beside the old index and swap, so a failed write keeps the old answers reachable.
-  const std::string tmpPath = paths.idx() + ".tmp";
-  if (!writeWholeFile(tmpPath, index)) {
+  // The new index is written beside the old one and then takes its place, so a
+  // failed write keeps the old answers reachable.
+  const std::string tmpPath = temporaryIndexPath(paths);
+  if (Storage.exists(tmpPath.c_str())) Storage.remove(tmpPath.c_str());
+  uint32_t wordCount = 0;
+  uint32_t indexBytes = 0;
+  if (!mergeIndex(paths.idx(), tmpPath, SavedWord{word, offset, static_cast<uint32_t>(html.size())}, wordCount,
+                  indexBytes)) {
     Storage.remove(tmpPath.c_str());
     return false;
   }
   if (Storage.exists(paths.idx().c_str())) Storage.remove(paths.idx().c_str());
   if (!Storage.rename(tmpPath.c_str(), paths.idx().c_str())) return false;
 
-  // A lookup aid built for the previous index would point at the wrong words.
-  for (const std::string& stale : {paths.quickIdx(), paths.idxOft(), paths.idxOftCspt()}) {
-    if (Storage.exists(stale.c_str())) Storage.remove(stale.c_str());
-  }
-
-  char info[320];
-  snprintf(info, sizeof(info),
-           "StarDict's dict ifo file\nversion=2.4.2\nwordcount=%u\nidxfilesize=%u\n"
-           "bookname=Online (Wiktionary)\nsametypesequence=h\nlang=%s-%s\n"
-           "description=Answers saved by the VARAGH online dictionary. Wiktionary and Wikipedia, CC BY-SA 4.0.\n",
-           static_cast<unsigned>(words.size()), static_cast<unsigned>(index.size()), onlinedict::code(lang),
-           onlinedict::code(lang));
-  return writeWholeFile(paths.ifo(), info);
+  removeLookupAids(paths);
+  return writeInfo(paths, lang, wordCount, indexBytes);
 }
 
-Outcome fetch(const onlinedict::Lang lang, std::string& word, std::string& html) {
-  // 1 = entry found, 0 = the site answered without one, -1 = no answer.
-  // Wikimedia answers "no such page" on its REST addresses with an error
-  // status, which the downloader reports the same way as a dead connection.
-  const auto request = [&](const std::string& url, const onlinedict::Source source, const std::string& title) {
-    onlinedict::Extractor extractor(source, lang, title);
+Outcome fetch(const onlinedict::Lang lang, std::string& word, std::string& html, const FetchOptions& options) {
+  enum class Answer : uint8_t { Entry, NoEntry, AskAgain, Unreachable, Cancelled };
+  // found gets the spelling an entry was found under.
+  const auto request = [&](const std::string& url, const onlinedict::Source source, const std::string& title,
+                           const std::string& otherSpelling, std::string& found) {
+    onlinedict::Extractor extractor(source, lang, title, otherSpelling);
     size_t received = 0;
     const HttpDownloader::DataCallback onData = [&](const uint8_t* data, const size_t length) {
       received += length;
       extractor.feed(reinterpret_cast<const char*>(data), length);
       return received <= kMaxAnswerBytes;
     };
-    if (!HttpDownloader::fetchUrl(url, onData)) return -1;
-    return extractor.finish(html) ? 1 : 0;
+    int status = 0;
+    HttpDownloader::DownloadOptions download;
+    download.shouldCancel = options.cancelled;
+    download.timeoutMs = options.timeoutMs;
+    download.httpStatus = &status;
+    const HttpDownloader::DownloadError error =
+        HttpDownloader::streamUrl(url, onData, nullptr, "", "", std::move(download));
+    if (error == HttpDownloader::ABORTED) return Answer::Cancelled;
+    if (error == HttpDownloader::OK) {
+      if (extractor.finish(html)) {
+        found = extractor.foundWord();
+        return Answer::Entry;
+      }
+      return extractor.askAgain() ? Answer::AskAgain : Answer::NoEntry;
+    }
+    // The site did answer: "no such page" (how its REST addresses say that),
+    // or more than an entry can be.
+    if (status == 404 || (status == 200 && received > kMaxAnswerBytes)) return Answer::NoEntry;
+    // No answer at all, or one that says nothing about the word. Asking the
+    // remaining questions would only make the reader wait as long again.
+    return Answer::Unreachable;
   };
 
   const std::string asked = onlinedict::normalizeWord(word);
@@ -227,31 +372,48 @@ Outcome fetch(const onlinedict::Lang lang, std::string& word, std::string& html)
   const onlinedict::Source dictionarySource = lang == onlinedict::Lang::English
                                                   ? onlinedict::Source::WiktionaryDefinitions
                                                   : onlinedict::Source::WiktionaryExtract;
-  bool siteAnswered = false;
-  for (const std::string& title : {asked, otherCase}) {
-    if (title.empty()) continue;
-    const int result = request(onlinedict::definitionUrl(lang, title), dictionarySource, title);
-    if (result == 1) {
-      word = title;
+  // A German word with a capital first letter (a noun, or any word that starts
+  // a sentence) is asked for together with its lower-case spelling. The site
+  // sends the capitalised page first, so the word itself still wins and one
+  // request does for both. The other way round the capitalised page would
+  // crowd out the word that was asked for, so those stay two requests.
+  const bool together =
+      lang != onlinedict::Lang::English && !otherCase.empty() && asked[0] >= 'A' && asked[0] <= 'Z';
+
+  std::string found;
+  bool otherAnswered = false;
+  const std::string* const titles[2] = {&asked, &otherCase};
+  for (int i = 0; i < 2; ++i) {
+    const std::string& title = *titles[i];
+    if (title.empty() || (i == 1 && otherAnswered)) continue;
+    const bool both = i == 0 && together;
+    Answer answer = request(onlinedict::definitionUrl(lang, title, both ? otherCase : std::string()), dictionarySource,
+                            title, both ? otherCase : std::string(), found);
+    const bool askedAgain = answer == Answer::AskAgain;
+    if (askedAgain) {
+      answer = request(onlinedict::definitionUrl(lang, title), dictionarySource, title, std::string(), found);
+      if (answer == Answer::AskAgain) answer = Answer::NoEntry;
+    }
+    if (answer == Answer::Entry) {
+      word = found;
       return Outcome::Found;
     }
-    siteAnswered = siteAnswered || result == 0;
+    if (answer == Answer::Cancelled) return Outcome::Cancelled;
+    if (answer == Answer::Unreachable) return Outcome::NoConnection;
+    otherAnswered = both && !askedAgain;
   }
 
   // Names, places and ideas are Wikipedia's ground.
-  const int summary = request(onlinedict::summaryUrl(lang, asked), onlinedict::Source::WikipediaSummary, asked);
-  if (summary == 1) {
+  const Answer summary =
+      request(onlinedict::summaryUrl(lang, asked), onlinedict::Source::WikipediaSummary, asked, std::string(), found);
+  if (summary == Answer::Entry) {
     word = asked;
     return Outcome::Found;
   }
-  siteAnswered = siteAnswered || summary == 0;
-
-  if (!siteAnswered) {
-    const HttpDownloader::DataCallback discard = [](const uint8_t*, size_t) { return true; };
-    siteAnswered = HttpDownloader::fetchUrl(onlinedict::probeUrl(lang), discard);
-  }
-  LOG_INF("ODICT", "No online entry (site reached: %d)", siteAnswered ? 1 : 0);
-  return siteAnswered ? Outcome::NotFound : Outcome::NoConnection;
+  if (summary == Answer::Cancelled) return Outcome::Cancelled;
+  if (summary == Answer::Unreachable) return Outcome::NoConnection;
+  LOG_INF("ODICT", "No online entry");
+  return Outcome::NotFound;
 }
 
 }  // namespace OnlineDictionary

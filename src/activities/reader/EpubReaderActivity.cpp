@@ -3103,7 +3103,7 @@ void EpubReaderActivity::loop() {
       }
     }
     if (endOfBookOptions) {
-      endOfBookOptions->loadOnce(epub->getPath());
+      endOfBookOptions->loadOnce(epub->getPath(), epub->getTitle(), epub->getAuthor());
     }
   }
 
@@ -3131,6 +3131,13 @@ void EpubReaderActivity::loop() {
   // The suggestion menu owns Confirm/Back/navigation before automatic page
   // turning and reader shortcuts. This keeps a hold from placing a bookmark
   // or opening dictionary selection behind the menu.
+#if CROSSINK_APP_CAP_TOUCH
+  // VARAGH: a tap on the stars of the End-of-Book screen rates the book.
+  if (atEndOfBook && endOfBookOptions && touch.tapped && endOfBookOptions->rateAt(touch.x, touch.y)) {
+    requestUpdate();
+    return;
+  }
+#endif
   const bool endOfBookMenuOpen = atEndOfBook && endOfBookOptions && endOfBookOptions->menuActive();
   if (endOfBookMenuOpen) {
     longPressMenuHandled = false;
@@ -3185,6 +3192,15 @@ void EpubReaderActivity::loop() {
 
 #if CROSSINK_APP_CAP_TOUCH
   if (!atEndOfBook && touch.tapped && handleTouchFootnoteLink(touch.x, touch.y)) {
+    return;
+  }
+  // VARAGH "Tap to Look Up": a tap on the page looks up the word under it and
+  // never turns the page (a swipe does). Only with a dictionary to ask; without
+  // one a tap keeps turning pages. A tap always looks up, whatever a long
+  // press is set to do.
+  if (!atEndOfBook && touch.tapped && SETTINGS.tapToLookUp && Dictionary::exists(epub->getCachePath().c_str())) {
+    openWordSelect(/*framebufferContainsPage=*/!RenderLock::peek(), touch.x, touch.y,
+                   /*autoLookupInitialWord=*/true, CrossPointSettings::HOLD_LOOK_UP);
     return;
   }
 #endif
@@ -3785,7 +3801,8 @@ bool EpubReaderActivity::handleTouchDictionaryLookup() {
     return false;
   }
 
-  openWordSelect(/*framebufferContainsPage=*/true, touchX, touchY, /*autoLookupInitialWord=*/true);
+  openWordSelect(/*framebufferContainsPage=*/true, touchX, touchY, /*autoLookupInitialWord=*/true,
+                 SETTINGS.wordHoldAction);
   return true;
 }
 
@@ -3806,7 +3823,7 @@ std::unique_ptr<Page> EpubReaderActivity::reloadDictionaryLookupPageCallback(voi
 }
 
 void EpubReaderActivity::openWordSelect(bool framebufferContainsPage, int initialTouchX, int initialTouchY,
-                                        bool autoLookupInitialWord) {
+                                        bool autoLookupInitialWord, const uint8_t releaseAction) {
   std::unique_ptr<Page> pageForLookup;
   ReaderViewportLayout layout{};
   std::string bookCachePath;
@@ -3856,7 +3873,8 @@ void EpubReaderActivity::openWordSelect(bool framebufferContainsPage, int initia
       renderer, mappedInput, std::move(pageForLookup), layout.marginLeft, layout.marginTop, std::move(bookCachePath),
       std::move(nextPageFirstWord), hasNextPageForLookup, framebufferContainsPage, layout.marginBottom, initialTouchX,
       initialTouchY, autoLookupInitialWord, bookSettings.dictionarySdFontFamilyName,
-      bookSettings.dictionaryFontPointSize, this, &EpubReaderActivity::reloadDictionaryLookupPageCallback);
+      bookSettings.dictionaryFontPointSize, this, &EpubReaderActivity::reloadDictionaryLookupPageCallback,
+      releaseAction);
   if (!wordSelect) {
     LOG_ERR("DICT", "OOM allocating DictionaryWordSelectActivity (%u bytes)",
             static_cast<unsigned>(sizeof(DictionaryWordSelectActivity)));
@@ -3870,6 +3888,12 @@ void EpubReaderActivity::openWordSelect(bool framebufferContainsPage, int initia
     if (const auto* request = std::get_if<DictionaryClippingRequest>(&result.data)) {
       resumeReadingPaceTimer("dictionary_lookup_to_clip");
       startClipSelection(request);
+      return;
+    }
+    if (result.isCancelled && DictionaryWordSelectActivity::takeMissedWord()) {
+      // No word under the finger: nothing was looked up, loaded or drawn.
+      resumeReadingPaceTimer("dictionary_lookup_missed");
+      skipRenderAfterMissedWord.store(true, std::memory_order_release);
       return;
     }
     resumeReadingPaceTimer("dictionary_lookup_return");
@@ -4260,19 +4284,19 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuAction action, const 
       const GlobalReadingStats displayAllDevicesStats =
           hasSyncedStats ? GlobalReadingStats::loadAggregated(globalStats) : GlobalReadingStats{};
       pauseReadingPaceTimer("book_stats");
-      if (hasSyncedStats) {
-        startActivityForResult(
-            std::make_unique<BookStatsActivity>(renderer, mappedInput, epub->getTitle(), epub->getCachePath(),
-                                                displayStats, getCurrentBookProgressPercent(), hasEstimatedTimeLeft,
-                                                estimatedTimeLeftSeconds, globalStats, displayAllDevicesStats),
-            [this, returnToReaderMenu](const ActivityResult&) { handleBookStatsReturn(returnToReaderMenu); });
-      } else {
-        startActivityForResult(
-            std::make_unique<BookStatsActivity>(renderer, mappedInput, epub->getTitle(), epub->getCachePath(),
-                                                displayStats, getCurrentBookProgressPercent(), hasEstimatedTimeLeft,
-                                                estimatedTimeLeftSeconds, globalStats),
-            [this, returnToReaderMenu](const ActivityResult&) { handleBookStatsReturn(returnToReaderMenu); });
-      }
+      auto statsActivity =
+          hasSyncedStats ? std::make_unique<BookStatsActivity>(
+                               renderer, mappedInput, epub->getTitle(), epub->getCachePath(), displayStats,
+                               getCurrentBookProgressPercent(), hasEstimatedTimeLeft, estimatedTimeLeftSeconds,
+                               globalStats, displayAllDevicesStats)
+                         : std::make_unique<BookStatsActivity>(
+                               renderer, mappedInput, epub->getTitle(), epub->getCachePath(), displayStats,
+                               getCurrentBookProgressPercent(), hasEstimatedTimeLeft, estimatedTimeLeftSeconds,
+                               globalStats);
+      statsActivity->setRatedBook(epub->getPath(), epub->getAuthor());
+      startActivityForResult(std::move(statsActivity), [this, returnToReaderMenu](const ActivityResult&) {
+        handleBookStatsReturn(returnToReaderMenu);
+      });
       break;
     }
     case EpubReaderMenuAction::TOGGLE_BOOK_STATS_TRACKING: {
@@ -6133,6 +6157,9 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (!epub) {
     return;
   }
+  if (skipRenderAfterMissedWord.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
   if (quickActionsPopup.processRender(renderer, mappedInput)) {
     return;
   }
@@ -6225,7 +6252,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     }
     renderer.clearScreen();
     if (endOfBookOptions) {
-      endOfBookOptions->loadOnce(epub->getPath());
+      endOfBookOptions->loadOnce(epub->getPath(), epub->getTitle(), epub->getAuthor());
       endOfBookOptions->render(renderer, mappedInput);
     }
     renderer.displayBuffer();

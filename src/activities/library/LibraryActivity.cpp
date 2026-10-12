@@ -21,6 +21,7 @@
 
 #include "activities/home/BookActions.h"
 #include "activities/home/FileBrowserActionActivity.h"
+#include "util/BookRatingText.h"
 #include "activities/home/RecentBookProgress.h"
 #include "activities/library/LibrarySettingsActivity.h"
 #include "activities/reader/BookReadingStats.h"
@@ -94,6 +95,8 @@ void LibraryActivity::onEnter() {
     seriesScratch.reserve(128);
     genreScratch.reserve(128);
     subtitleScratch.reserve(448);
+    ratingScratch.reserve(16);
+    ratings.load();
     sort = SETTINGS.librarySortMethod <= static_cast<uint8_t>(Sort::Genre)
                ? static_cast<Sort>(SETTINGS.librarySortMethod)
                : Sort::RecentlyRead;
@@ -421,6 +424,7 @@ void LibraryActivity::resetViewport() {
 
 void LibraryActivity::reloadAfterBookAction() {
   refreshIndexIfNeeded();
+  ratings.load();
   selection = std::min(selection, std::max(CONTROL_COUNT, CONTROL_COUNT + rowCount() - 1));
   listNav.selected = selection - CONTROL_COUNT;
   listNav.top = topIndex;
@@ -747,13 +751,20 @@ void LibraryActivity::listScreen(UiApp::ScreenType& screen, void* user) {
 
 void LibraryActivity::provideRow(void* user, const uint16_t row, fui::ListItem& item) {
   auto* self = static_cast<LibraryActivity*>(user);
-  if (!self->readBook(row, self->rowScratch, false)) {
+  // VARAGH: ratings are kept by full path, so read that when there are any;
+  // the file name is enough for the icon otherwise.
+  if (!self->readBook(row, self->rowScratch, !self->ratings.empty())) {
     item.label = tr(STR_LIBRARY_UNAVAILABLE);
     item.enabled = false;
     return;
   }
   item.label = self->rowScratch.title.c_str();
   if (!self->rowScratch.author.empty()) item.subtitle = self->rowScratch.author.c_str();
+  // VARAGH: a rated book shows its stars at the end of its row.
+  if (const uint8_t rating = self->ratings.find(self->rowScratch.path)) {
+    self->ratingScratch = bookrating::stars(rating);
+    item.value = self->ratingScratch.c_str();
+  }
   if (SETTINGS.libraryUseMetadata && (SETTINGS.libraryShowSeries || SETTINGS.libraryShowGenre)) {
     library::ClixRecord record{};
     const uint16_t ordinal = self->ordinalForRow(row);
@@ -1340,6 +1351,10 @@ void LibraryActivity::showBookActionMenu(const size_t bookIndex, const bool igno
                                 }
                                 reloadAfterBookAction();
                               });
+                   return;
+                 case FileBrowserAction::Rate:
+                   openDialog(BookActions::createRatingActivity(renderer, mappedInput, book.path, book.title, book.author),
+                              [this](const ActivityResult&) { reloadAfterBookAction(); });
                    return;
                  case FileBrowserAction::ToggleCompleted: {
                    bool completed = false;

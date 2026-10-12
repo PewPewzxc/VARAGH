@@ -417,6 +417,10 @@ void DictionaryDefinitionActivity::onEnter() {
     renderer.releaseSdCardFontForLowMemory(definitionFontId_, /*preserveAdvanceTable=*/true);
   }
   wrapText();
+  if (addToCategoryOnEnter_ != UINT16_MAX) {
+    addToCategory(addToCategoryOnEnter_);
+    addToCategoryOnEnter_ = UINT16_MAX;
+  }
   requestUpdate();
   // SD write overlaps the e-ink refresh kicked by requestUpdate() on the render task.
   LookupHistory::addWordIf(cachePath, historyWord, historyStatus, recordHistory);
@@ -1164,32 +1168,32 @@ void DictionaryDefinitionActivity::openAddTo() {
       requestUpdate();
       return;
     }
-    const uint16_t categoryId = static_cast<uint16_t>(chosen->value);
-    HighlightStore::CategoryInfo category;
-    if (!HighlightStore::findCategory(categoryId, category)) {
-      requestUpdate();
-      return;
-    }
-    HighlightFormat::Entry entry;
-    entry.text = historyWord.empty() ? headword : historyWord;
-    if (category.type == HighlightFormat::CategoryType::Flashcards) {
-      // Save the meaning now, from the dictionary currently shown, so the card
-      // works offline and keeps it if dictionaries change later.
-      std::string meaning;
-      {
-        const std::string raw = Dictionary::readLocatedDefinition(foundLocation, 8192);
-        meaning = HighlightFormat::plainTextFromDefinition(raw, HighlightStore::MAX_MEANING_BYTES);
-      }
-      if (!headword.empty() && headword != entry.text) meaning = headword + '\n' + meaning;
-      entry.meaning = std::move(meaning);
-    }
-    if (HighlightStore::addEntry(categoryId, entry)) {
-      footerNotice_ = std::string(tr(STR_ADDED_TO)) + " " + category.name;
-    } else {
-      LOG_ERR("DICT", "Could not add to category %u", categoryId);
-    }
+    addToCategory(static_cast<uint16_t>(chosen->value));
     requestUpdate();
   });
+}
+
+void DictionaryDefinitionActivity::addToCategory(const uint16_t categoryId) {
+  HighlightStore::CategoryInfo category;
+  if (!HighlightStore::findCategory(categoryId, category)) return;
+  HighlightFormat::Entry entry;
+  entry.text = historyWord.empty() ? headword : historyWord;
+  if (category.type == HighlightFormat::CategoryType::Flashcards) {
+    // Save the meaning now, from the dictionary currently shown, so the card
+    // works offline and keeps it if dictionaries change later.
+    std::string meaning;
+    {
+      const std::string raw = Dictionary::readLocatedDefinition(foundLocation, 8192);
+      meaning = HighlightFormat::plainTextFromDefinition(raw, HighlightStore::MAX_MEANING_BYTES);
+    }
+    if (!headword.empty() && headword != entry.text) meaning = headword + '\n' + meaning;
+    entry.meaning = std::move(meaning);
+  }
+  if (HighlightStore::addEntry(categoryId, entry)) {
+    footerNotice_ = std::string(tr(STR_ADDED_TO)) + " " + category.name;
+  } else {
+    LOG_ERR("DICT", "Could not add to category %u", categoryId);
+  }
 }
 
 void DictionaryDefinitionActivity::openDictionarySwitch() {

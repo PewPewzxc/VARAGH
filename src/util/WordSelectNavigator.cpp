@@ -513,6 +513,19 @@ void WordSelectNavigator::renderHighlight(const GfxRenderer& renderer, int lineH
   }
 }
 
+bool WordSelectNavigator::renderCompletedSelection(const GfxRenderer& renderer, const int lineHeight,
+                                                   const bool foregroundBlack) const {
+  if (completedSelectionStart < 0 || completedSelectionEnd < 0) return false;
+  const int lo = std::min(completedSelectionStart, completedSelectionEnd);
+  const int hi = std::max(completedSelectionStart, completedSelectionEnd);
+  for (int i = lo; i <= hi; i++) {
+    drawSingleHighlight(renderer, lineHeight, i, foregroundBlack);
+    drawContinuationsIfOutside(renderer, lineHeight, getWordAt(i), lo, hi, foregroundBlack);
+  }
+  drawTouchDragCursor(renderer, lineHeight, lo, hi, foregroundBlack);
+  return true;
+}
+
 void WordSelectNavigator::drawSingleHighlight(const GfxRenderer& renderer, int lineHeight, int wordIndex,
                                               const bool foregroundBlack) const {
   const auto* w = getWordAt(wordIndex);

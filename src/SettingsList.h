@@ -712,6 +712,13 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
     add(SettingInfo::Enum(StrId::STR_WORD_SELECT_HOLD, &CrossPointSettings::wordSelectHold,
                           {StrId::STR_HOLD_FAST, StrId::STR_HOLD_NORMAL, StrId::STR_HOLD_SLOW, StrId::STR_HOLD_VERY_SLOW},
                           "wordSelectHold", StrId::STR_CAT_READER));
+    // VARAGH: in the order of CrossPointSettings::WORD_HOLD_ACTION.
+    add(SettingInfo::Enum(
+        StrId::STR_WORD_HOLD_ACTION, &CrossPointSettings::wordHoldAction,
+        {StrId::STR_LOOKUP_SHORT, StrId::STR_WORD_HOLD_ASK, StrId::STR_SAVE_CLIPPING, StrId::STR_ADD_TO},
+        "wordHoldAction", StrId::STR_CAT_READER));
+    add(SettingInfo::Toggle(StrId::STR_TAP_TO_LOOK_UP, &CrossPointSettings::tapToLookUp, "tapToLookUp",
+                            StrId::STR_CAT_READER));
     // VARAGH: only on the boards where Wi-Fi fits next to an open book.
     if constexpr (HalPowerManager::LOW_POWER_FREQ >= 80) {
       add(SettingInfo::Toggle(StrId::STR_ONLINE_WIFI_ALWAYS, &CrossPointSettings::onlineDictWifiAlwaysOn,
@@ -1061,6 +1068,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                            [](const SettingInfo& s) {
                              return s.nameId == StrId::STR_TOUCH_READER_CONTROLS ||
                                     s.nameId == StrId::STR_WORD_SELECT_HOLD ||
+                                    s.nameId == StrId::STR_WORD_HOLD_ACTION ||
+                                    s.nameId == StrId::STR_TAP_TO_LOOK_UP ||
                                     s.nameId == StrId::STR_DISABLE_TOUCHSCREEN || s.nameId == StrId::STR_NEXT_PAGE ||
                                     s.nameId == StrId::STR_PREV_PAGE || s.nameId == StrId::STR_TAP_HIDE_STATUS_BAR ||
                                     s.nameId == StrId::STR_RTL_MIRROR_PAGE_TURNS ||
@@ -1206,7 +1215,7 @@ inline void addSettingByName(std::vector<SettingInfo>& target, const std::vector
 
 inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> readerSettings;
-  readerSettings.reserve(13);
+  readerSettings.reserve(15);
   readerSettings.push_back(SettingInfo::Submenu(StrId::STR_READER_FONT_OPTIONS, SettingAction::ReaderFontOptions));
   readerSettings.push_back(SettingInfo::Submenu(StrId::STR_READER_PAGE_LAYOUT, SettingAction::ReaderPageLayout));
   readerSettings.push_back(SettingInfo::Action(StrId::STR_STATUS_BARS, SettingAction::CustomiseStatusBar));
@@ -1218,6 +1227,8 @@ inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<
   addSettingByName(readerSettings, allSettings, StrId::STR_GUIDE_READING);
   addSettingByName(readerSettings, allSettings, StrId::STR_DICTIONARY);
   addSettingByName(readerSettings, allSettings, StrId::STR_WORD_SELECT_HOLD);
+  addSettingByName(readerSettings, allSettings, StrId::STR_WORD_HOLD_ACTION);
+  addSettingByName(readerSettings, allSettings, StrId::STR_TAP_TO_LOOK_UP);
   addSettingByName(readerSettings, allSettings, StrId::STR_ONLINE_WIFI_ALWAYS);
   addSettingByName(readerSettings, allSettings, StrId::STR_INDEXING_METHOD);
   return readerSettings;

@@ -113,3 +113,5 @@ add_subdirectory(online_dictionary_text)
 add_subdirectory(chess_game)
 add_subdirectory(checkers_game)
 add_subdirectory(calendar_math)
+
+add_subdirectory(book_rating_text)

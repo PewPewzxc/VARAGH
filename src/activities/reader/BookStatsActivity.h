@@ -32,6 +32,11 @@ class BookStatsActivity final : public Activity {
   bool ignoreInitialBackRelease = false;
   bool ignoreInitialConfirmRelease = false;
   bool ignoreInitialPowerRelease = false;
+  // VARAGH: the book's rating, shown as stars in the title strip of its card; a
+  // tap on the strip opens the rating screen. Only when the book's file is known.
+  std::string ratedBookPath;
+  std::string ratedBookAuthor;
+  uint8_t rating = 0;
 
   bool hasEditableBook() const { return !bookCachePath.empty() && halClock.isAvailable(); }
   bool usesNoRtcSingleScreenLayout() const { return !halClock.isAvailable(); }
@@ -60,6 +65,12 @@ class BookStatsActivity final : public Activity {
                     const std::string& bookCachePath, const BookReadingStats& stats, float progressPercent,
                     bool hasEstimatedTimeLeft, uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
                     const GlobalReadingStats& allDevicesStats, bool returnToHomeOnExit = false);
+
+  // VARAGH: names the book file, which turns the rating on (see ratedBookPath).
+  void setRatedBook(std::string bookPath, std::string author) {
+    ratedBookPath = std::move(bookPath);
+    ratedBookAuthor = std::move(author);
+  }
 
   void onEnter() override;
   void onExit() override;

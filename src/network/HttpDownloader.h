@@ -50,6 +50,13 @@ class HttpDownloader {
     // Borrowed only for this synchronous request. Basic credentials are sent
     // only to this origin; empty keeps the request URL as the credential origin.
     std::string_view authorizationOrigin;
+    // VARAGH: the longest wait for the server at any one step (connecting, its
+    // headers, the next piece of the body), in milliseconds; 0 keeps the
+    // downloader's own, much longer limits. For requests a person waits on.
+    uint32_t timeoutMs = 0;
+    // VARAGH: gets the HTTP status of the answer, or stays 0 when the server
+    // never gave one. Borrowed for this synchronous request.
+    int* httpStatus = nullptr;
   };
 
   /**

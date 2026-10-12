@@ -169,6 +169,10 @@ class WordSelectNavigator {
   // In multi-select: highlights the anchor..cursor range.
   // In single-select: highlights the cursor word (+ hyphenated continuation if any).
   void renderHighlight(const GfxRenderer& renderer, int lineHeight, bool foregroundBlack) const;
+  // VARAGH: the selection a touch drag has just finished (see
+  // finishTouchMultiSelect), marked as it was while the finger was down. False
+  // when there is none.
+  bool renderCompletedSelection(const GfxRenderer& renderer, int lineHeight, bool foregroundBlack) const;
 
   // Compute the union of the previous and current highlight bounding rectangles,
   // padded by 2 px on every side to cover renderHighlight's fillRect border.

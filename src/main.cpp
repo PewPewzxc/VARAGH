@@ -1148,6 +1148,7 @@ void refreshSpeedLogContext() {
 void enterDeepSleep(bool fromTimeout) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
+  APP_STATE.lastSleepApp = APP_STATE.lastSleepFromReader ? 0 : activityManager.sleepResumeApp();
 
   const bool isQuickResumeSleep =
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
@@ -1632,6 +1633,15 @@ void setup() {
     // by network screens. Keep X3's existing full refresh behavior unchanged.
     const auto homeRefreshMode = gpio.deviceIsX3() ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH;
     activityManager.goHome(HomeMenuItem::NONE, homeRefreshMode);
+  } else if (APP_STATE.lastSleepApp != 0 && !APP_STATE.lastSleepFromReader && gpio.hasTouch() &&
+             !mappedInputManager.isPressed(MappedInputManager::Button::Back)) {
+    // VARAGH: sleep began inside an app, so waking returns to it, as it does to
+    // a book. The note is cleared first: an app that cannot be opened leads
+    // Home on the next start instead of being tried again.
+    const uint8_t app = APP_STATE.lastSleepApp;
+    APP_STATE.lastSleepApp = 0;
+    APP_STATE.saveToFile();
+    activityManager.goToApps(app);
   } else if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader ||
              mappedInputManager.isPressed(MappedInputManager::Button::Back) || APP_STATE.readerActivityLoadCount > 0) {
     // Boot to home screen if no book is open, last sleep was not from reader, back button is held, or reader activity

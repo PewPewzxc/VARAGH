@@ -664,15 +664,9 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const bool lightSleepScreen = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT;
 
   renderer.clearScreen();
-  // The dark screen is inverted below, so draw the logo pre-inverted there:
-  // it then keeps its black square with light letters in both modes.
-  const int logoX = (pageWidth - 192) / 2;
-  const int logoY = (pageHeight - 192) / 2;
-  if (lightSleepScreen) {
-    renderer.drawImage(BootLogo192, logoX, logoY, 192, 192);
-  } else {
-    renderer.drawImageInverted(BootLogo192, logoX, logoY, 192, 192);
-  }
+  // The logo is line art with no ground of its own, so the dark screen's
+  // inversion below turns it with the text: light lines on black.
+  renderer.drawImage(BootLogo192, (pageWidth - 192) / 2, (pageHeight - 192) / 2, 192, 192);
   renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 + 116, tr(STR_CROSSINK), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 148, tr(STR_SLEEPING));
   if (!lightSleepScreen) {

@@ -2,6 +2,128 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.2.1 "Tiger"] - 2026-10-13
+
+Based on VARAGH 1.2.0. Updating keeps your settings, books, reading progress,
+highlights, flashcards and saved games. Built and tuned for the X4 Pro.
+
+### Added
+
+- **Tap to Look Up** (Settings → Reader, off by default; touch readers). A tap
+  on a word in a book opens its meaning at once, with no holding. While it is
+  on, a tap never turns the page: swipe left or right for that. Holding still
+  selects several words. It needs a dictionary; without one, taps keep turning
+  pages.
+- **Long Press on a Word** (Settings → Reader): what lifting the finger does
+  once a long press has selected a word or more.
+  - **Look Up** (as before, the default) opens the dictionary at once.
+  - **Ask** keeps the words selected and shows a bubble at them with **Look
+    Up**, **Highlight** and **Add to…**, as a phone does. A tap anywhere else
+    puts the selection away.
+  - **Highlight** saves the selection as a highlight at once.
+  - **Add to…** opens the list of Highlights categories at once.
+  A word sent to **Flashcards** this way is looked up first, so the card gets
+  its meaning; the dictionary popup opens and says that the card was added.
+- **Book ratings.** Five stars with halves: tap the left half of a star for
+  half of it, the right half for all of it, and the value that is set to take
+  the rating away.
+  - **End of book:** the end screen shows the book's title and asks for your
+    rating.
+  - **Book menu** (hold a book in Files or Library): **Rating** is at the top
+    (the first row in Library, after Rename in Files), with its stars, and
+    opens the rating screen.
+  - **Reading Stats:** the stars are in the title strip of the book's card;
+    tap the strip to rate.
+  - **Library list:** a rated book shows its stars at the end of its row.
+  A rating is saved the moment you give it, in `/.crosspoint/ratings.txt` (one
+  line a book: stars, title, author, file; plain text you can open on a
+  computer) and beside the reader's other data for that book. It follows a
+  book that the reader moves or renames, such as into the Read folder.
+
+### Changed
+
+- **A new logo.** An open book with a V and a turning page replaces the "AP"
+  mark on the boot screen, the default sleep screen and the web file manager.
+  On the dark sleep screen it is drawn in light lines on black.
+- **Apps stay open across sleep.** When the reader goes to sleep inside an app
+  (Wordle, Sudoku, Chess, Checkers, the Clock, or the list of apps), waking it
+  returns to that app, the way it already returns to the page of a book. The
+  game is as you left it; Back leads to Apps and then Home as before. Holding
+  Back while waking opens Home instead.
+- **A stronger chess computer.** It now keeps its evaluation up to date move by
+  move instead of adding up the board for every position, and remembers the
+  positions it has already examined, so it sees further in the same thinking
+  time. On a PC, with equal time for each move, it scored 78% in 140 games
+  against the 1.2.0 computer. **Hard** thinks as deep as its five seconds
+  allow; Easy and Medium look as far ahead as before and answer sooner.
+- **Chess and Checkers use the processor better while the computer thinks.**
+  The main loop no longer spins, the thinking task rests a tick every 50 ms
+  instead of after every thousand positions, and the screen refresh that shows
+  your move no longer slows the processor under the thinking that has already
+  started.
+
+### Fixed
+
+- **Online lookup with "Keep Wi-Fi On" could hang.** With Wi-Fi connected but
+  the internet slow or gone, "Looking up" could stay on the page for minutes
+  with no way out. Now Back (the Home key) gives a lookup up at once, the site
+  gets 8 seconds at any one step and a lookup 20 seconds in all, and a site
+  that does not answer ends the lookup instead of being asked up to three more
+  times. If Wi-Fi is connected and Wiktionary cannot be reached, the reader
+  says so and stays in the book instead of restarting into its Wi-Fi mode. The
+  restart route has the same time limits.
+- **Fewer requests for a word that is not there.** A missing English word took
+  four requests and takes three; a German word with a capital first letter is
+  asked for together with its lower-case spelling in one request.
+- **Saved online answers** are no longer limited to 4,000 words a language
+  (past that, every new word silently pushed an old one out). Saving a word
+  and checking for a saved one read the list an entry at a time instead of
+  loading all of it, and a power cut while a word is being saved can no longer
+  lose the list.
+
+### For developers
+
+- `CrossPointState::lastSleepApp` (in `state.json`) holds one of
+  `AppsActivity`'s resume numbers; `ActivityManager::sleepResumeApp()` finds
+  the open app by activity name and `goToApps(resumeId)` opens the list with
+  that app on top. The note is cleared before the app is opened, so an app
+  that fails to open is not tried again on the next start.
+- `chess::Position` carries `lock`, `placed` and `heavy` next to `hash`
+  (`recompute()` replaces `recomputeHash()`); `chess::SearchOptions::table`
+  takes caller-owned memory for the transposition table (12 bytes an entry;
+  `ChessActivity` takes 16,384 entries from PSRAM while it is open).
+- `HalPowerManager::beginBackgroundJob()` / `endBackgroundJob()` keep
+  `beginPanelWait()` from lowering the clock; `GameThinker` holds one while its
+  job runs, and has `requestStop()` / `stopRequested()` for a job that is
+  abandoned rather than waited for.
+- `HttpDownloader::DownloadOptions` has `timeoutMs` and `httpStatus`;
+  `OnlineDictionary::fetch()` takes `FetchOptions` (time limit, cancel) and can
+  return `Cancelled`. `onlinedict::Extractor` reads an answer for two spellings;
+  `probeUrl()` is gone.
+- Asking de.wiktionary for two titles returns the text of one page only, the
+  capitalised one first, whatever the order asked. That is why only a
+  capitalised word is combined with its other spelling: the other way round
+  the answer would be the wrong word.
+- `CrossPointSettings::tapToLookUp` and `wordHoldAction`;
+  `DictionaryWordSelectActivity` takes the release action and draws the bubble
+  (`finishTouchSelection`, `layoutAskBubble`, `handleAskInput`);
+  `WordSelectNavigator::renderCompletedSelection`;
+  `DictionaryDefinitionActivity::addToCategoryOnEnter`.
+- Ratings: `src/util/BookRatingText.h` (pure, host-tested) and
+  `src/util/BookRatings.*` (the list and the per-book copy, `Index` for
+  lists), `src/components/StarRating.h` (the large stars and their hit test),
+  `BookRatingActivity`, `FileBrowserAction::Rate`,
+  `FileBrowserActionActivity::MenuItem::valueText`.
+- A rating given where no author is known (Files, Reading Stats) keeps the
+  title and author its line in `ratings.txt` already has.
+- Logo: `src/images/varagh-logo.png` is the master drawing;
+  `scripts/generate_logo.py` writes `src/images/BootLogo192.h` (the shadow as
+  a dot screen) and `web/assets/logo.png` from it. The web portal's dark
+  theme inverts the logo (`--logo-filter`).
+- The menu symbol font (`ui_symbols_10`) has three more glyphs: U+2605, U+2606
+  and U+2BEA, the stars of a rating in a line of text
+  (`lib/EpdFont/scripts/generate-ui-symbols.sh`).
+
 ## [VARAGH v1.2.0 "Tiger"] - 2026-10-07
 
 Based on VARAGH 1.1.1. Updating keeps your settings, books, reading progress,

@@ -18,6 +18,7 @@
 #include "CrossPointState.h"
 #include "RecentBookProgress.h"
 #include "RecentBooksStore.h"
+#include "activities/home/BookRatingActivity.h"
 #include "activities/reader/BookReadingStats.h"
 #include "activities/reader/BookStatsActivity.h"
 #include "activities/reader/BookStatsTracking.h"
@@ -27,6 +28,8 @@
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
+#include "util/BookRatingText.h"
+#include "util/BookRatings.h"
 
 namespace BookActions {
 namespace {
@@ -50,7 +53,13 @@ std::string bookStatsCachePath(const std::string& path) {
 std::vector<FileBrowserActionActivity::MenuItem> buildBookActionItems(const std::string& fullPath,
                                                                       const bool includeRemoveFromRecents) {
   std::vector<FileBrowserActionActivity::MenuItem> items;
-  items.reserve(includeRemoveFromRecents ? 9 : 8);
+  items.reserve(includeRemoveFromRecents ? 10 : 9);
+  // VARAGH: a book's rating leads its menu, with its stars in the row.
+  if (FsHelpers::hasEpubExtension(fullPath) || FsHelpers::hasXtcExtension(fullPath)) {
+    const uint8_t rating = BookRatings::get(fullPath);
+    items.push_back({FileBrowserAction::Rate, StrId::STR_RATING, std::nullopt,
+                     rating == 0 ? std::string(tr(STR_NOT_RATED)) : bookrating::stars(rating)});
+  }
   items.push_back({FileBrowserAction::Delete, StrId::STR_DELETE});
   if (hasClearableBookCache(fullPath)) {
     items.push_back({FileBrowserAction::DeleteCache, StrId::STR_DELETE_CACHE});
@@ -131,12 +140,20 @@ std::unique_ptr<Activity> createReadingStatsActivity(GfxRenderer& renderer, Mapp
                                                                : RecentBookProgress::loadPercent(book);
   const BookReadingStats stats = BookReadingStats::load(cachePath);
   const GlobalReadingStats global = GlobalReadingStats::load();
-  if (GlobalReadingStats::hasSyncedStats()) {
-    return makeUniqueNoThrow<BookStatsActivity>(renderer, mappedInput, title, cachePath, stats, progress, false, 0,
-                                                global, GlobalReadingStats::loadAggregated(global));
-  }
-  return makeUniqueNoThrow<BookStatsActivity>(renderer, mappedInput, title, cachePath, stats, progress, false, 0,
-                                              global);
+  auto activity = GlobalReadingStats::hasSyncedStats()
+                      ? makeUniqueNoThrow<BookStatsActivity>(renderer, mappedInput, title, cachePath, stats, progress,
+                                                             false, 0, global,
+                                                             GlobalReadingStats::loadAggregated(global))
+                      : makeUniqueNoThrow<BookStatsActivity>(renderer, mappedInput, title, cachePath, stats, progress,
+                                                             false, 0, global);
+  if (activity) activity->setRatedBook(fullPath, {});
+  return activity;
+}
+
+std::unique_ptr<Activity> createRatingActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                               const std::string& fullPath, const std::string& title,
+                                               const std::string& author) {
+  return makeUniqueNoThrow<BookRatingActivity>(renderer, mappedInput, fullPath, title, author);
 }
 
 bool resetBookReaderSettings(const std::string& fullPath) {

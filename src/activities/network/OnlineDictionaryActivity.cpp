@@ -1,12 +1,14 @@
 #include "OnlineDictionaryActivity.h"
 
 #include <Arduino.h>
+#include <HalGPIO.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
 
 #include <cstdio>
 #include <memory>
+#include <new>
 
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
@@ -39,25 +41,83 @@ void wifiOff() {
 }
 
 // --- the lookup with Wi-Fi kept on: no restart, the answer is fetched with the book open --------
-struct InPlaceJob {
+// How long the reader waits: for Wi-Fi to come up, for the site at any one step
+// of a request, and for the whole lookup. Back ends any of these waits at once.
+constexpr uint32_t kWifiWaitMs = 12000;
+constexpr uint32_t kStepTimeoutMs = 8000;
+constexpr uint32_t kLookupLimitMs = 20000;
+constexpr uint32_t kMessageMs = 1800;
+
+struct InPlaceWorker {
+  GameThinker thinker;
   onlinedict::Lang lang = onlinedict::Lang::English;
   std::string word;
   std::string html;
   OnlineDictionary::Outcome outcome = OnlineDictionary::Outcome::NoConnection;
 };
 
+// Made on the first lookup and kept: a lookup that was given up may still be
+// closing its connection when the reader is back on the page, and until then
+// it needs its task and the memory it works on.
+InPlaceWorker* inPlaceWorker = nullptr;
+
 void fetchInPlace(void* context) {
-  auto* job = static_cast<InPlaceJob*>(context);
+  auto* worker = static_cast<InPlaceWorker*>(context);
   // The radio at full power for the request, dozing again afterwards.
   const WifiPowerSaveGuard fullPower;
-  job->outcome = OnlineDictionary::fetch(job->lang, job->word, job->html);
+  OnlineDictionary::FetchOptions options;
+  options.timeoutMs = kStepTimeoutMs;
+  options.cancelled = [worker] { return worker->thinker.stopRequested(); };
+  worker->outcome = OnlineDictionary::fetch(worker->lang, worker->word, worker->html, options);
 }
 
-enum class InPlace : uint8_t { Found, NoEntry, Unavailable };
+// Back, or the Home key of the readers that have one, gives a lookup up. It is
+// the release that counts, so the key press ends here and does not also close
+// the dictionary the lookup was started from.
+bool backWasPressed(MappedInputManager& mappedInput) {
+  mappedInput.update();
+  bool pressed = mappedInput.wasReleased(MappedInputManager::Button::Back);
+#ifndef SIMULATOR
+  pressed = pressed || gpio.wasHomeKeyTapped() || gpio.wasHomeKeyLongPressed();
+#endif
+  return pressed;
+}
 
-InPlace lookUpInPlace(const GfxRenderer& renderer, const OnlineDictionary::Request& request) {
+enum class InPlace : uint8_t {
+  Found,
+  NoEntry,      // the sites have nothing for this word
+  Unreachable,  // Wi-Fi is there, the sites did not answer
+  Cancelled,    // given up with Back
+  Unavailable,  // no Wi-Fi with the book open: the restart route can ask for a network
+};
+
+InPlace lookUpInPlace(const GfxRenderer& renderer, MappedInputManager& mappedInput,
+                      const OnlineDictionary::Request& request) {
   GUI.drawPopup(renderer, tr(STR_ONLINE_LOOKING_UP));
-  if (!OnlineWifi::waitConnected(12000)) return InPlace::Unavailable;
+  if (!inPlaceWorker) inPlaceWorker = new (std::nothrow) InPlaceWorker();
+  if (!inPlaceWorker) return InPlace::Unavailable;
+  InPlaceWorker& worker = *inPlaceWorker;
+  const auto givenUp = [&mappedInput] { return backWasPressed(mappedInput); };
+  const auto unreachable = [&renderer] {
+    GUI.drawPopup(renderer, tr(STR_ONLINE_UNREACHABLE));
+    delay(kMessageMs);
+    return InPlace::Unreachable;
+  };
+
+  // A lookup given up a moment ago may still be closing its connection.
+  while (worker.thinker.running()) {
+    if (givenUp()) return InPlace::Cancelled;
+    delay(20);
+  }
+  worker.thinker.takeFinished();
+
+  bool cancelled = false;
+  if (!OnlineWifi::waitConnected(kWifiWaitMs, [&] {
+        cancelled = givenUp();
+        return cancelled;
+      })) {
+    return cancelled ? InPlace::Cancelled : InPlace::Unavailable;
+  }
   // The secure connection and the task below need this much of the heap.
   if (ESP.getFreeHeap() < 72 * 1024) {
     LOG_ERR("ODICT", "Too little memory for a lookup with the book open (free %u)", ESP.getFreeHeap());
@@ -65,27 +125,48 @@ InPlace lookUpInPlace(const GfxRenderer& renderer, const OnlineDictionary::Reque
   }
 
   // The secure connection needs more stack than the main task has to spare
-  // with a book open, so the request runs on a task of its own.
-  InPlaceJob job;
-  job.lang = request.lang;
-  job.word = request.word;
-  GameThinker worker;
+  // with a book open, so the request runs on a task of its own. That also
+  // leaves this task free to watch for Back.
+  worker.lang = request.lang;
+  worker.word = request.word;
+  worker.html.clear();
+  worker.outcome = OnlineDictionary::Outcome::NoConnection;
   const uint32_t started = millis();
-  if (!worker.start(&fetchInPlace, &job, 0)) return InPlace::Unavailable;
-  while (worker.running()) delay(10);
-  worker.takeFinished();
+  if (!worker.thinker.start(&fetchInPlace, &worker, 0)) return InPlace::Unavailable;
+  while (worker.thinker.running()) {
+    if (givenUp()) {
+      worker.thinker.requestStop();
+      LOG_INF("ODICT", "In-place lookup given up after %lu ms", static_cast<unsigned long>(millis() - started));
+      return InPlace::Cancelled;
+    }
+    if (millis() - started >= kLookupLimitMs) {
+      worker.thinker.requestStop();
+      LOG_ERR("ODICT", "In-place lookup took too long");
+      return unreachable();
+    }
+    delay(20);
+  }
+  worker.thinker.takeFinished();
   LOG_INF("ODICT", "In-place lookup took %lu ms (free heap %u)", static_cast<unsigned long>(millis() - started),
           ESP.getFreeHeap());
 
-  if (job.outcome == OnlineDictionary::Outcome::NoConnection) return InPlace::Unavailable;
-  if (job.outcome != OnlineDictionary::Outcome::Found) {
-    GUI.drawPopup(renderer, tr(STR_ONLINE_NO_ENTRY));
-    delay(1800);
-    return InPlace::NoEntry;
+  switch (worker.outcome) {
+    case OnlineDictionary::Outcome::Found:
+      break;
+    case OnlineDictionary::Outcome::NotFound:
+      GUI.drawPopup(renderer, tr(STR_ONLINE_NO_ENTRY));
+      delay(kMessageMs);
+      return InPlace::NoEntry;
+    case OnlineDictionary::Outcome::Cancelled:
+      return InPlace::Cancelled;
+    case OnlineDictionary::Outcome::NoConnection:
+      // Wi-Fi was connected, so a restart into the network screens would only
+      // find the same silence after a much longer wait.
+      return unreachable();
   }
-  if (!OnlineDictionary::save(request.lang, job.word, job.html)) return InPlace::Unavailable;
+  if (!OnlineDictionary::save(request.lang, worker.word, worker.html)) return InPlace::Unavailable;
   // The entry may have been found under another spelling; the reader searches for the one it asked for.
-  if (job.word != request.word) OnlineDictionary::save(request.lang, request.word, job.html);
+  if (worker.word != request.word) OnlineDictionary::save(request.lang, request.word, worker.html);
   return InPlace::Found;
 }
 
@@ -107,10 +188,12 @@ std::string OnlineDictionaryActivity::begin(GfxRenderer& renderer, MappedInputMa
   if (OnlineDictionary::hasSaved(request.lang, request.word)) return OnlineDictionary::storePath(request.lang);
 
   if (OnlineWifi::enabled()) {
-    switch (lookUpInPlace(renderer, request)) {
+    switch (lookUpInPlace(renderer, mappedInput, request)) {
       case InPlace::Found:
         return OnlineDictionary::storePath(request.lang);
       case InPlace::NoEntry:
+      case InPlace::Unreachable:
+      case InPlace::Cancelled:
         return {};
       case InPlace::Unavailable:
         // No Wi-Fi in reach of the book: the restart route below can ask for a network.

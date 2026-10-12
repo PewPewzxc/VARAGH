@@ -21,7 +21,7 @@ class CheckersActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool skipLoopDelay() override { return thinking; }
+  // While the computer thinks the reader stays awake and at full processor speed.
   bool preventAutoSleep() override { return thinking; }
 
   static constexpr char kSavePath[] = "/.crosspoint/games/checkers.bin";

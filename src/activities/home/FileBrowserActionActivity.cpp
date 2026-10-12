@@ -30,7 +30,10 @@ void FileBrowserActionActivity::onEnter() {
   optionLabels.resize(items.size());
   std::transform(items.begin(), items.end(), optionLabels.begin(), [](const MenuItem& item) {
     std::string label = I18N.get(item.labelId);
-    if (item.valueId) {
+    if (!item.valueText.empty()) {
+      label += ": ";
+      label += item.valueText;
+    } else if (item.valueId) {
       label += ": ";
       label += I18N.get(*item.valueId);
     }

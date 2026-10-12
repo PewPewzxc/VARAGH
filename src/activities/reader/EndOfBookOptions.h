@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "components/StarRating.h"
+#include "components/themes/BaseTheme.h"
+
 class GfxRenderer;
 class MappedInputManager;
 
@@ -26,7 +29,14 @@ class EndOfBookOptions {
   // Scans the book's folder for suggestions; no-op when already loaded. Call while
   // serialized by RenderLock. The loaded flag is the release/acquire publication point
   // that lets the other task read the finished list safely.
-  void loadOnce(const std::string& currentBookPath);
+  // title and author name the book on the screen and in the list of ratings; a
+  // book without them is called by its file name.
+  void loadOnce(const std::string& currentBookPath, const std::string& title = {}, const std::string& author = {});
+
+  // VARAGH: the end screen asks for the book's rating with a row of stars. A
+  // tap at this point that lands on them changes the rating and saves it; true
+  // then, and the screen wants drawing again.
+  bool rateAt(int x, int y);
 
   // True once the original folder scan has completed, including when it found no books.
   bool loaded() const;
@@ -55,8 +65,28 @@ class EndOfBookOptions {
   static void onRowEvent(const freeink::ui::ActionEvent& event, void* user);
   void buildListScreen(UiApp::ScreenType& screen);
 
+  // Where the pieces of the end screen sit, with or without the suggestion menu.
+  struct EndLayout {
+    Rect safe{};
+    int titleY = 0;
+    int bookTitleY = 0;
+    int authorY = 0;
+    int ratingLabelY = 0;
+    int valueY = 0;
+    int subtitleY = 0;
+    int listTop = 0;
+    starrating::Row stars;
+  };
+  EndLayout layoutFor(bool menu) const;
+  void drawRating(GfxRenderer& renderer, const EndLayout& layout) const;
+
   GfxRenderer& renderer;
   std::string folder;
+  // Written in loadOnce() before isLoaded is published, like the suggestions.
+  std::string bookPath;
+  std::string bookTitle;
+  std::string bookAuthor;
+  std::atomic<uint8_t> rating{0};
   // Written by the render task in loadOnce(), immutable afterwards; the main task only
   // reads it after isLoaded is observed true (acquire), so no further locking is needed.
   std::vector<std::string> names;

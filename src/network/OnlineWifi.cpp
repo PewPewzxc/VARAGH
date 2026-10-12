@@ -116,14 +116,15 @@ void tick() {
   if (millis() - lastAttemptMs >= kRetryEveryMs) join();
 }
 
-bool waitConnected(const uint32_t timeoutMs) {
+bool waitConnected(const uint32_t timeoutMs, const std::function<bool()>& givenUp) {
   if (!enabled()) return false;
   if (hasActiveStationWifiConnection()) return true;
   if ((!holding || WiFi.getMode() == WIFI_MODE_NULL || millis() - lastAttemptMs > 8000) && !join()) return false;
   const uint32_t started = millis();
   while (millis() - started < timeoutMs) {
     if (hasActiveStationWifiConnection()) return true;
-    delay(100);
+    if (givenUp && givenUp()) return false;
+    delay(50);
   }
   LOG_ERR("OWIFI", "Wi-Fi did not connect in %lu ms", static_cast<unsigned long>(timeoutMs));
   return false;

@@ -3,6 +3,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -26,7 +27,8 @@ class DictionaryWordSelectActivity final : public Activity {
       std::string cachePath, std::string nextPageFirstWord = "", bool hasNextReaderPage = false,
       bool framebufferContainsPage = false, int reservedBottomHeight = 0, int initialTouchX = -1,
       int initialTouchY = -1, bool autoLookupInitialWord = false, const char* dictionaryFontFamilyName = nullptr,
-      uint8_t dictionaryFontPointSize = 0, void* readerContext = nullptr, ReaderPageLoadFn readerPageLoad = nullptr)
+      uint8_t dictionaryFontPointSize = 0, void* readerContext = nullptr, ReaderPageLoadFn readerPageLoad = nullptr,
+      uint8_t releaseAction = 0)
       : Activity("DictionaryWordSelect", renderer, mappedInput),
         page(std::move(page)),
         marginLeft(marginLeft),
@@ -45,7 +47,8 @@ class DictionaryWordSelectActivity final : public Activity {
         autoLookupInitialWord_(autoLookupInitialWord),
         dictionaryFontPointSize_(dictionaryFontPointSize),
         readerContext_(readerContext),
-        readerPageLoad_(readerPageLoad) {
+        readerPageLoad_(readerPageLoad),
+        releaseAction_(releaseAction) {
     if (dictionaryFontFamilyName) {
       std::strncpy(dictionaryFontFamilyName_, dictionaryFontFamilyName, sizeof(dictionaryFontFamilyName_) - 1);
     }
@@ -57,7 +60,13 @@ class DictionaryWordSelectActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
 
+  // VARAGH: true once after a touch found no word under it and the screen
+  // closed again without drawing anything. The reader then has no page to draw
+  // again (with Tap to Look Up every stray tap would otherwise cost a refresh).
+  static bool takeMissedWord() { return missedWord_.exchange(false, std::memory_order_acq_rel); }
+
  private:
+  static std::atomic<bool> missedWord_;
   std::unique_ptr<Page> page;
   int marginLeft;
   int marginTop;
@@ -137,6 +146,29 @@ class DictionaryWordSelectActivity final : public Activity {
   int touchDragStartY_ = 0;
   void* readerContext_ = nullptr;
   ReaderPageLoadFn readerPageLoad_ = nullptr;
+  // VARAGH: what lifting the finger does once words are selected (one of
+  // CrossPointSettings::WORD_HOLD_ACTION).
+  uint8_t releaseAction_ = 0;
+  // "Ask": the words stay selected under a bubble with Look up, Highlight and
+  // Add to. A tap on one of them acts; a tap anywhere else puts both away.
+  struct AskBubble {
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    int segment[3] = {0, 0, 0};  // width of each choice
+    int pointerX = 0;
+    bool below = false;  // under the words, when there is no room above them
+    int fontId = 0;
+  };
+  static constexpr int kAskChoices = 3;
+  bool askOpen_ = false;
+  AskBubble askBubble_;
+  std::string askPhrase_;
+  size_t askWordCount_ = 0;
+  // A word on its way into Flashcards is looked up first: the card is made by
+  // the dictionary popup, which has the meaning.
+  uint16_t flashcardCategoryForLookup_ = UINT16_MAX;
   int activePageOffset_ = 0;
   bool workingSetSuspended_ = false;
   bool workingSetMemoryError_ = false;
@@ -178,7 +210,14 @@ class DictionaryWordSelectActivity final : public Activity {
 
   void clearFrontButtonHintArea();
   void openDictionarySwitch();
-  void openAddTo();
+  // Where Add to was asked for, which decides where giving it up leads back to.
+  enum class AddToFrom : uint8_t { NotFoundPopup, AskBubble, Release };
+  void openAddTo(const std::string& text, size_t wordCount, AddToFrom from);
+  void finishTouchSelection(std::string phrase, size_t wordCount);
+  bool layoutAskBubble();
+  void drawAskBubble() const;
+  int askChoiceAt(int x, int y) const;
+  void handleAskInput();
   void renderDefinitionBackground();
   static void renderDefinitionBackgroundCallback(void* context);
   bool buildWorkingSet(bool consumeInitialConfirm);
@@ -188,7 +227,8 @@ class DictionaryWordSelectActivity final : public Activity {
   bool extractWords();
   bool mergeHyphenatedWords();
   bool captureCurrentClippingRequest(DictionaryClippingRequest& request) const;
-  bool captureClippingRequest();
+  // keepSelection: the words stay marked on the page (while the bubble is open).
+  bool captureClippingRequest(bool keepSelection = false);
   bool continueTouchSelectionOnNextPage();
   bool selectFirstWordForTouchDrag();
   void finishTouchLookupOnCurrentPage(const std::string& phrase, size_t wordCount,

@@ -21,6 +21,7 @@
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
 #include "SilentRestart.h"
+#include "apps/AppsActivity.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
@@ -1071,6 +1072,23 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, const HalDisplay::Ref
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, initialRefreshMode,
                                                  std::move(initialBookPath)));
 }
+void ActivityManager::goToApps(const uint8_t resumeId) {
+  replaceActivity(std::make_unique<AppsActivity>(renderer, mappedInput, resumeId));
+}
+
+uint8_t ActivityManager::sleepResumeApp() const {
+  // The app nearest the top counts, so a screen opened from inside an app (a
+  // dictionary entry from Wordle, the light panel) leads back to that app.
+  if (currentActivity) {
+    if (const uint8_t id = AppsActivity::resumeIdFor(currentActivity->name)) return id;
+  }
+  for (auto it = stackActivities.rbegin(); it != stackActivities.rend(); ++it) {
+    if (!*it) continue;
+    if (const uint8_t id = AppsActivity::resumeIdFor((*it)->name)) return id;
+  }
+  return 0;
+}
+
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
 
 void ActivityManager::pushActivity(std::unique_ptr<Activity>&& activity) {

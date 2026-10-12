@@ -244,6 +244,20 @@ void XtcReaderActivity::loop() {
   // input. Anything it doesn't handle (e.g. long-press Back to the file browser) falls
   // through to the regular handlers below; page turns are absorbed by the end-of-book
   // block.
+#if CROSSINK_APP_CAP_TOUCH
+  // VARAGH: a tap on the stars of the End-of-Book screen rates the book.
+  if (touch.tapped) {
+    bool rated = false;
+    {
+      RenderLock lock(*this);
+      rated = currentPage >= xtc->getPageCount() && endOfBookOptions && endOfBookOptions->rateAt(touch.x, touch.y);
+    }
+    if (rated) {
+      requestUpdate();
+      return;
+    }
+  }
+#endif
   EndOfBookOptions::Action endOfBookAction = EndOfBookOptions::Action::None;
   std::string openPath;
   bool endOfBookNeedsUpdate = false;

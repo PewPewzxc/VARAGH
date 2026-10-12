@@ -13,6 +13,7 @@ constexpr int8_t kBishopSteps[4] = {-17, -15, 15, 17};
 constexpr int8_t kRookSteps[4] = {-16, -1, 1, 16};
 
 constexpr uint32_t kSideKey = 0xA5F00D17U;
+constexpr uint32_t kSideLock = 0x3C6EF372U;
 
 constexpr bool onBoard(const int square88) { return (square88 & 0x88) == 0; }
 constexpr uint8_t content(const Colour colour, const Piece piece) {
@@ -36,6 +37,14 @@ uint32_t pieceKey(const uint8_t piece, const uint8_t square) {
 uint32_t stateKey(const uint8_t castling, const uint8_t ep) {
   return mix(0x51000000U + (static_cast<uint32_t>(castling) << 8) + ep);
 }
+// The same for the lock, from differently built numbers so that two positions
+// that share a hash do not share a lock as well.
+uint32_t pieceLock(const uint8_t piece, const uint8_t square) {
+  return mix((static_cast<uint32_t>(square) << 8 | piece) * 0x9E3779B1U + 0x7F4A7C15U);
+}
+uint32_t stateLock(const uint8_t castling, const uint8_t ep) {
+  return mix(0xC3000000U + (static_cast<uint32_t>(ep) << 8) + castling);
+}
 
 // Castling rights that end when a piece leaves or lands on this square.
 uint8_t rightsKept(const uint8_t square) {
@@ -55,13 +64,6 @@ uint8_t rightsKept(const uint8_t square) {
     default:
       return 0xFF;
   }
-}
-
-void movePiece(Position& p, uint32_t& hash, const uint8_t from, const uint8_t to) {
-  const uint8_t piece = p.board[from];
-  hash ^= pieceKey(piece, from) ^ pieceKey(piece, to);
-  p.board[to] = piece;
-  p.board[from] = 0;
 }
 
 void add(Move*& out, const uint8_t from, const uint8_t to, const uint8_t flags, const uint8_t promotion = NoPiece) {
@@ -117,33 +119,76 @@ constexpr int8_t kKingEndTable[64] = {
     30,  20,  -10, -30, -30, -30, 0,   0,   0,   0,   -30, -30, -50, -30, -30, -30, -30, -30, -30, -50};
 
 constexpr int16_t kValue[7] = {0, 100, 320, 330, 500, 900, 0};
+// With no more than this much material besides pawns on the board, the king
+// should walk to the centre.
+constexpr int kEndgameMaterial = 2600;
 
-const int8_t* tableFor(const Piece piece, const bool endgame) {
-  switch (piece) {
-    case Pawn:
-      return kPawnTable;
-    case Knight:
-      return kKnightTable;
-    case Bishop:
-      return kBishopTable;
-    case Rook:
-      return kRookTable;
-    case Queen:
-      return kQueenTable;
-    default:
-      return endgame ? kKingEndTable : kKingTable;
+constexpr const int8_t* kTables[7] = {nullptr,      kPawnTable, kKnightTable, kBishopTable,
+                                      kRookTable,   kQueenTable, kKingTable};
+
+// Where a square is in a table, which is written from the piece's own side.
+constexpr int tableIndex(const bool white, const uint8_t square) {
+  return (white ? 7 - (square >> 4) : (square >> 4)) * 8 + (square & 7);
+}
+
+// What a piece on a square is worth to White: its value plus its place, negative
+// for a black piece. Kings count nothing here; evaluate() adds them, because
+// their table depends on how much material is left.
+int placedWorth(const uint8_t piece, const uint8_t square) {
+  const Piece kind = pieceOf(piece);
+  if (kind == King) return 0;
+  const bool white = colourOf(piece) == White;
+  const int worth = kValue[kind] + kTables[kind][tableIndex(white, square)];
+  return white ? worth : -worth;
+}
+
+// Takes the piece off a square, or sets one down, keeping the position's hash,
+// lock and scores in step with the board.
+void lift(Position& p, const uint8_t square) {
+  const uint8_t piece = p.board[square];
+  p.hash ^= pieceKey(piece, square);
+  p.lock ^= pieceLock(piece, square);
+  p.placed = static_cast<int16_t>(p.placed - placedWorth(piece, square));
+  if (pieceOf(piece) != Pawn) {
+    p.heavy[colourOf(piece)] = static_cast<int16_t>(p.heavy[colourOf(piece)] - kValue[pieceOf(piece)]);
   }
+  p.board[square] = 0;
+}
+
+void put(Position& p, const uint8_t square, const uint8_t piece) {
+  p.hash ^= pieceKey(piece, square);
+  p.lock ^= pieceLock(piece, square);
+  p.placed = static_cast<int16_t>(p.placed + placedWorth(piece, square));
+  if (pieceOf(piece) != Pawn) {
+    p.heavy[colourOf(piece)] = static_cast<int16_t>(p.heavy[colourOf(piece)] + kValue[pieceOf(piece)]);
+  }
+  p.board[square] = piece;
 }
 
 }  // namespace
 
-void Position::recomputeHash() {
-  uint32_t value = stateKey(castling, ep);
+void Position::recompute() {
+  uint32_t hashValue = stateKey(castling, ep);
+  uint32_t lockValue = stateLock(castling, ep);
+  int placedValue = 0;
+  int heavyValue[2] = {0, 0};
   for (int square = 0; square < 128; ++square) {
-    if (onBoard(square) && board[square]) value ^= pieceKey(board[square], static_cast<uint8_t>(square));
+    if (!onBoard(square) || !board[square]) continue;
+    const uint8_t piece = board[square];
+    hashValue ^= pieceKey(piece, static_cast<uint8_t>(square));
+    lockValue ^= pieceLock(piece, static_cast<uint8_t>(square));
+    placedValue += placedWorth(piece, static_cast<uint8_t>(square));
+    if (pieceOf(piece) != Pawn) heavyValue[colourOf(piece)] += kValue[pieceOf(piece)];
   }
-  if (side == Black) value ^= kSideKey;
-  hash = value;
+  if (side == Black) {
+    hashValue ^= kSideKey;
+    lockValue ^= kSideLock;
+  }
+  hash = hashValue;
+  lock = lockValue;
+  placed = static_cast<int16_t>(placedValue);
+  heavy[White] = static_cast<int16_t>(heavyValue[White]);
+  heavy[Black] = static_cast<int16_t>(heavyValue[Black]);
 }
 
 void Position::setStart() { setFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"); }
@@ -215,7 +260,7 @@ bool Position::setFen(const char* fen) {
   if (c[0] >= 'a' && c[0] <= 'h' && c[1] >= '1' && c[1] <= '8') {
     ep = static_cast<uint8_t>((c[1] - '1') * 16 + (c[0] - 'a'));
   }
-  recomputeHash();
+  recompute();
   return true;
 }
 
@@ -267,37 +312,38 @@ void makeMove(Position& p, const Move& m, Undo& u) {
   u.ep = p.ep;
   u.halfmove = p.halfmove;
   u.hash = p.hash;
+  u.lock = p.lock;
+  u.placed = p.placed;
+  u.heavy[White] = p.heavy[White];
+  u.heavy[Black] = p.heavy[Black];
 
-  uint32_t hash = p.hash ^ stateKey(p.castling, p.ep);
+  p.hash ^= stateKey(p.castling, p.ep);
+  p.lock ^= stateLock(p.castling, p.ep);
   if (m.flags & Move::EnPassant) {
     const auto pawnSquare = static_cast<uint8_t>(m.to + (us == White ? -16 : 16));
     u.captured = p.board[pawnSquare];
-    hash ^= pieceKey(u.captured, pawnSquare);
-    p.board[pawnSquare] = 0;
+    lift(p, pawnSquare);
   } else if (u.captured) {
-    hash ^= pieceKey(u.captured, m.to);
+    lift(p, m.to);
   }
-  movePiece(p, hash, m.from, m.to);
-  if (m.promotion) {
-    const uint8_t promoted = content(us, static_cast<Piece>(m.promotion));
-    hash ^= pieceKey(piece, m.to) ^ pieceKey(promoted, m.to);
-    p.board[m.to] = promoted;
-  }
+  lift(p, m.from);
+  put(p, m.to, m.promotion ? content(us, static_cast<Piece>(m.promotion)) : piece);
   if (pieceOf(piece) == King) {
     p.king[us] = m.to;
     if (m.flags & Move::Castle) {
-      if (m.to > m.from) {
-        movePiece(p, hash, static_cast<uint8_t>(m.from + 3), static_cast<uint8_t>(m.from + 1));
-      } else {
-        movePiece(p, hash, static_cast<uint8_t>(m.from - 4), static_cast<uint8_t>(m.from - 1));
-      }
+      const auto rookFrom = static_cast<uint8_t>(m.to > m.from ? m.from + 3 : m.from - 4);
+      const auto rookTo = static_cast<uint8_t>(m.to > m.from ? m.from + 1 : m.from - 1);
+      const uint8_t rook = p.board[rookFrom];
+      lift(p, rookFrom);
+      put(p, rookTo, rook);
     }
   }
   p.castling &= rightsKept(m.from) & rightsKept(m.to);
   p.ep = (m.flags & Move::DoublePush) ? static_cast<uint8_t>((m.from + m.to) / 2) : kNoSquare;
   p.halfmove = (pieceOf(piece) == Pawn || u.captured) ? 0 : static_cast<uint8_t>(p.halfmove + 1);
   p.side = other(us);
-  p.hash = hash ^ stateKey(p.castling, p.ep) ^ kSideKey;
+  p.hash ^= stateKey(p.castling, p.ep) ^ kSideKey;
+  p.lock ^= stateLock(p.castling, p.ep) ^ kSideLock;
 }
 
 void unmakeMove(Position& p, const Move& m, const Undo& u) {
@@ -328,6 +374,10 @@ void unmakeMove(Position& p, const Move& m, const Undo& u) {
   p.ep = u.ep;
   p.halfmove = u.halfmove;
   p.hash = u.hash;
+  p.lock = u.lock;
+  p.placed = u.placed;
+  p.heavy[White] = u.heavy[White];
+  p.heavy[Black] = u.heavy[Black];
 }
 
 int generatePseudo(const Position& p, Move* out, const bool capturesOnly) {
@@ -461,33 +511,10 @@ uint64_t perft(Position& p, const int depth) {
 }
 
 int evaluate(const Position& p) {
-  int material[2] = {0, 0};
-  for (int square = 0; square < 128; ++square) {
-    if (!onBoard(square)) {
-      square += 7;
-      continue;
-    }
-    const uint8_t piece = p.board[square];
-    if (piece && pieceOf(piece) != Pawn) material[colourOf(piece)] += kValue[pieceOf(piece)];
-  }
-  // With the heavy pieces gone the king should walk to the centre.
-  const bool endgame = material[White] + material[Black] <= 2600;
-
-  int score = 0;
-  for (int square = 0; square < 128; ++square) {
-    if (!onBoard(square)) {
-      square += 7;
-      continue;
-    }
-    const uint8_t piece = p.board[square];
-    if (!piece) continue;
-    const Piece kind = pieceOf(piece);
-    const int file = square & 7;
-    const int rank = square >> 4;
-    const bool white = colourOf(piece) == White;
-    const int value = kValue[kind] + tableFor(kind, endgame)[(white ? 7 - rank : rank) * 8 + file];
-    score += white ? value : -value;
-  }
+  // Everything but the kings is already added up in the position.
+  const int8_t* const kingTable = p.heavy[White] + p.heavy[Black] <= kEndgameMaterial ? kKingEndTable : kKingTable;
+  const int score =
+      p.placed + kingTable[tableIndex(true, p.king[White])] - kingTable[tableIndex(false, p.king[Black])];
   return p.side == White ? score : -score;
 }
 
@@ -498,9 +525,29 @@ constexpr int kMaxPly = 48;
 constexpr int kPoolSize = 3072;
 constexpr int kHistoryKept = 100;
 constexpr int kInfinity = 32000;
+// Scores this close to kMateScore are mates, counted from the root of a search.
+constexpr int kMateBand = 1000;
+
+// What the search remembers of a position it has examined.
+struct TableEntry {
+  enum Bound : uint8_t { Empty = 0, Exact = 1, AtLeast = 2, AtMost = 3 };
+
+  uint32_t lock;
+  int16_t score;
+  uint8_t from;  // the best move found; from == to when there was none
+  uint8_t to;
+  uint8_t promotion;
+  int8_t depth;
+  uint8_t bound;
+  uint8_t age;  // the search that wrote it: older entries give way first
+};
+static_assert(sizeof(TableEntry) == kTableEntryBytes, "the table entry must keep its documented size");
 
 struct Searcher {
   Position pos;
+  TableEntry* table = nullptr;
+  uint32_t tableMask = 0;
+  uint8_t age = 0;
   StopFn stop = nullptr;
   void* context = nullptr;
   uint32_t nodes = 0;
@@ -535,8 +582,10 @@ struct Searcher {
     return false;
   }
 
-  // Captures first, the most valuable victim by the least valuable attacker.
-  int16_t orderScore(const Move& m, const int ply) const {
+  // The move the table remembers for this position first, then the captures,
+  // the most valuable victim by the least valuable attacker.
+  int16_t orderScore(const Move& m, const int ply, const Move* remembered = nullptr) const {
+    if (remembered && m.sameAs(*remembered)) return 20000;
     if (m.flags & Move::Capture) {
       const int victim = (m.flags & Move::EnPassant) ? Pawn : pieceOf(pos.board[m.to]);
       return static_cast<int16_t>(10000 + victim * 16 - pieceOf(pos.board[m.from]));
@@ -547,16 +596,48 @@ struct Searcher {
     return static_cast<int16_t>(seenGood < 7000 ? seenGood : 7000);
   }
 
-  bool hasPieces(const Colour side) const {
-    for (int square = 0; square < 128; ++square) {
-      if (!onBoard(square)) {
-        square += 7;
-        continue;
+  bool hasPieces(const Colour side) const { return pos.heavy[side] > 0; }
+
+  // A mate score says how far the mate is from the root; in the table it is
+  // kept as the distance from the position itself, which is true on any path.
+  static int16_t scoreForTable(const int score, const int ply) {
+    if (score >= kMateScore - kMateBand) return static_cast<int16_t>(score + ply);
+    if (score <= -kMateScore + kMateBand) return static_cast<int16_t>(score - ply);
+    return static_cast<int16_t>(score);
+  }
+  static int scoreFromTable(const int score, const int ply) {
+    if (score >= kMateScore - kMateBand) return score - ply;
+    if (score <= -kMateScore + kMateBand) return score + ply;
+    return score;
+  }
+
+  void remember(const int depth, const int ply, const int score, const uint8_t bound, const Move* best) {
+    if (!table) return;
+    TableEntry& entry = table[pos.hash & tableMask];
+    const bool samePosition = entry.bound != TableEntry::Empty && entry.lock == pos.lock;
+    // A deeper look from this same search is worth more than this one.
+    if (entry.bound != TableEntry::Empty && entry.age == age && entry.depth > depth) {
+      // Still, a position that had no best move yet learns this one.
+      if (samePosition && best && entry.from == entry.to) {
+        entry.from = best->from;
+        entry.to = best->to;
+        entry.promotion = best->promotion;
       }
-      const uint8_t piece = pos.board[square];
-      if (piece && colourOf(piece) == side && pieceOf(piece) != Pawn && pieceOf(piece) != King) return true;
+      return;
     }
-    return false;
+    if (best) {
+      entry.from = best->from;
+      entry.to = best->to;
+      entry.promotion = best->promotion;
+    } else if (!samePosition) {
+      entry.from = entry.to = 0;
+      entry.promotion = NoPiece;
+    }
+    entry.lock = pos.lock;
+    entry.score = scoreForTable(score, ply);
+    entry.depth = static_cast<int8_t>(depth > 127 ? 127 : depth);
+    entry.bound = bound;
+    entry.age = age;
   }
 
   void pickNext(Move* moves, int16_t* scores, const int count, const int index) const {
@@ -625,13 +706,37 @@ struct Searcher {
     if (stopped) return 0;
     if (ply >= kMaxPly - 1 || poolTop + kMaxMoves > kPoolSize) return evaluate(pos);
 
+    // Has this position been examined before, at least this deep? Then its
+    // score is known, or at least the side of the window it falls on.
+    Move remembered;
+    bool hasRemembered = false;
+    if (table) {
+      const TableEntry& entry = table[pos.hash & tableMask];
+      if (entry.bound != TableEntry::Empty && entry.lock == pos.lock) {
+        if (entry.from != entry.to) {
+          remembered.from = entry.from;
+          remembered.to = entry.to;
+          remembered.promotion = entry.promotion;
+          hasRemembered = true;
+        }
+        if (entry.depth >= depth) {
+          const int known = scoreFromTable(entry.score, ply);
+          if (entry.bound == TableEntry::Exact) return known >= beta ? beta : (known <= alpha ? alpha : known);
+          if (entry.bound == TableEntry::AtLeast && known >= beta) return beta;
+          if (entry.bound == TableEntry::AtMost && known <= alpha) return alpha;
+        }
+      }
+    }
+
     // Null move: if the position is still too good after giving the opponent
     // a free move, the line needs no further look. Not with only pawns left,
     // where having to move can be the whole problem.
     if (mayPass && !checked && depth >= 3 && beta < kMateScore - 1000 && hasPieces(us)) {
       const uint8_t ep = pos.ep;
       const uint32_t hash = pos.hash;
+      const uint32_t lock = pos.lock;
       pos.hash ^= stateKey(pos.castling, pos.ep) ^ stateKey(pos.castling, kNoSquare) ^ kSideKey;
+      pos.lock ^= stateLock(pos.castling, pos.ep) ^ stateLock(pos.castling, kNoSquare) ^ kSideLock;
       pos.ep = kNoSquare;
       pos.side = other(us);
       seen[rootIndex + ply + 1] = pos.hash;
@@ -639,6 +744,7 @@ struct Searcher {
       pos.side = us;
       pos.ep = ep;
       pos.hash = hash;
+      pos.lock = lock;
       if (stopped) return 0;
       if (score >= beta) return beta;
     }
@@ -646,10 +752,12 @@ struct Searcher {
     Move* const moves = pool + poolTop;
     int16_t* const scores = poolScores + poolTop;
     const int count = generatePseudo(pos, moves, false);
-    for (int i = 0; i < count; ++i) scores[i] = orderScore(moves[i], ply);
+    for (int i = 0; i < count; ++i) scores[i] = orderScore(moves[i], ply, hasRemembered ? &remembered : nullptr);
     const int base = poolTop;
     poolTop += count;
     int legal = 0;
+    const int alphaAtStart = alpha;
+    int bestIndex = -1;
     for (int i = 0; i < count; ++i) {
       pickNext(moves, scores, count, i);
       Undo undo;
@@ -675,13 +783,19 @@ struct Searcher {
           uint16_t& seenGood = history[pos.board[moves[i].from] & 15][moves[i].to];
           if (seenGood < 60000) seenGood = static_cast<uint16_t>(seenGood + depth * depth);
         }
+        remember(depth, ply, beta, TableEntry::AtLeast, &moves[i]);
         poolTop = base;
         return beta;
       }
-      if (score > alpha) alpha = score;
+      if (score > alpha) {
+        alpha = score;
+        bestIndex = i;
+      }
     }
     poolTop = base;
     if (legal == 0) return checked ? -kMateScore + ply : 0;
+    remember(depth, ply, alpha, alpha > alphaAtStart ? TableEntry::Exact : TableEntry::AtMost,
+             bestIndex >= 0 ? &moves[bestIndex] : nullptr);
     return alpha;
   }
 };
@@ -705,6 +819,17 @@ SearchResult search(const Position& root, const SearchOptions& options, const ui
   s.stop = stop;
   s.context = context;
   s.maxNodes = options.maxNodes;
+  if (options.table && options.tableBytes >= 2 * kTableEntryBytes) {
+    uint32_t entries = 1;
+    while (static_cast<size_t>(entries) * 2 * kTableEntryBytes <= options.tableBytes && entries < (1U << 24)) {
+      entries *= 2;
+    }
+    s.table = static_cast<TableEntry*>(options.table);
+    s.tableMask = entries - 1;
+    // Every move of a game is a new search: what the earlier ones left behind
+    // is still true, but gives way to what this one finds.
+    s.age = static_cast<uint8_t>(1 + (historyCount & 0x7F));
+  }
   memset(s.killers, 0, sizeof(s.killers));
   memset(s.history, 0, sizeof(s.history));
   const int kept = history ? (historyCount < kHistoryKept ? historyCount : kHistoryKept) : 0;

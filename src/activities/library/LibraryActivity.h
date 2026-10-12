@@ -11,6 +11,7 @@
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
 #include "components/SwipeRowActions.h"
+#include "util/BookRatings.h"
 #include "util/ButtonNavigator.h"
 
 class LibraryActivity final : public Activity {
@@ -71,6 +72,10 @@ class LibraryActivity final : public Activity {
   std::string seriesScratch;
   std::string genreScratch;
   std::string subtitleScratch;
+  // VARAGH: every book's rating, read once when the list is (re)loaded, and the
+  // stars of the row being drawn.
+  BookRatings::Index ratings;
+  std::string ratingScratch;
 
   static void listScreen(UiApp::ScreenType& screen, void* user);
   static void onRowEvent(const freeink::ui::ActionEvent& event, void* user);

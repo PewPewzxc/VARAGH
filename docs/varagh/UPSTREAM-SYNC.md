@@ -86,6 +86,30 @@ in files of its own (`src/activities/apps`, `src/games`, `src/network/Online*`,
 - `src/activities/reader/EpubReaderActivity.cpp`, the dictionary activities and
   `src/main.cpp`: the online dictionary hooks.
 
+## What 1.2.1 touches in upstream files
+
+- `src/CrossPointState.*` (`lastSleepApp`), `src/activities/ActivityManager.*`
+  (`goToApps`, `sleepResumeApp`) and `src/main.cpp` (`enterDeepSleep` and the
+  wake routing): waking returns to the app that was open at sleep.
+- `src/network/HttpDownloader.*`: `DownloadOptions::timeoutMs` and
+  `httpStatus`, and cancel checks before a connection is opened and before its
+  headers are read.
+- `lib/hal/HalPowerManager.*`: `beginBackgroundJob` / `endBackgroundJob`.
+- `src/activities/reader/EpubReaderActivity.*` (Tap to Look Up, the release
+  action passed to word selection, the rating tap at the end of a book),
+  `DictionaryWordSelectActivity.*` and `src/util/WordSelectNavigator.*` (the
+  Ask bubble), `DictionaryDefinitionActivity.*` (`addToCategoryOnEnter`).
+- `src/activities/reader/EndOfBookOptions.*`, `XtcReaderActivity.cpp`,
+  `BookStatsView.*`, `BookStatsActivity.*`: the rating on the end screen and on
+  Reading Stats.
+- `src/activities/home/FileBrowserActionActivity.*`, `BookActions.*`,
+  `FileBrowserActivity.cpp`, `src/activities/library/LibraryActivity.*`,
+  `src/activities/util/BmpViewerActivity.cpp`: the Rating row of the book menu
+  and the stars in Library rows.
+- `src/util/BookMoveUtils.cpp`: a moved book keeps its rating.
+- `lib/EpdFont/builtinFonts/ui_symbols_10.h`, its generator script and
+  `test/ui_symbol_fallback`: three star glyphs. `fontIds.h` was left as it is.
+
 ## Release
 
 1. Raise `version` in `platformio.ini` (for example `1.0.1`) and add a

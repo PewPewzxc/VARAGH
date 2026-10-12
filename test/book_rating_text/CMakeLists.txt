@@ -1,0 +1,5 @@
+add_executable(BookRatingTextTest
+  BookRatingTextTest.cpp
+)
+target_link_libraries(BookRatingTextTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(BookRatingTextTest)

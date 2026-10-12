@@ -31,6 +31,7 @@ enum class FileBrowserAction : int {
   Rename = 18,
   ReadingStats = 19,
   ToggleBookStatsTracking = 20,
+  Rate = 21,  // VARAGH: the book's rating
 };
 
 class FileBrowserActionActivity final : public Activity {
@@ -39,6 +40,9 @@ class FileBrowserActionActivity final : public Activity {
     FileBrowserAction action;
     StrId labelId;
     std::optional<StrId> valueId;
+    // VARAGH: a value that is not a translated string (the stars of a rating);
+    // shown in place of valueId when it is not empty.
+    std::string valueText;
   };
 
   FileBrowserActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string title,

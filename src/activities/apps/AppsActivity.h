@@ -13,7 +13,17 @@
 // Clock's row also leads to its settings.
 class AppsActivity final : public Activity {
  public:
-  AppsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  // What sleep notes about the screen it began on, so that waking returns there
+  // the way it returns to a book: nothing, this list, or one app (numbers above
+  // kResumeList). They are kept in the state file and must not change.
+  static constexpr uint8_t kResumeNone = 0;
+  static constexpr uint8_t kResumeList = 1;
+  // The resume number of the screen with this activity name; kResumeNone if it
+  // is neither the list nor an app.
+  static uint8_t resumeIdFor(const std::string& activityName);
+
+  // resumeId: one app's resume number opens that app on top of the list.
+  AppsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, uint8_t resumeId = kResumeNone);
 
   void onEnter() override;
   void loop() override;
@@ -38,6 +48,7 @@ class AppsActivity final : public Activity {
   enum ClockRow { FaceRow = 0, PersianRow = 1, WeekStartRow = 2, WeekNumberRow = 3, kClockRowCount = 4 };
 
   Mode mode = Mode::Tiles;
+  uint8_t resumeId;
   clockface::Options clockOptions;
   gameui::Box clockSettingsBox;
   gameui::Box clockRows[kClockRowCount];

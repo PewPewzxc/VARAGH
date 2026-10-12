@@ -51,8 +51,83 @@ TEST(OnlineDictionaryText, BuildsUrls) {
   EXPECT_EQ(onlinedict::definitionUrl(Lang::German, "gehen"),
             "https://de.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&redirects=1"
             "&titles=gehen");
+  EXPECT_EQ(onlinedict::definitionUrl(Lang::German, "Gehen", "gehen"),
+            "https://de.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&redirects=1"
+            "&titles=Gehen%7Cgehen");
+  // The English address takes one word.
+  EXPECT_EQ(onlinedict::definitionUrl(Lang::English, "Ice", "ice"),
+            "https://en.wiktionary.org/api/rest_v1/page/definition/Ice");
   EXPECT_EQ(onlinedict::summaryUrl(Lang::English, "New York"),
             "https://en.wikipedia.org/api/rest_v1/page/summary/New_York");
+}
+
+// One request for both spellings of a German word. The site sends the text of
+// one page only, the capitalised one first (checked against de.wiktionary.org).
+TEST(OnlineDictionaryText, TwoSpellingsInOneAnswer) {
+  const auto run = [](const std::string& word, const std::string& other, const std::string& json, std::string& html,
+                      std::string& found, bool& askAgain) {
+    Extractor extractor(Source::WiktionaryExtract, Lang::German, word, other);
+    for (size_t at = 0; at < json.size(); at += 5) extractor.feed(json.data() + at, std::min<size_t>(5, json.size() - at));
+    const bool ok = extractor.finish(html);
+    found = extractor.foundWord();
+    askAgain = extractor.askAgain();
+    return ok;
+  };
+  const std::string capitalText = R"("
+== Schnell (Deutsch) ==
+=== Substantiv, Nachname ===
+Bedeutungen:
+[1] Familienname
+")";
+  const std::string lowerText = R"("
+== schnell (Deutsch) ==
+=== Adjektiv ===
+Bedeutungen:
+[1] mit hoher Geschwindigkeit
+")";
+  std::string html;
+  std::string found;
+  bool askAgain = false;
+
+  // Asked "Schnell" at the start of a sentence; only "schnell" exists.
+  ASSERT_TRUE(run("Schnell", "schnell",
+                  R"({"query":{"pages":{"-1":{"ns":0,"title":"Schnell","missing":""},)"
+                  R"("23143":{"pageid":23143,"ns":0,"title":"schnell","extract":)" + lowerText + "}}}}",
+                  html, found, askAgain));
+  EXPECT_EQ(found, "schnell");
+  EXPECT_NE(html.find("mit hoher Geschwindigkeit"), std::string::npos);
+
+  // Both exist and the word itself is the capitalised one: its text comes.
+  ASSERT_TRUE(run("Schnell", "schnell",
+                  R"({"continue":{"excontinue":1,"continue":"||"},"query":{"pages":{)"
+                  R"("1528898":{"pageid":1528898,"ns":0,"title":"Schnell","extract":)" + capitalText + "},"
+                  R"("23143":{"pageid":23143,"ns":0,"title":"schnell"}}}})",
+                  html, found, askAgain));
+  EXPECT_EQ(found, "Schnell");
+  EXPECT_NE(html.find("Familienname"), std::string::npos);
+
+  // Both exist, the word itself is the lower-case one, and only the other
+  // page's text came: that is not the word, it has to be asked for alone.
+  EXPECT_FALSE(run("schnell", "Schnell",
+                   R"({"continue":{"excontinue":1,"continue":"||"},"query":{"pages":{)"
+                   R"("1528898":{"pageid":1528898,"ns":0,"title":"Schnell","extract":)" + capitalText + "},"
+                   R"("23143":{"pageid":23143,"ns":0,"title":"schnell"}}}})",
+                   html, found, askAgain));
+  EXPECT_TRUE(askAgain);
+
+  // Neither exists.
+  EXPECT_FALSE(run("Qqx", "qqx",
+                   R"({"query":{"pages":{"-1":{"ns":0,"title":"Qqx","missing":""},)"
+                   R"("-2":{"ns":0,"title":"qqx","missing":""}}}})",
+                   html, found, askAgain));
+  EXPECT_FALSE(askAgain);
+
+  // A redirect answers under another title: still the entry for the word asked.
+  ASSERT_TRUE(run("Photo", "photo",
+                  R"({"query":{"redirects":[{"from":"Photo","to":"Foto"}],"pages":{)"
+                  R"("77":{"pageid":77,"ns":0,"title":"Foto","extract":)" + capitalText + "}}}}",
+                  html, found, askAgain));
+  EXPECT_EQ(found, "Photo");
 }
 
 TEST(OnlineDictionaryText, EnglishDefinitions) {

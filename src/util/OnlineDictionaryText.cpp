@@ -495,13 +495,17 @@ std::string percentEncode(const std::string& text) {
   return out;
 }
 
-std::string definitionUrl(const Lang lang, const std::string& word) {
+std::string definitionUrl(const Lang lang, const std::string& word, const std::string& otherSpelling) {
   if (lang == Lang::English) {
     return "https://en.wiktionary.org/api/rest_v1/page/definition/" + percentEncode(word);
   }
-  return std::string("https://") + code(lang) +
-         ".wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&redirects=1&titles=" +
-         percentEncode(word);
+  std::string url =
+      std::string("https://") + code(lang) +
+      ".wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&redirects=1&titles=" +
+      percentEncode(word);
+  // Titles are separated by "|".
+  if (!otherSpelling.empty()) url += "%7C" + percentEncode(otherSpelling);
+  return url;
 }
 
 std::string summaryUrl(const Lang lang, const std::string& word) {
@@ -512,12 +516,8 @@ std::string summaryUrl(const Lang lang, const std::string& word) {
   return std::string("https://") + code(lang) + ".wikipedia.org/api/rest_v1/page/summary/" + percentEncode(title);
 }
 
-std::string probeUrl(const Lang lang) {
-  return std::string("https://") + code(lang) + ".wiktionary.org/w/api.php?action=query&format=json&titles=A";
-}
-
-Extractor::Extractor(const Source source, const Lang lang, std::string word)
-    : source_(source), lang_(lang), word_(std::move(word)) {
+Extractor::Extractor(const Source source, const Lang lang, std::string word, std::string otherSpelling)
+    : source_(source), lang_(lang), word_(std::move(word)), other_(std::move(otherSpelling)) {
   tokenLimit_ = source == Source::WiktionaryExtract ? 24000 : 4000;
   token_.reserve(256);
 }
@@ -606,7 +606,8 @@ void Extractor::onKey() {
     closeSection();
     topKey_ = key_;
   } else if (source_ == Source::WiktionaryExtract && key_ == "missing") {
-    unusable_ = true;
+    // The site has no page of this title; it may have one of the other spelling.
+    if (pageTitle_ == word_) wordPageMissing_ = true;
   }
 }
 
@@ -641,7 +642,19 @@ void Extractor::onString() {
       return;
     }
     case Source::WiktionaryExtract:
-      if (key_ == "extract" && extract_.empty()) extract_ = token_;
+      if (key_ == "title") {
+        pageTitle_ = token_;
+        if (pageTitle_ == word_) wordPageSeen_ = true;
+      } else if (key_ == "extract" && !token_.empty()) {
+        // Swapped rather than copied: a page text can be tens of kilobytes.
+        if (pageTitle_ == word_ && !wordHasText_) {
+          extract_.swap(token_);
+          wordHasText_ = true;
+        } else if (!wordHasText_ && otherExtract_.empty()) {
+          otherExtract_.swap(token_);
+          otherTitle_ = pageTitle_;
+        }
+      }
       return;
     case Source::WikipediaSummary:
       if (depth_ != 1) return;
@@ -672,8 +685,17 @@ bool Extractor::finish(std::string& html) {
       if (body.find("<b>1.</b>") == std::string::npos) body.clear();
       break;
     case Source::WiktionaryExtract:
-      if (unusable_ || extract_.empty()) return false;
-      body = lang_ == Lang::Persian ? persianEntry(extract_, word_) : germanEntry(extract_);
+      if (!wordHasText_) {
+        if (otherExtract_.empty()) return false;
+        // The site has a page for the word itself but sent the other one's text.
+        if (wordPageSeen_ && !wordPageMissing_) {
+          askAgain_ = true;
+          return false;
+        }
+        extract_.swap(otherExtract_);
+        foundOther_ = !other_.empty() && otherTitle_ == other_;
+      }
+      body = lang_ == Lang::Persian ? persianEntry(extract_, foundWord()) : germanEntry(extract_);
       if (body.empty()) {
         // An entry laid out in a way these rules do not know: show its opening lines as they are.
         std::string plain;

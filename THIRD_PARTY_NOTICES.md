@@ -106,6 +106,7 @@ Wiktionary and keep that licence if published.
 
 ## Name and logo
 
-"VARAGH" and the "AP" logo (`src/images/BootLogo192.h`, `web/assets/logo.png`)
+"VARAGH" and the open-book logo (`src/images/varagh-logo.png`,
+`src/images/BootLogo192.h`, `web/assets/logo.png`)
 belong to PewPewzxc and are not covered by the MIT licence. If you publish your
 own fork, please use your own name and logo.

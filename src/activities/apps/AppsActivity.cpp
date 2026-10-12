@@ -135,10 +135,22 @@ void drawSwitch(const GfxRenderer& renderer, const int x, const int y, const boo
   }
 }
 
+// The names the app screens give themselves, in the order of AppId.
+constexpr const char* kActivityNames[] = {"Wordle", "Sudoku", "Chess", "Checkers", "Clock"};
+
 }  // namespace
 
-AppsActivity::AppsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : Activity("Apps", renderer, mappedInput) {}
+AppsActivity::AppsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const uint8_t resumeId)
+    : Activity("Apps", renderer, mappedInput), resumeId(resumeId) {}
+
+uint8_t AppsActivity::resumeIdFor(const std::string& activityName) {
+  static_assert(sizeof(kActivityNames) / sizeof(kActivityNames[0]) == kAppCount, "one name for every app");
+  if (activityName == "Apps") return kResumeList;
+  for (int app = 0; app < kAppCount; ++app) {
+    if (activityName == kActivityNames[app]) return static_cast<uint8_t>(kResumeList + 1 + app);
+  }
+  return kResumeNone;
+}
 
 void AppsActivity::onEnter() {
   Activity::onEnter();
@@ -146,6 +158,16 @@ void AppsActivity::onEnter() {
   if (gameui::readSave(kSavePath, bytes, sizeof(bytes)) && memcmp(bytes, kFileMagic, 3) == 0) hiddenMask = bytes[3];
   mode = Mode::Tiles;
   clockface::loadOptions(clockOptions);
+
+  // Woken from a sleep that began inside an app: straight back into it. The
+  // tiles are read and drawn when that app is left.
+  const int resumeApp = static_cast<int>(resumeId) - (kResumeList + 1);
+  resumeId = kResumeNone;
+  if (resumeApp >= 0 && resumeApp < kAppCount && !hidden(resumeApp)) {
+    open(static_cast<AppId>(resumeApp));
+    return;
+  }
+
   readStatus();
   requestUpdate();
 }

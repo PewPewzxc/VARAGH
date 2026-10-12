@@ -57,6 +57,10 @@ class DictionaryDefinitionActivity final : public Activity {
     controller.setLookupToastEnabled(!backgroundRender);
   }
 
+  // VARAGH: the word is filed in this Highlights category as soon as the popup
+  // opens (a flashcard chosen before the word was looked up: the card needs the
+  // meaning this popup has).
+  void addToCategoryOnEnter(const uint16_t categoryId) { addToCategoryOnEnter_ = categoryId; }
   void onEnter() override;
   void onExit() override;
   void loop() override;
@@ -213,8 +217,10 @@ class DictionaryDefinitionActivity final : public Activity {
   void extractWordsFromLayout();
   void openDictionarySwitch();
   void openAddTo();
+  void addToCategory(uint16_t categoryId);
   // Shown in place of the dictionary name after Add to ("Added to Flashcards").
   std::string footerNotice_;
+  uint16_t addToCategoryOnEnter_ = UINT16_MAX;
 #if CROSSINK_APP_CAP_TOUCH
   bool showTouchDictionarySwitch() const;
   bool dictionarySwitchButtonContains(int x, int y) const;

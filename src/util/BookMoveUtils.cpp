@@ -13,6 +13,7 @@
 #include "ClippingStore.h"
 #include "CrossPointState.h"
 #include "RecentBooksStore.h"
+#include "util/BookRatings.h"
 
 namespace {
 constexpr char READ_FOLDER[] = "/Read";
@@ -207,6 +208,7 @@ RenameMigrationResult migrateRenamedBookState(const std::string& oldPath, const 
   }
 
   commitMetadata();
+  BookRatings::bookMoved(oldPath, newPath);
 
   return RenameMigrationResult::Success;
 }
@@ -246,6 +248,7 @@ bool migrateMovedEpubState(const std::string& oldPath, const std::string& newPat
     APP_STATE.openEpubPath = newPath;
     APP_STATE.saveToFile();
   }
+  BookRatings::bookMoved(oldPath, newPath);
 
   return ok;
 }

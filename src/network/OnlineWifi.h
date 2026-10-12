@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 // "Online Lookup: Keep Wi-Fi On" (Settings > Reader, experimental).
 //
@@ -22,6 +23,7 @@ void readerClosed();
 // now and then, and lets go of Wi-Fi when the setting has been switched off.
 void tick();
 // For a lookup: waits until Wi-Fi is connected, joining first if need be.
-bool waitConnected(uint32_t timeoutMs);
+// givenUp is polled while waiting; true ends the wait at once (as not connected).
+bool waitConnected(uint32_t timeoutMs, const std::function<bool()>& givenUp = nullptr);
 
 }  // namespace OnlineWifi

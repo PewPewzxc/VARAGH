@@ -95,6 +95,8 @@ struct Sink {
   HttpDownloader::ProgressCallback progress;
   bool* cancelFlag = nullptr;
   HttpDownloader::CancelCallback shouldCancel;
+  uint32_t timeoutMs = 0;     // 0: the limits below
+  int* httpStatus = nullptr;  // where the answer's status goes, if anywhere
   size_t resumeOffset = 0;
   size_t downloaded = 0;
   size_t total = 0;
@@ -144,7 +146,7 @@ HttpDownloader::DownloadError runGetWolfSsl(const std::string& url, const std::s
         currentParsed && HttpRedirectPolicy::shouldSendAuthorization(currentOrigin, credentialOrigin, hasCredentials);
 
     freeink::SecureHttpClient http;
-    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setTimeout(sink.timeoutMs > 0 ? static_cast<int>(sink.timeoutMs) : HTTP_TIMEOUT_MS);
     // SecureNet does not yet expose ESP-IDF's CA bundle. This matches the
     // existing KOSync transport; cross-origin hops omit Basic credentials.
     http.setInsecure();
@@ -191,6 +193,7 @@ HttpDownloader::DownloadError runGetWolfSsl(const std::string& url, const std::s
         [&sink]() { return isCancelRequested(sink.cancelFlag, sink.shouldCancel); });
 
     if (http.aborted()) return HttpDownloader::ABORTED;
+    if (sink.httpStatus && status > 0) *sink.httpStatus = status;
     if (sink.rangeIgnored) {
       LOG_DBG("HTTP", "Server ignored range request; restarting download");
       sink.resumeOffset = 0;
@@ -257,7 +260,16 @@ HttpDownloader::DownloadError runGetDefault(const std::string& url, const std::s
                                             Sink& sink, const size_t bufferSize) {
   std::string currentUrl = url;
 
+  // With a caller's own time limit the body is polled more often, so that a
+  // cancelled request ends soon, and a silent server is given up on sooner.
+  const int connectTimeoutMs = sink.timeoutMs > 0 ? static_cast<int>(sink.timeoutMs) : HTTP_TIMEOUT_MS;
+  const int readPollMs = sink.timeoutMs > 0 && sink.timeoutMs < static_cast<uint32_t>(HTTP_READ_POLL_TIMEOUT_MS)
+                             ? static_cast<int>(sink.timeoutMs)
+                             : (sink.timeoutMs > 0 ? 1000 : HTTP_READ_POLL_TIMEOUT_MS);
+  const uint32_t idleTimeoutMs = sink.timeoutMs > 0 ? sink.timeoutMs : DOWNLOAD_IDLE_TIMEOUT_MS;
+
   for (uint8_t hop = 0; hop < MAX_REDIRECTS; ++hop) {
+    if (isCancelRequested(sink.cancelFlag, sink.shouldCancel)) return HttpDownloader::ABORTED;
     HttpRedirectPolicy::Url currentOrigin;
     const bool currentParsed = HttpRedirectPolicy::parseUrl(currentUrl, currentOrigin);
     const bool sendAuthorization =
@@ -268,7 +280,7 @@ HttpDownloader::DownloadError runGetDefault(const std::string& url, const std::s
     config.url = currentUrl.c_str();
     config.buffer_size = HTTP_RX_BUF;
     config.buffer_size_tx = HTTP_TX_BUF;
-    config.timeout_ms = HTTP_TIMEOUT_MS;
+    config.timeout_ms = connectTimeoutMs;
     config.crt_bundle_attach = esp_crt_bundle_attach;
     config.keep_alive_enable = false;
     config.event_handler = captureLocationHeader;
@@ -292,8 +304,14 @@ HttpDownloader::DownloadError runGetDefault(const std::string& url, const std::s
       return HttpDownloader::HTTP_ERROR;
     }
 
+    if (isCancelRequested(sink.cancelFlag, sink.shouldCancel)) {
+      esp_http_client_cleanup(client);
+      return HttpDownloader::ABORTED;
+    }
+
     int64_t responseLength = esp_http_client_fetch_headers(client);
     const int status = esp_http_client_get_status_code(client);
+    if (sink.httpStatus && responseLength >= 0) *sink.httpStatus = status;
     if (responseLength < 0) {
       LOG_ERR("HTTP", "Fetch headers failed: %lld", static_cast<long long>(responseLength));
       logNetworkState("Fetch headers failure");
@@ -349,7 +367,7 @@ HttpDownloader::DownloadError runGetDefault(const std::string& url, const std::s
     } else {
     }
 #ifdef ESP_ERR_HTTP_EAGAIN
-    err = esp_http_client_set_timeout_ms(client, HTTP_READ_POLL_TIMEOUT_MS);
+    err = esp_http_client_set_timeout_ms(client, readPollMs);
     if (err != ESP_OK) {
       LOG_ERR("HTTP", "Failed to set read timeout: %s", esp_err_to_name(err));
       esp_http_client_cleanup(client);
@@ -381,7 +399,7 @@ HttpDownloader::DownloadError runGetDefault(const std::string& url, const std::s
 #ifdef ESP_ERR_HTTP_EAGAIN
         if (bytesRead == -ESP_ERR_HTTP_EAGAIN) {
           const uint32_t idleMs = millis() - lastReadMs;
-          if (idleMs >= DOWNLOAD_IDLE_TIMEOUT_MS) {
+          if (idleMs >= idleTimeoutMs) {
             logDownloadState("Read timed out", sink.downloaded, sink.total, idleMs);
             esp_http_client_cleanup(client);
             return HttpDownloader::HTTP_ERROR;
@@ -489,6 +507,9 @@ HttpDownloader::DownloadError HttpDownloader::streamUrl(const std::string& url, 
   sink.write = onData;
   sink.progress = std::move(progress);
   sink.shouldCancel = std::move(options.shouldCancel);
+  sink.timeoutMs = options.timeoutMs;
+  sink.httpStatus = options.httpStatus;
+  if (sink.httpStatus) *sink.httpStatus = 0;
   const size_t bufferSize = options.bufferSize > 0 ? options.bufferSize : DEFAULT_DOWNLOAD_BUFFER_SIZE;
   return runGet(url, username, password, options.authorizationOrigin, sink, bufferSize, options.transport);
 }
@@ -518,6 +539,9 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   sink.progress = std::move(progress);
   sink.cancelFlag = cancelFlag;
   sink.shouldCancel = std::move(options.shouldCancel);
+  sink.timeoutMs = options.timeoutMs;
+  sink.httpStatus = options.httpStatus;
+  if (sink.httpStatus) *sink.httpStatus = 0;
   sink.resumeOffset = resumeOffset;
 
   FsFile file;

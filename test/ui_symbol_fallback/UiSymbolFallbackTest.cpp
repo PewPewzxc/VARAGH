@@ -16,11 +16,17 @@ const EpdFontFamily small(&smallRegular, &smallBold, nullptr, nullptr, &symbols)
 const EpdFontFamily large(&largeRegular, &largeBold, nullptr, nullptr, &symbols);
 }  // namespace
 
-TEST(UiSymbolFallback, ContainsExactlyOneGlyph) {
-  EXPECT_EQ(sizeof(ui_symbols_10Glyphs) / sizeof(ui_symbols_10Glyphs[0]), 1u);
-  EXPECT_EQ(sizeof(ui_symbols_10Intervals) / sizeof(ui_symbols_10Intervals[0]), 1u);
+// The power glyph, and the three stars of a book rating (full, empty, left half filled).
+TEST(UiSymbolFallback, ContainsOnlyThePowerGlyphAndTheRatingStars) {
+  EXPECT_EQ(sizeof(ui_symbols_10Glyphs) / sizeof(ui_symbols_10Glyphs[0]), 4u);
+  EXPECT_EQ(sizeof(ui_symbols_10Intervals) / sizeof(ui_symbols_10Intervals[0]), 3u);
   EXPECT_EQ(ui_symbols_10Intervals[0].first, POWER);
   EXPECT_TRUE(symbols.hasCodepoint(POWER));
+  for (const uint32_t star : {0x2605u, 0x2606u, 0x2BEAu}) {
+    EXPECT_TRUE(symbols.hasCodepoint(star));
+    EXPECT_TRUE(small.hasCodepoint(star));
+    EXPECT_TRUE(large.hasCodepoint(star, EpdFontFamily::BOLD));
+  }
   EXPECT_FALSE(symbols.hasCodepoint('A'));
 }
 

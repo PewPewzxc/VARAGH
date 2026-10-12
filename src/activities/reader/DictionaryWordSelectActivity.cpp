@@ -154,8 +154,11 @@ constexpr uint8_t styleToBitMask(EpdFontFamily::Style style) {
 
 }  // namespace
 
+std::atomic<bool> DictionaryWordSelectActivity::missedWord_{false};
+
 void DictionaryWordSelectActivity::onEnter() {
   Activity::onEnter();
+  missedWord_.store(false, std::memory_order_release);
   Dictionary::clearLookupDictPathOverride();
   mappedInput.setReaderTouchscreenOverride(true);
   ignoreInitialBackRelease_ = mappedInput.isPressed(MappedInputManager::Button::Back);
@@ -207,6 +210,8 @@ bool DictionaryWordSelectActivity::buildWorkingSet(const bool consumeInitialConf
   if (autoLookupInitialWord_) {
     const auto* selected = initialTouchHit ? navigator.getSelected() : nullptr;
     if (!selected) {
+      // Nothing has been drawn: the page on the panel is still the reader's.
+      missedWord_.store(framebufferContainsPage_, std::memory_order_release);
       ActivityResult result;
       result.isCancelled = true;
       setResult(std::move(result));
@@ -780,7 +785,7 @@ bool DictionaryWordSelectActivity::captureCurrentClippingRequest(DictionaryClipp
   return true;
 }
 
-bool DictionaryWordSelectActivity::captureClippingRequest() {
+bool DictionaryWordSelectActivity::captureClippingRequest(const bool keepSelection) {
   DictionaryClippingRequest currentRequest;
   if (!captureCurrentClippingRequest(currentRequest)) return false;
 
@@ -791,8 +796,196 @@ bool DictionaryWordSelectActivity::captureClippingRequest() {
     pendingClippingRequest_.lastWordByteEndOffset = currentRequest.lastWordByteEndOffset;
   }
   hasPendingClippingRequest_ = true;
-  navigator.clearCompletedSelection();
+  if (!keepSelection) navigator.clearCompletedSelection();
   return true;
+}
+
+// --- VARAGH: what a finished touch selection leads to --------------------------------------------
+namespace {
+
+constexpr int kAskHeight = 60;
+constexpr int kAskRadius = 12;
+constexpr int kAskHalo = 3;       // white edge that sets the bubble off from the text
+constexpr int kAskPointer = 10;   // the small arrow towards the words
+constexpr int kAskGap = 14;       // clears the knob of a selection handle
+constexpr int kAskEdge = 8;       // least distance to the side of the screen
+constexpr int kAskTouchSlop = 8;
+
+const char* askLabel(const int choice) {
+  return choice == 0 ? tr(STR_LOOKUP_SHORT) : (choice == 1 ? tr(STR_SAVE_CLIPPING) : tr(STR_ADD_TO));
+}
+
+}  // namespace
+
+void DictionaryWordSelectActivity::finishTouchSelection(std::string phrase, const size_t wordCount) {
+  flashcardCategoryForLookup_ = UINT16_MAX;
+  switch (releaseAction_) {
+    case CrossPointSettings::HOLD_ASK:
+      if (!phrase.empty() && captureClippingRequest(/*keepSelection=*/true)) {
+        askPhrase_ = std::move(phrase);
+        askWordCount_ = wordCount;
+        bool placed = false;
+        {
+          RenderLock lock(*this);
+          placed = layoutAskBubble();
+        }
+        if (placed) {
+          askOpen_ = true;
+          forceFullRepaintOnNextRender();
+          requestUpdate();
+          return;
+        }
+        phrase = askPhrase_;
+      }
+      break;
+    case CrossPointSettings::HOLD_HIGHLIGHT:
+      if (captureClippingRequest()) {
+        finishWithClippingRequest();
+        return;
+      }
+      break;
+    case CrossPointSettings::HOLD_ADD_TO:
+      if (!phrase.empty()) {
+        captureClippingRequest(/*keepSelection=*/true);
+        openAddTo(phrase, wordCount, AddToFrom::Release);
+        return;
+      }
+      break;
+    default:
+      break;
+  }
+  controller.lookupOrPopup(phrase, wordCount);
+  if (controller.isLookingUp()) captureClippingRequest();
+}
+
+bool DictionaryWordSelectActivity::layoutAskBubble() {
+  int from = -1;
+  int to = -1;
+  if (!navigator.getLookupSelectionRange(from, to)) return false;
+  if (from > to) std::swap(from, to);
+  const int lineHeight = renderer.getLineHeight(SETTINGS.getReaderFontId());
+  int top = std::numeric_limits<int>::max();
+  int bottom = std::numeric_limits<int>::min();
+  for (int i = from; i <= to; ++i) {
+    const auto* word = navigator.getWordAt(i);
+    if (!word) continue;
+    top = std::min<int>(top, word->screenY);
+    bottom = std::max<int>(bottom, word->screenY + lineHeight);
+  }
+  if (bottom <= top) return false;
+  // The bubble points at the middle of the selection's first line.
+  int left = std::numeric_limits<int>::max();
+  int right = std::numeric_limits<int>::min();
+  for (int i = from; i <= to; ++i) {
+    const auto* word = navigator.getWordAt(i);
+    if (!word || word->screenY != top) continue;
+    left = std::min<int>(left, word->screenX);
+    right = std::max<int>(right, word->screenX + word->width);
+  }
+
+  int bezelTop = 0;
+  int bezelRight = 0;
+  int bezelBottom = 0;
+  int bezelLeft = 0;
+  renderer.getOrientedViewableTRBL(&bezelTop, &bezelRight, &bezelBottom, &bezelLeft);
+  const int screenLeft = bezelLeft + kAskEdge;
+  const int screenRight = renderer.getScreenWidth() - bezelRight - kAskEdge;
+
+  // The labels of some languages are long: closer together first, then smaller.
+  struct Fit {
+    int fontId;
+    int padding;
+  };
+  const Fit fits[] = {{UI_10_FONT_ID, 18}, {UI_10_FONT_ID, 10}, {SMALL_FONT_ID, 10}, {SMALL_FONT_ID, 5}};
+  AskBubble bubble;
+  for (const Fit& fit : fits) {
+    bubble.fontId = fit.fontId;
+    bubble.width = 0;
+    for (int choice = 0; choice < kAskChoices; ++choice) {
+      bubble.segment[choice] =
+          renderer.getTextWidth(fit.fontId, askLabel(choice), EpdFontFamily::BOLD) + 2 * fit.padding;
+      bubble.width += bubble.segment[choice];
+    }
+    if (bubble.width <= screenRight - screenLeft) break;
+  }
+  bubble.height = kAskHeight;
+  const int centre = (left + right) / 2;
+  bubble.x = std::clamp(centre - bubble.width / 2, screenLeft, std::max(screenLeft, screenRight - bubble.width));
+  bubble.pointerX = std::clamp(centre, bubble.x + kAskRadius + kAskPointer,
+                               std::max(bubble.x + kAskRadius + kAskPointer,
+                                        bubble.x + bubble.width - kAskRadius - kAskPointer));
+  bubble.y = top - kAskGap - kAskPointer - bubble.height;
+  bubble.below = bubble.y < bezelTop + kAskEdge;
+  if (bubble.below) bubble.y = bottom + kAskGap + kAskPointer;
+  askBubble_ = bubble;
+  return true;
+}
+
+void DictionaryWordSelectActivity::drawAskBubble() const {
+  const AskBubble& b = askBubble_;
+  // The arrow, with its white edge, then the bubble over its base.
+  const int tipY = b.below ? b.y - kAskPointer : b.y + b.height - 1 + kAskPointer;
+  const int baseY = b.below ? b.y + 1 : b.y + b.height - 2;
+  const int halo = kAskHalo + 1;
+  const int haloX[3] = {b.pointerX - kAskPointer - halo, b.pointerX + kAskPointer + halo, b.pointerX};
+  const int haloY[3] = {baseY, baseY, b.below ? tipY - halo : tipY + halo};
+  renderer.fillPolygon(haloX, haloY, 3, false);
+  renderer.fillRoundedRect(b.x - kAskHalo, b.y - kAskHalo, b.width + 2 * kAskHalo, b.height + 2 * kAskHalo,
+                           kAskRadius + kAskHalo, Color::White);
+  const int tipX[3] = {b.pointerX - kAskPointer, b.pointerX + kAskPointer, b.pointerX};
+  const int tipYs[3] = {baseY, baseY, tipY};
+  renderer.fillPolygon(tipX, tipYs, 3, true);
+  renderer.fillRoundedRect(b.x, b.y, b.width, b.height, kAskRadius, Color::Black);
+
+  const int textY = b.y + (b.height - renderer.getLineHeight(b.fontId)) / 2;
+  int x = b.x;
+  for (int choice = 0; choice < kAskChoices; ++choice) {
+    const char* label = askLabel(choice);
+    const int labelWidth = renderer.getTextWidth(b.fontId, label, EpdFontFamily::BOLD);
+    renderer.drawText(b.fontId, x + (b.segment[choice] - labelWidth) / 2, textY, label, false, EpdFontFamily::BOLD);
+    if (choice > 0) renderer.fillRect(x, b.y + 14, 1, b.height - 28, false);
+    x += b.segment[choice];
+  }
+}
+
+int DictionaryWordSelectActivity::askChoiceAt(const int x, const int y) const {
+  const AskBubble& b = askBubble_;
+  if (y < b.y - kAskTouchSlop || y >= b.y + b.height + kAskTouchSlop || x < b.x - kAskTouchSlop ||
+      x >= b.x + b.width + kAskTouchSlop) {
+    return -1;
+  }
+  int right = b.x;
+  for (int choice = 0; choice < kAskChoices; ++choice) {
+    right += b.segment[choice];
+    if (x < right) return choice;
+  }
+  return kAskChoices - 1;
+}
+
+void DictionaryWordSelectActivity::handleAskInput() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    DictUtils::cancelAndFinish(*this);
+    return;
+  }
+  int x = 0;
+  int y = 0;
+  if (!mappedInput.wasScreenTapped(x, y)) return;
+  const int choice = askChoiceAt(x, y);
+  if (choice < 0) {
+    // A tap anywhere else puts the selection away, as on a phone.
+    DictUtils::cancelAndFinish(*this);
+    return;
+  }
+  askOpen_ = false;
+  forceFullRepaintOnNextRender();
+  if (choice == 0) {
+    controller.lookupOrPopup(askPhrase_, askWordCount_);
+    if (controller.isLookingUp()) navigator.clearCompletedSelection();
+  } else if (choice == 1) {
+    finishWithClippingRequest();
+  } else {
+    openAddTo(askPhrase_, askWordCount_, AddToFrom::AskBubble);
+  }
 }
 
 bool DictionaryWordSelectActivity::selectFirstWordForTouchDrag() {
@@ -977,27 +1170,53 @@ bool DictionaryWordSelectActivity::mergeHyphenatedWords() {
   return true;
 }
 
-void DictionaryWordSelectActivity::openAddTo() {
-  // The word or phrase was not in the dictionary, so it is saved as text
-  // (typically a sentence for Favorite Lines). Back to the book afterwards.
-  const std::string text = controller.getLookupWord();
+void DictionaryWordSelectActivity::openAddTo(const std::string& text, const size_t wordCount, const AddToFrom from) {
   auto picker = makeUniqueNoThrow<HighlightsHubActivity>(renderer, mappedInput, /*pickerMode=*/true);
   if (!picker) {
     LOG_ERR("DICT", "OOM: HighlightsHubActivity picker");
+    if (from == AddToFrom::AskBubble) askOpen_ = true;
     requestUpdate();
     return;
   }
-  startActivityForResult(std::move(picker), [this, text](const ActivityResult& result) {
+  startActivityForResult(std::move(picker), [this, text, wordCount, from](const ActivityResult& result) {
     forceFullRepaintOnNextRender();
     const auto* chosen = std::get_if<IntervalResult>(&result.data);
     if (result.isCancelled || !chosen || text.empty()) {
+      // Given up: back to where Add to was asked for.
+      if (from == AddToFrom::Release) {
+        DictUtils::cancelAndFinish(*this);
+        return;
+      }
+      if (from == AddToFrom::AskBubble) askOpen_ = true;
       requestUpdate();
+      return;
+    }
+    const auto categoryId = static_cast<uint16_t>(chosen->value);
+    HighlightStore::CategoryInfo category;
+    const bool known = HighlightStore::findCategory(categoryId, category);
+    // A flashcard is a word with its meaning. Straight from the page nothing has
+    // been looked up yet, so the word is looked up now and the popup that opens
+    // files the card. (From the not-found popup there is no meaning to be had.)
+    if (known && from != AddToFrom::NotFoundPopup && category.type == HighlightFormat::CategoryType::Flashcards) {
+      flashcardCategoryForLookup_ = categoryId;
+      controller.lookupOrPopup(text, wordCount);
+      if (controller.isLookingUp()) {
+        navigator.clearCompletedSelection();
+      } else {
+        flashcardCategoryForLookup_ = UINT16_MAX;
+      }
       return;
     }
     HighlightFormat::Entry entry;
     entry.text = text;
-    if (!HighlightStore::addEntry(static_cast<uint16_t>(chosen->value), entry)) {
-      LOG_ERR("DICT", "Could not add to category %u", static_cast<unsigned>(chosen->value));
+    if (HighlightStore::addEntry(categoryId, entry)) {
+      if (known) {
+        const std::string notice = std::string(tr(STR_ADDED_TO)) + " " + category.name;
+        GUI.drawPopup(renderer, notice.c_str());
+        delay(900);
+      }
+    } else {
+      LOG_ERR("DICT", "Could not add to category %u", static_cast<unsigned>(categoryId));
     }
     setResult(ActivityResult{});
     finish();
@@ -1075,6 +1294,10 @@ void DictionaryWordSelectActivity::loop() {
           requestUpdate();
           break;
         }
+        if (flashcardCategoryForLookup_ != UINT16_MAX) {
+          definition->addToCategoryOnEnter(flashcardCategoryForLookup_);
+          flashcardCategoryForLookup_ = UINT16_MAX;
+        }
         suspendWorkingSet();
         startActivityForResult(std::move(definition), [this](const ActivityResult& result) {
           if (const auto* request = std::get_if<DictionaryClippingRequest>(&result.data)) {
@@ -1091,6 +1314,7 @@ void DictionaryWordSelectActivity::loop() {
         break;
       }
       case DictionaryLookupController::LookupEvent::NotFoundDismissedBack:
+        flashcardCategoryForLookup_ = UINT16_MAX;
         setResult(ActivityResult{});
         finish();
         break;
@@ -1098,7 +1322,10 @@ void DictionaryWordSelectActivity::loop() {
         finishWithClippingRequest();
         break;
       case DictionaryLookupController::LookupEvent::AddTo:
-        openAddTo();
+        // Not in the dictionary, so it is saved as text (typically a sentence
+        // for Favorite Lines). Back to the book afterwards.
+        flashcardCategoryForLookup_ = UINT16_MAX;
+        openAddTo(controller.getLookupWord(), 0, AddToFrom::NotFoundPopup);
         break;
       case DictionaryLookupController::LookupEvent::NotFoundDismissedDone:
         setResult(ActivityResult{});
@@ -1108,6 +1335,7 @@ void DictionaryWordSelectActivity::loop() {
         openDictionarySwitch();
         break;
       case DictionaryLookupController::LookupEvent::Cancelled:
+        flashcardCategoryForLookup_ = UINT16_MAX;
         resetCrossPageSelection();
         forceFullRepaintOnNextRender();
         requestUpdate();
@@ -1124,6 +1352,13 @@ void DictionaryWordSelectActivity::loop() {
     }
     return;
   }
+
+#if CROSSINK_APP_CAP_TOUCH
+  if (askOpen_) {
+    handleAskInput();
+    return;
+  }
+#endif
 
   if (navigator.handleNavigation(mappedInput, renderer)) {
     requestUpdate();
@@ -1149,8 +1384,7 @@ void DictionaryWordSelectActivity::loop() {
 
     touchDragLookup_ = false;
     const size_t wordCount = crossPageLookupWordCount_ + navigator.getLookupSelectionWordCount();
-    controller.lookupOrPopup(finishTouchLookupPhrase(), wordCount);
-    if (controller.isLookingUp()) captureClippingRequest();
+    finishTouchSelection(finishTouchLookupPhrase(), wordCount);
     return;
   }
 
@@ -1207,7 +1441,7 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
   //   - we set it up on the previous frame (RenderMode::Differential),
   //   - the controller has nothing pending to draw,
   //   - we have a current selection.
-  if (nextRenderMode_ == RenderMode::Differential && !controller.isActive() && currIdx >= 0) {
+  if (nextRenderMode_ == RenderMode::Differential && !controller.isActive() && currIdx >= 0 && !askOpen_) {
     prewarmHighlightGlyphs(currIdx);
     auto dirty =
         navigator.renderHighlightDifferential(renderer, lineHeight, prevHighlightIdx_, currIdx, foregroundBlack);
@@ -1237,7 +1471,7 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
   // full-repaint goes through the normal clearScreen + page->render path.
   if (framebufferContainsPage_) {
     framebufferContainsPage_ = false;
-    if (!controller.isActive() && currIdx >= 0) {
+    if (!controller.isActive() && currIdx >= 0 && !askOpen_) {
       // Clear the bottom strip the caller reserved (status bar OR auto-turn
       // label). Match the menu→lookup path, which wipes via clearScreen() +
       // page->render(); we skipped both, so clear that one region instead.
@@ -1313,19 +1547,25 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
   // only path that disturbs the framebuffer outside the differential cycle, so
   // it's also the only call site that must pass -1.
   bool snapshotPrimed = false;
-  if (currIdx >= 0) {
+  // Under the bubble of choices the whole finished selection stays marked; the
+  // single-word paths below know only the word the finger was on last.
+  const bool selectionDrawn = askOpen_ && navigator.renderCompletedSelection(renderer, lineHeight, foregroundBlack);
+  if (!selectionDrawn && currIdx >= 0) {
     auto setup =
         navigator.renderHighlightDifferential(renderer, lineHeight, /*prevWordIdx=*/-1, currIdx, foregroundBlack);
     snapshotPrimed = setup.has_value();
   }
-  if (!snapshotPrimed) {
+  if (!selectionDrawn && !snapshotPrimed) {
     navigator.renderHighlight(renderer, lineHeight, foregroundBlack);
   }
 
   clearFrontButtonHintArea();
   DictUtils::drawWordSelectButtonHints(renderer, mappedInput, navigator);
+  // The bubble's pixels are not part of the page the fast path restores.
+  const bool bubbleShown = askOpen_;
+  if (bubbleShown) drawAskBubble();
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 
-  prevHighlightIdx_ = currIdx;
-  nextRenderMode_ = snapshotPrimed ? RenderMode::Differential : RenderMode::FullPage;
+  prevHighlightIdx_ = bubbleShown ? -1 : currIdx;
+  nextRenderMode_ = snapshotPrimed && !bubbleShown ? RenderMode::Differential : RenderMode::FullPage;
 }

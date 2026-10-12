@@ -45,6 +45,9 @@ struct Undo {
   uint8_t ep = kNoSquare;
   uint8_t halfmove = 0;
   uint32_t hash = 0;
+  uint32_t lock = 0;
+  int16_t placed = 0;
+  int16_t heavy[2] = {0, 0};
 };
 
 struct Position {
@@ -56,12 +59,25 @@ struct Position {
   uint8_t ep = kNoSquare;  // square a pawn may capture onto en passant
   uint8_t halfmove = 0;    // plies since a capture or a pawn move
   uint8_t king[2] = {0x04, 0x74};
+  // Kept up to date by makeMove() and unmakeMove(), so that neither a search
+  // nor an evaluation has to walk the board for them:
+  // - hash names the position (the repetition rule compares it);
+  // - lock is a second, independent name: the search's table of positions it
+  //   has already examined finds its slot with hash and tells positions apart
+  //   with lock;
+  // - placed is the worth of every piece but the kings on its square, White's
+  //   minus Black's, in centipawns;
+  // - heavy is each side's material without pawns.
   uint32_t hash = 0;
+  uint32_t lock = 0;
+  int16_t placed = 0;
+  int16_t heavy[2] = {0, 0};
 
   void setStart();
   // Reads the first four fields of a FEN string (the move counters are optional).
   bool setFen(const char* fen);
-  void recomputeHash();
+  // Works hash, lock, placed and heavy out again from the board.
+  void recompute();
 };
 
 constexpr int kMaxMoves = 256;  // no position has more than 218 legal moves
@@ -82,6 +98,15 @@ int evaluate(const Position& position);
 
 constexpr int kMateScore = 30000;
 
+// Memory for the positions a search has already examined (a transposition
+// table). With it the search does not look at a position twice and tries the
+// move that was best last time first, which lets it see further in the same
+// time. The caller owns the memory and may hand the same block to every search
+// of a game: what an earlier move's search learned is still true. It must start
+// out zeroed. Entries are kTableEntryBytes each; the largest power of two of
+// them that fits is used.
+constexpr size_t kTableEntryBytes = 12;
+
 struct SearchOptions {
   int maxDepth = 4;
   uint32_t maxNodes = 0;  // 0 = no limit
@@ -89,6 +114,9 @@ struct SearchOptions {
   // candidates and one is picked at random: variety, and a weaker Easy level.
   int margin = 0;
   uint32_t seed = 1;
+  // Optional, see kTableEntryBytes. The search works without it.
+  void* table = nullptr;
+  size_t tableBytes = 0;
 };
 
 struct SearchResult {

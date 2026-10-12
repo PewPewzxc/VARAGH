@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Memory.h>
+
 #include <memory>
 
 #include "GameThinker.h"
@@ -20,8 +22,7 @@ class ChessActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  // The computer's move is worked out at full processor speed.
-  bool skipLoopDelay() override { return thinking; }
+  // While the computer thinks the reader stays awake and at full processor speed.
   bool preventAutoSleep() override { return thinking; }
 
   static constexpr char kSavePath[] = "/.crosspoint/games/chess.bin";
@@ -73,6 +74,10 @@ class ChessActivity final : public Activity {
 
   std::unique_ptr<chess::Game> game;
   std::unique_ptr<Job> job;
+  // The computer's memory of positions it has already examined (see
+  // chess::SearchOptions). Kept for as long as the app is open, so every move
+  // builds on the thinking before it. Null where there is no spare memory.
+  HeapByteBuffer searchTable;
   GameThinker thinker;
   Settings settings;
   Settings draft;  // being chosen in the New game panel

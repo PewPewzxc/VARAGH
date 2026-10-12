@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <vector>
 
 #include "src/games/ChessGame.h"
 
@@ -64,12 +65,54 @@ TEST(ChessRules, MakingAndTakingBackAMoveRestoresThePosition) {
     chess::Undo undo;
     chess::makeMove(position, moves[i], undo);
     chess::Position check = position;
-    check.recomputeHash();
+    check.recompute();
     EXPECT_EQ(check.hash, position.hash) << "hash drifted on move " << i;
+    EXPECT_EQ(check.lock, position.lock) << "lock drifted on move " << i;
+    EXPECT_EQ(check.placed, position.placed) << "score drifted on move " << i;
+    EXPECT_EQ(check.heavy[chess::White], position.heavy[chess::White]);
+    EXPECT_EQ(check.heavy[chess::Black], position.heavy[chess::Black]);
     chess::unmakeMove(position, moves[i], undo);
     EXPECT_EQ(memcmp(position.board, before.board, sizeof(before.board)), 0);
     EXPECT_EQ(position.hash, before.hash);
+    EXPECT_EQ(position.lock, before.lock);
+    EXPECT_EQ(position.placed, before.placed);
     EXPECT_EQ(position.castling, before.castling);
+  }
+}
+
+// The scores a position carries along are only ever changed move by move: over
+// whole games of every kind of move they must stay what the board says.
+TEST(ChessRules, CarriedScoresMatchTheBoardThroughWholeGames) {
+  const char* const starts[] = {
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -",
+      "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq -",
+      "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -",
+  };
+  uint32_t random = 2463534242u;
+  for (const char* start : starts) {
+    for (int game = 0; game < 40; ++game) {
+      chess::Position position;
+      ASSERT_TRUE(position.setFen(start));
+      for (int ply = 0; ply < 120; ++ply) {
+        chess::Move moves[chess::kMaxMoves];
+        const int count = chess::generateLegal(position, moves);
+        if (count == 0) break;
+        random ^= random << 13;
+        random ^= random >> 17;
+        random ^= random << 5;
+        chess::Undo undo;
+        chess::makeMove(position, moves[random % static_cast<uint32_t>(count)], undo);
+        chess::Position check = position;
+        check.recompute();
+        ASSERT_EQ(check.hash, position.hash);
+        ASSERT_EQ(check.lock, position.lock);
+        ASSERT_EQ(check.placed, position.placed);
+        ASSERT_EQ(check.heavy[chess::White], position.heavy[chess::White]);
+        ASSERT_EQ(check.heavy[chess::Black], position.heavy[chess::Black]);
+        ASSERT_EQ(chess::evaluate(check), chess::evaluate(position));
+      }
+    }
   }
 }
 
@@ -189,6 +232,64 @@ TEST(ChessComputer, StopsWhenTold) {
   ASSERT_TRUE(result.found);
   EXPECT_GE(result.depth, 1);
   EXPECT_LT(result.nodes, 30000u);
+}
+
+// The memory of examined positions must never change what is found, only how
+// soon: the same mates, with and without it, and from a table already filled
+// by another position's search.
+TEST(ChessComputer, RememberingPositionsKeepsTheAnswers) {
+  std::vector<uint8_t> table(4096 * chess::kTableEntryBytes, 0);
+  struct Case {
+    const char* fen;
+    int depth;
+    bool mate;
+  };
+  const Case cases[] = {
+      {"6k1/5ppp/8/8/8/8/8/R3K3 w - -", 3, true},
+      {"4k3/8/8/8/2q5/8/4B3/4K3 w - -", 3, false},
+      // Smothered mate, the queen given up first: Qg8+ Rxg8, Nf7#.
+      {"5r1k/6pp/7N/8/2Q5/8/8/6K1 w - -", 4, true},
+      {"7k/8/8/8/8/8/R7/1R2K3 w - -", 4, true},
+  };
+  // Twice over, so the second round starts from a table the others have filled.
+  for (int round = 0; round < 2; ++round) {
+    for (const Case& test : cases) {
+      chess::Position position;
+      ASSERT_TRUE(position.setFen(test.fen));
+      chess::SearchOptions plain;
+      plain.maxDepth = test.depth;
+      const chess::SearchResult without = chess::search(position, plain, nullptr, 0);
+      chess::SearchOptions remembering = plain;
+      remembering.table = table.data();
+      remembering.tableBytes = table.size();
+      const chess::SearchResult with = chess::search(position, remembering, nullptr, 0);
+      ASSERT_TRUE(without.found);
+      ASSERT_TRUE(with.found);
+      if (test.mate) {
+        EXPECT_GT(without.score, chess::kMateScore - 100) << test.fen;
+        EXPECT_EQ(with.score, without.score) << test.fen;
+      } else {
+        EXPECT_TRUE(with.best.sameAs(without.best)) << test.fen;
+      }
+    }
+  }
+}
+
+TEST(ChessComputer, RememberingPositionsLooksAtFewerOfThem) {
+  chess::Position position;
+  ASSERT_TRUE(position.setFen("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -"));
+  chess::SearchOptions plain;
+  plain.maxDepth = 5;
+  const chess::SearchResult without = chess::search(position, plain, nullptr, 0);
+  std::vector<uint8_t> table(65536 * chess::kTableEntryBytes, 0);
+  chess::SearchOptions remembering = plain;
+  remembering.table = table.data();
+  remembering.tableBytes = table.size();
+  const chess::SearchResult with = chess::search(position, remembering, nullptr, 0);
+  ASSERT_TRUE(without.found);
+  ASSERT_TRUE(with.found);
+  EXPECT_EQ(with.depth, without.depth);
+  EXPECT_LT(with.nodes, without.nodes);
 }
 
 // Two computers play each other with the Easy settings: every move must be

@@ -5,6 +5,7 @@
 #include <I18n.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <iterator>
 
 #include "CrossPointSettings.h"
@@ -13,6 +14,8 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
+#include "util/BookRatingText.h"
+#include "util/BookRatings.h"
 #include "util/ButtonNavigator.h"
 #include "util/NextBookFinder.h"
 
@@ -31,11 +34,21 @@ std::string displayName(const std::string& filename) {
 EndOfBookOptions::EndOfBookOptions(GfxRenderer& renderer)
     : renderer(renderer), uiTarget(makeUiTarget(renderer)), app(uiTarget, uiTarget.deviceContext()) {}
 
-void EndOfBookOptions::loadOnce(const std::string& currentBookPath) {
+void EndOfBookOptions::loadOnce(const std::string& currentBookPath, const std::string& title,
+                                const std::string& author) {
   if (isLoaded.load(std::memory_order_acquire)) {
     return;
   }
   folder = FsHelpers::extractFolderPath(currentBookPath);
+  bookPath = currentBookPath;
+  if (title.empty()) {
+    const auto slash = currentBookPath.rfind('/');
+    bookTitle = displayName(slash == std::string::npos ? currentBookPath : currentBookPath.substr(slash + 1));
+  } else {
+    bookTitle = title;
+  }
+  bookAuthor = author;
+  rating.store(BookRatings::get(bookPath), std::memory_order_relaxed);
   names = NextBookFinder::findNextBooks(currentBookPath, MAX_SUGGESTIONS);
   selector.store(0, std::memory_order_relaxed);
   if (!names.empty()) {
@@ -59,6 +72,67 @@ void EndOfBookOptions::loadOnce(const std::string& currentBookPath) {
 }
 
 bool EndOfBookOptions::loaded() const { return isLoaded.load(std::memory_order_acquire); }
+
+EndOfBookOptions::EndLayout EndOfBookOptions::layoutFor(const bool menu) const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int line12 = renderer.getLineHeight(UI_12_FONT_ID);
+  const int line10 = renderer.getLineHeight(UI_10_FONT_ID);
+  EndLayout layout;
+  layout.safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  // With suggestions the title starts an eighth down the safe area; alone it
+  // keeps its historical place, 3/8 down the screen.
+  layout.titleY = menu ? layout.safe.y + layout.safe.height / 8 : renderer.getScreenHeight() * 3 / 8;
+  int y = layout.titleY + line12 + metrics.verticalSpacing;
+  if (!bookPath.empty()) {
+    layout.bookTitleY = y + 8;
+    y = layout.bookTitleY + line12;
+    layout.authorY = y;
+    if (!bookAuthor.empty()) y += line10;
+    layout.ratingLabelY = y + 20;
+    layout.stars.radius = 26;
+    layout.stars.pitch = 72;
+    layout.stars.centreX = layout.safe.x + layout.safe.width / 2;
+    layout.stars.centreY = layout.ratingLabelY + line10 + 12 + layout.stars.radius;
+    layout.valueY = layout.stars.centreY + layout.stars.radius + 12;
+    y = layout.valueY + line10 + 16;
+  }
+  layout.subtitleY = y;
+  layout.listTop = layout.subtitleY + line10 + metrics.verticalSpacing * 2;
+  return layout;
+}
+
+bool EndOfBookOptions::rateAt(const int x, const int y) {
+  if (!loaded() || bookPath.empty()) return false;
+  const EndLayout layout = layoutFor(menuActive());
+  int star = 0;
+  bool rightHalf = false;
+  if (!starrating::hit(layout.stars, x, y, star, rightHalf)) return false;
+  const uint8_t value = bookrating::afterTap(rating.load(std::memory_order_relaxed), star, rightHalf);
+  rating.store(value, std::memory_order_relaxed);
+  BookRatings::set(bookPath, value, bookTitle, bookAuthor);
+  return true;
+}
+
+void EndOfBookOptions::drawRating(GfxRenderer& renderer, const EndLayout& layout) const {
+  if (bookPath.empty()) return;
+  const int textWidth = layout.safe.width - 48;
+  UITheme::drawCenteredText(renderer, layout.safe, UI_12_FONT_ID, layout.bookTitleY,
+                            renderer.truncatedText(UI_12_FONT_ID, bookTitle.c_str(), textWidth, EpdFontFamily::BOLD)
+                                .c_str(),
+                            true, EpdFontFamily::BOLD);
+  if (!bookAuthor.empty()) {
+    UITheme::drawCenteredText(renderer, layout.safe, UI_10_FONT_ID, layout.authorY,
+                              renderer.truncatedText(UI_10_FONT_ID, bookAuthor.c_str(), textWidth).c_str());
+  }
+  UITheme::drawCenteredText(renderer, layout.safe, UI_10_FONT_ID, layout.ratingLabelY, tr(STR_YOUR_RATING));
+  const uint8_t value = rating.load(std::memory_order_relaxed);
+  starrating::draw(renderer, layout.stars, value);
+  if (value != 0) {
+    char text[32];
+    snprintf(text, sizeof(text), tr(STR_RATING_OF_FIVE), bookrating::number(value).c_str());
+    UITheme::drawCenteredText(renderer, layout.safe, UI_10_FONT_ID, layout.valueY, text, true, EpdFontFamily::BOLD);
+  }
+}
 
 bool EndOfBookOptions::menuActive() const { return loaded() && !names.empty(); }
 
@@ -140,12 +214,11 @@ void EndOfBookOptions::listScreen(UiApp::ScreenType& screen, void* user) {
 
 void EndOfBookOptions::buildListScreen(UiApp::ScreenType& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  // Same layout math as render(): the list band starts under the title/subtitle it
-  // draws, and stops above the button hints (the safe-area bottom edge).
-  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
-  const int titleY = safe.y + safe.height / 8;
-  const int subtitleY = titleY + renderer.getLineHeight(UI_12_FONT_ID) + metrics.verticalSpacing;
-  const int listTop = subtitleY + renderer.getLineHeight(UI_10_FONT_ID) + metrics.verticalSpacing * 2;
+  // Same layout as render(): the list band starts under the title, the rating and
+  // the subtitle it draws, and stops above the button hints (the safe-area bottom edge).
+  const EndLayout layout = layoutFor(true);
+  const Rect& safe = layout.safe;
+  const int listTop = layout.listTop;
   screen.setContentMargin(fui::Insets{
       static_cast<int16_t>(listTop), static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width)),
       static_cast<int16_t>(renderer.getScreenHeight() - (safe.y + safe.height) + metrics.verticalSpacing),
@@ -166,8 +239,9 @@ void EndOfBookOptions::render(GfxRenderer& renderer, const MappedInputManager& i
   if (!menuActive()) {
     // No suggestions: the historical plain end screen. 3/8 of the screen height matches
     // the previous fixed position on the 480x800 panel and scales to other resolutions.
-    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() * 3 / 8, tr(STR_END_OF_BOOK), true,
-                              EpdFontFamily::BOLD);
+    const EndLayout layout = layoutFor(false);
+    renderer.drawCenteredText(UI_12_FONT_ID, layout.titleY, tr(STR_END_OF_BOOK), true, EpdFontFamily::BOLD);
+    if (loaded()) drawRating(renderer, layout);
     return;
   }
 
@@ -176,12 +250,13 @@ void EndOfBookOptions::render(GfxRenderer& renderer, const MappedInputManager& i
   // orientations — lay out inside the safe area so nothing hides behind them. Vertical
   // positions derive from the safe-area height and font line heights so other panel
   // resolutions scale (review request on #2532).
-  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
-  const int titleY = safe.y + safe.height / 8;
-  const int subtitleY = titleY + renderer.getLineHeight(UI_12_FONT_ID) + metrics.verticalSpacing;
+  const EndLayout layout = layoutFor(true);
+  const Rect& safe = layout.safe;
 
-  UITheme::drawCenteredText(renderer, safe, UI_12_FONT_ID, titleY, tr(STR_END_OF_BOOK), true, EpdFontFamily::BOLD);
-  UITheme::drawCenteredText(renderer, safe, UI_10_FONT_ID, subtitleY, tr(STR_EOB_CONTINUE_WITH));
+  UITheme::drawCenteredText(renderer, safe, UI_12_FONT_ID, layout.titleY, tr(STR_END_OF_BOOK), true,
+                            EpdFontFamily::BOLD);
+  drawRating(renderer, layout);
+  UITheme::drawCenteredText(renderer, safe, UI_10_FONT_ID, layout.subtitleY, tr(STR_EOB_CONTINUE_WITH));
 
   // The list renders through the FreeInkApp so its rows register touch hit rects. The
   // orientation can have changed since construction (reader menu rotate), so re-derive

@@ -159,6 +159,13 @@ class ActivityManager {
   void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE,
               HalDisplay::RefreshMode initialRefreshMode = HalDisplay::FAST_REFRESH);
 
+  // VARAGH: the Apps list, or (with one app's resume number) that app on top
+  // of the list. Leaving the list leads Home.
+  void goToApps(uint8_t resumeId = 0);
+  // The resume number of the app that is open (see AppsActivity::resumeIdFor),
+  // 0 when none is.
+  uint8_t sleepResumeApp() const;
+
   // This will move current activity to stack instead of deleting it
   void pushActivity(std::unique_ptr<Activity>&& activity);
 

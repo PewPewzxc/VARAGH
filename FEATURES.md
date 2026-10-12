@@ -33,8 +33,9 @@ pronunciation, dictionary entry, highlight and flashcard displays correctly.
 11. [Safe updates](#11-safe-updates)
 12. [Apps](#12-apps)
 13. [Online dictionary](#13-online-dictionary)
-14. [For developers](#14-for-developers)
-15. [Planned](#15-planned)
+14. [Book ratings](#14-book-ratings)
+15. [For developers](#15-for-developers)
+16. [Planned](#16-planned)
 
 ---
 
@@ -186,6 +187,38 @@ While you select with your finger, each end of the selection has a bar, with a
 round knob above the start and below the end, as on a phone. The handles show
 exactly what is selected. To change the selection, keep sliding your finger;
 the knobs themselves cannot be dragged.
+
+### Long Press on a Word (1.2.1)
+**Settings → Reader → Long Press on a Word** sets what happens when you lift
+your finger after selecting:
+
+| Option | What it does |
+|---|---|
+| Look Up (default) | opens the dictionary at once, as before |
+| Ask | keeps the words selected and shows a bubble at them: **Look Up**, **Highlight**, **Add to…** |
+| Highlight | saves the selection as a highlight at once |
+| Add to… | opens the list of Highlights categories at once |
+
+With **Ask**, a tap on one of the three acts, and a tap anywhere else puts the
+selection away. A word sent to **Flashcards** from the bubble (or with Add to…)
+is looked up first, so the card gets its meaning.
+
+<p>
+  <img src="docs/images/varagh/v1.2.1/long-press-setting.png" width="230" alt="Settings, Reader: the four choices of Long Press on a Word">
+  <img src="docs/images/varagh/v1.2.1/long-press-ask.png" width="230" alt="A selected word with the bubble Look Up, Highlight, Add to">
+  <img src="docs/images/varagh/v1.2.1/flashcard-added.png" width="230" alt="The dictionary popup saying Added to Flashcards">
+</p>
+
+### Tap to Look Up (1.2.1)
+**Settings → Reader → Tap to Look Up** (off by default): a tap on a word opens
+its meaning at once, with no holding. While it is on, a tap never turns the
+page; swipe left or right to turn. Holding still selects several words, and a
+tap on a link or a footnote still follows it. It needs a dictionary: without
+one, taps keep turning pages.
+
+<p>
+  <img src="docs/images/varagh/v1.2.1/tap-to-look-up.png" width="230" alt="The meaning of a tapped word shown over the page">
+</p>
 
 ---
 
@@ -391,11 +424,18 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
 
 ## 10. VARAGH name and logo
 
+- **Logo** (new in 1.2.1): an open book with a V and a turning page.
 - **Boot screen**: the VARAGH logo with "VARAGH" and "Booting", and at the bottom
-  the version with a small tiger: **1.1.0 Tiger**. Settings → System shows
-  **VARAGH 1.1.0 Tiger** in the same way.
+  the version with a small tiger, such as **1.2.1 Tiger**. Settings → System
+  shows **VARAGH 1.2.1 Tiger** in the same way.
 - **Default sleep screen** (when no custom sleep image is set): the VARAGH logo
-  with "VARAGH" and "Sleeping"; inverted in dark mode.
+  with "VARAGH" and "Sleeping"; light lines on black in dark mode.
+
+<p>
+  <img src="docs/images/varagh/v1.2.1/boot-logo.png" width="230" alt="Boot screen with the open-book logo, VARAGH, Booting and 1.2.1 Tiger">
+  <img src="docs/images/varagh/v1.2.1/sleep-logo.png" width="230" alt="Dark sleep screen with the logo in light lines, VARAGH and Sleeping">
+</p>
+
 - "VARAGH" in every place the menus said "CrossInk", in every UI language.
 - Web file manager: VARAGH logo, name and page titles.
 - Network names: Wi-Fi hotspot **VARAGH-Reader**, network name **VARAGH-xxxx**,
@@ -426,7 +466,8 @@ every theme; in Cover Grid it is the icon of four squares under the covers). **M
 switch each: an app that is switched off is hidden. The apps are part of the
 firmware; a hidden or closed app uses no memory, processor time or battery.
 Every game is saved after each move, so leaving it or letting the reader sleep
-loses nothing.
+loses nothing. From 1.2.1, waking the reader returns to the app that was open
+when it went to sleep, as it does to the page of a book.
 
 ### Wordle
 
@@ -460,6 +501,8 @@ loses nothing.
   and the draws.
 - Undo, Hint and Flip. The computer answers within 1.5, 2.5 or 5 seconds,
   depending on the level.
+- From 1.2.1 the computer sees further in the same time, most of all on Hard,
+  which thinks as deep as its five seconds allow.
 
 ### Checkers
 
@@ -500,10 +543,48 @@ New in 1.2.0. In a word lookup, **Switch Dictionary** ends with **Online
   new word is fetched in a few seconds, without the restarts. Reading uses the
   battery faster while it is on; the reader asks before switching it on. When
   Wi-Fi is not there, the lookup takes the restart route.
+- From 1.2.1 a lookup never holds the page for long: Back (the Home key) gives
+  it up at once, and a site that does not answer is given up on after 8
+  seconds. With Wi-Fi connected but Wiktionary out of reach, the reader says so
+  and stays in the book.
 
 ---
 
-## 14. For developers
+## 14. Book ratings
+
+New in 1.2.1. Five stars with halves. Tap the left half of a star for half of
+it, the right half for all of it, and the value that is already set to take
+the rating away.
+
+| Where | What you see |
+|---|---|
+| End of a book | the book's title and a row of stars to tap |
+| Book menu (hold a book in Files or Library) | **Rating** at the top (first in Library, after Rename in Files), with its stars; it opens the rating screen |
+| Reading Stats | the stars in the title strip of the book's card; tap the strip to rate |
+| Library list | a rated book's stars at the end of its row |
+
+A rating is saved the moment you give it:
+
+- in `/.crosspoint/ratings.txt` on the card, one line a book (stars, title,
+  author, file, separated by tabs). It is plain text, so it can be read or
+  copied on a computer, and it survives firmware updates and a cleared cache;
+- and beside the reader's other data for that book.
+
+When the reader moves or renames a book (for example into the Read folder when
+you finish it), its rating goes with it. The rating is not written into the
+book file itself.
+
+<p>
+  <img src="docs/images/varagh/v1.2.1/rating-screen.png" width="180" alt="The rating screen with three and a half stars and Clear rating">
+  <img src="docs/images/varagh/v1.2.1/end-of-book-rating.png" width="180" alt="End of book with the title, the rating and what to continue with">
+  <img src="docs/images/varagh/v1.2.1/book-menu-rating.png" width="180" alt="The book menu with Rating and its stars as the first row">
+  <img src="docs/images/varagh/v1.2.1/library-stars.png" width="180" alt="Library with a book's stars at the end of its row">
+  <img src="docs/images/varagh/v1.2.1/reading-stats-stars.png" width="180" alt="Reading Stats with the stars in the title strip">
+</p>
+
+---
+
+## 15. For developers
 
 - Licences: MIT like CrossInk and CrossPoint. Every library, font and data
   source is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), OFL
@@ -526,7 +607,7 @@ New in 1.2.0. In a word lookup, **Switch Dictionary** ends with **Online
 
 ---
 
-## 15. Planned
+## 16. Planned
 
 - English, German and Persian dictionaries built from Wiktionary, trimmed for
   the reader and published separately under CC BY-SA 4.0.

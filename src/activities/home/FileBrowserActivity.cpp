@@ -582,6 +582,7 @@ void FileBrowserActivity::showDirectoryActionMenu(const std::string& entry, bool
                              case FileBrowserAction::ResetReaderSettings:
                              case FileBrowserAction::SendNearby:
                              case FileBrowserAction::Rename:
+                             case FileBrowserAction::Rate:
                                return;
                            }
                          });
@@ -801,6 +802,11 @@ void FileBrowserActivity::showFileActionMenu(const std::string& entry, bool igno
                   }
                   requestUpdate();
                 });
+            return;
+          case FileBrowserAction::Rate:
+            if (auto rating = BookActions::createRatingActivity(renderer, mappedInput, fullPath, getFileName(entry))) {
+              startActivityForResult(std::move(rating), [this](const ActivityResult&) { requestUpdate(true); });
+            }
             return;
           case FileBrowserAction::ToggleCompleted:
             if (BookActions::toggleBookCompleted(fullPath, getFileName(entry), completedFeedbackIsFinished)) {
