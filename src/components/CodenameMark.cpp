@@ -1,4 +1,4 @@
-#include "TigerMark.h"
+#include "CodenameMark.h"
 
 #include <GfxRenderer.h>
 #include <I18n.h>
@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace TigerMark {
+namespace CodenameMark {
 
 namespace {
 
@@ -15,23 +15,23 @@ constexpr int STRIDE = (WIDTH + 7) / 8;
 
 // 1 = ink, MSB = leftmost pixel, in logical (upright) orientation.
 constexpr uint8_t BITMAP[HEIGHT * STRIDE] = {
-    0x38, 0x00, 0xE0,  // ..###...........###..
-    0x7C, 0x01, 0xF0,  // .#####.........#####.
-    0x6D, 0xFD, 0xB0,  // .##.##.#######.##.##.
-    0x66, 0x73, 0x30,  // .##..##..###..##..##.
-    0x34, 0xF9, 0x60,  // ..##.#..#####..#.##..
-    0x11, 0x24, 0x40,  // ...#...#..#..#...#...
-    0x20, 0x00, 0x20,  // ..#...............#..
-    0x23, 0x06, 0x20,  // ..#...##.....##...#..
-    0x43, 0x06, 0x10,  // .#....##.....##....#.
-    0xF0, 0x00, 0x78,  // ####.............####
-    0x40, 0x70, 0x10,  // .#.......###.......#.
-    0xF0, 0x20, 0x78,  // ####......#......####
-    0x40, 0x00, 0x10,  // .#.................#.
-    0x38, 0x20, 0xE0,  // ..###.....#.....###..
-    0x20, 0xD8, 0x20,  // ..#.....##.##.....#..
-    0x18, 0x00, 0xC0,  // ...##...........##...
-    0x07, 0xFF, 0x00,  // .....###########.....
+    0x06, 0xDB, 0x00,  // .....##.##.##.##.....
+    0x1F, 0xDF, 0xC0,  // ...#######.#######...
+    0x3F, 0xFF, 0xE0,  // ..#################..
+    0x78, 0xF8, 0xF0,  // .####...#####...####.
+    0x76, 0x03, 0x70,  // .###.##.......##.###.
+    0xF4, 0x01, 0x78,  // ####.#.........#.####
+    0xE0, 0x00, 0x38,  // ###...............###
+    0xE6, 0x03, 0x38,  // ###..##.......##..###
+    0xF6, 0x03, 0x78,  // ####.##.......##.####
+    0xE0, 0x00, 0x38,  // ###...............###
+    0xF0, 0x70, 0x78,  // ####.....###.....####
+    0x70, 0x20, 0x70,  // .###......#......###.
+    0x78, 0x50, 0xF0,  // .####....#.#....####.
+    0x3C, 0x21, 0xE0,  // ..####....#....####..
+    0x1E, 0x03, 0xC0,  // ...####.......####...
+    0x0F, 0xFF, 0x80,  // ....#############....
+    0x02, 0xAA, 0x00,  // ......#.#.#.#.#......
 };
 
 }  // namespace
@@ -40,7 +40,7 @@ std::string versionLabel() {
   std::string version = CROSSINK_VERSION;
   const size_t suffix = version.find_first_of("-+");
   if (suffix != std::string::npos) version.resize(suffix);
-  return version + " " + tr(STR_TIGER_CODENAME);
+  return version + " " + tr(STR_CODENAME);
 }
 
 void draw(const GfxRenderer& renderer, const int x, const int y, const bool black) {
@@ -73,4 +73,4 @@ void drawLabelCentered(const GfxRenderer& renderer, const int fontId, const int 
   drawLabel(renderer, fontId, (pageWidth - labelWidth(renderer, fontId, label)) / 2, y, label, black);
 }
 
-}  // namespace TigerMark
+}  // namespace CodenameMark

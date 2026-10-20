@@ -34,7 +34,7 @@
 
 namespace {
 // VARAGH 1.1.1: v181 / 0xE1. Previous = CrossInk 1.6.1 (v80), older = VARAGH 1.1.0 (v78).
-constexpr uint8_t kFullVersion = 181;
+constexpr uint8_t kFullVersion = 182;
 constexpr uint8_t kPartialVersion = 0xE1;
 constexpr uint8_t kPreviousFullVersion = 80;
 constexpr uint8_t kPreviousPartialVersion = 0xC1;

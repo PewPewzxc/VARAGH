@@ -127,6 +127,13 @@ class HalDisplay {
   // turn into drawing and panel time.
   static uint32_t panelTimeUs() { return panelTimeUs_; }
 
+  // Screen refreshes since boot by kind, one wrapping byte each:
+  // bits 0-7 fast, 8-15 half, 16-23 full, 24-31 grayscale passes. The speed
+  // log subtracts two readings to say which refreshes a page turn used.
+  static uint32_t refreshCounts() { return refreshCounts_; }
+  // Control Center "Refresh screen": the next update clears ghosting.
+  void fullRefreshNext() { fullRefreshNext_ = true; }
+
   // Power hooks the driver fires around long panel BUSY waits, i.e. while a
   // refresh waveform runs and the CPU only waits (see EpdBus::setBusyWaitHooks).
   void setPanelWaitHooks(void (*beginHook)(), void (*endHook)());
@@ -140,6 +147,10 @@ class HalDisplay {
   EInkDisplay einkDisplay;
   uint32_t baseSpiHz_ = 0;  // board-profile display clock, captured in begin()
   static uint32_t panelTimeUs_;
+  static uint32_t refreshCounts_;
+  bool fullRefreshNext_ = false;
+  static void countRefresh(RefreshMode mode);
+  static void countGrayscale() { refreshCounts_ += 1u << 24; }
 };
 
 extern HalDisplay display;

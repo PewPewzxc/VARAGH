@@ -29,7 +29,8 @@ void KeyboardLayoutsActivity::onEnter() {
   edited = false;
   uiReady = false;
   for (uint8_t i = 0; i < keyboard_layouts::COUNT; ++i) {
-    rowItems[i].label = I18N.getLanguageName(keyboard_layouts::ALL[i].language);
+    const auto& layout = keyboard_layouts::ALL[i];
+    rowItems[i].label = layout.name != nullptr ? layout.name : I18N.getLanguageName(layout.language);
     rowItems[i].actionValue = static_cast<int16_t>(i);
   }
   applySharedUiTheme(app, uiTarget);

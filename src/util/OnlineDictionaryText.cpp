@@ -209,8 +209,38 @@ std::string afterSenseMarker(const std::string& line) {
 }
 
 const char* footerFor(const Source source) {
-  return source == Source::WikipediaSummary ? "<p><i>Wikipedia (CC BY-SA 4.0)</i></p>"
-                                            : "<p><i>Wiktionary (CC BY-SA 4.0)</i></p>";
+  switch (source) {
+    case Source::WikipediaSummary:
+      return "<p><i>Wikipedia (CC BY-SA 4.0)</i></p>";
+    case Source::DatamuseDefinitions:
+      return "<p><i>Datamuse, WordNet 3.0 (Princeton University)</i></p>";
+    case Source::OpenThesaurusSynonyms:
+      // OpenThesaurus asks for a link to its site with every answer.
+      return "<p><i>OpenThesaurus.de (CC BY-SA 4.0)</i></p>";
+    default:
+      return "<p><i>Wiktionary (CC BY-SA 4.0)</i></p>";
+  }
+}
+
+// Datamuse parts of speech.
+const char* datamusePos(const std::string& tag) {
+  if (tag == "n") return "noun";
+  if (tag == "v") return "verb";
+  if (tag == "adj") return "adjective";
+  if (tag == "adv") return "adverb";
+  return "";
+}
+
+bool sameIgnoringAsciiCase(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    char x = a[i];
+    char y = b[i];
+    if (x >= 'A' && x <= 'Z') x = static_cast<char>(x - 'A' + 'a');
+    if (y >= 'A' && y <= 'Z') y = static_cast<char>(y - 'A' + 'a');
+    if (x != y) return false;
+  }
+  return true;
 }
 
 // One part of speech gathered from a plain-text entry page.
@@ -414,39 +444,50 @@ std::string persianEntry(const std::string& text, const std::string& word) {
 
 }  // namespace
 
+namespace {
+struct LangInfo {
+  const char* code;
+  const char* name;
+};
+constexpr LangInfo kLangs[kLangCount] = {
+    {"en", "English"},  {"de", "Deutsch"},    {"fa", "\u0641\u0627\u0631\u0633\u06cc"}, {"fr", "Fran\u00e7ais"},
+    {"es", "Espa\u00f1ol"}, {"it", "Italiano"},   {"nl", "Nederlands"}, {"pt", "Portugu\u00eas"},
+    {"ru", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"},  {"ar", "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"},
+    {"tr", "T\u00fcrk\u00e7e"},   {"pl", "Polski"},
+};
+}  // namespace
+
 const char* code(const Lang lang) {
-  switch (lang) {
-    case Lang::German:
-      return "de";
-    case Lang::Persian:
-      return "fa";
-    case Lang::English:
-      break;
-  }
-  return "en";
+  const auto i = static_cast<uint8_t>(lang);
+  return kLangs[i < kLangCount ? i : 0].code;
+}
+
+const char* nativeName(const Lang lang) {
+  const auto i = static_cast<uint8_t>(lang);
+  return kLangs[i < kLangCount ? i : 0].name;
 }
 
 bool langFromCode(const char* text, Lang& lang) {
-  if (!text) return false;
-  if (std::strncmp(text, "en", 2) == 0) {
-    lang = Lang::English;
-  } else if (std::strncmp(text, "de", 2) == 0) {
-    lang = Lang::German;
-  } else if (std::strncmp(text, "fa", 2) == 0) {
-    lang = Lang::Persian;
-  } else {
-    return false;
+  if (!text || !text[0] || !text[1]) return false;
+  const char a = static_cast<char>(text[0] | 0x20);
+  const char b = static_cast<char>(text[1] | 0x20);
+  for (uint8_t i = 0; i < kLangCount; ++i) {
+    if (kLangs[i].code[0] == a && kLangs[i].code[1] == b) {
+      lang = static_cast<Lang>(i);
+      return true;
+    }
   }
-  return true;
+  return false;
 }
 
 Lang languageFor(const std::string& word, const char* dictionaryLang) {
+  Lang dictionary = Lang::English;
+  const bool known = langFromCode(dictionaryLang, dictionary);
   for (size_t i = 0; i < word.size();) {
-    if (isArabicScript(nextCodepoint(word, i))) return Lang::Persian;
+    if (isArabicScript(nextCodepoint(word, i))) return known && dictionary == Lang::Arabic ? Lang::Arabic : Lang::Persian;
   }
-  Lang lang = Lang::English;
-  // A Persian dictionary says nothing about a word written in Latin letters.
-  if (langFromCode(dictionaryLang, lang) && lang != Lang::Persian) return lang;
+  // An Arabic-script dictionary says nothing about a word written in other letters.
+  if (known && dictionary != Lang::Persian && dictionary != Lang::Arabic) return dictionary;
   return Lang::English;
 }
 
@@ -514,6 +555,77 @@ std::string summaryUrl(const Lang lang, const std::string& word) {
     if (c == ' ') c = '_';
   }
   return std::string("https://") + code(lang) + ".wikipedia.org/api/rest_v1/page/summary/" + percentEncode(title);
+}
+
+std::string englishWiktionaryUrl(const std::string& word) {
+  return "https://en.wiktionary.org/api/rest_v1/page/definition/" + percentEncode(word);
+}
+
+std::string datamuseUrl(const std::string& word) {
+  return "https://api.datamuse.com/words?md=d&max=1&sp=" + percentEncode(word);
+}
+
+std::string openThesaurusUrl(const std::string& word) {
+  return "https://www.openthesaurus.de/synonyme/search?format=application/json&q=" + percentEncode(word);
+}
+
+const char* providerName(const Provider provider) {
+  switch (provider) {
+    case Provider::Wiktionary:
+      return "Wiktionary";
+    case Provider::EnglishWiktionary:
+      return "English Wiktionary";
+    case Provider::Datamuse:
+      return "Datamuse";
+    case Provider::OpenThesaurus:
+      return "OpenThesaurus";
+    case Provider::Wikipedia:
+      return "Wikipedia";
+    default:
+      return "";
+  }
+}
+
+const char* providerFileTag(const Provider provider) {
+  switch (provider) {
+    case Provider::EnglishWiktionary:
+      return "enwikt";
+    case Provider::Datamuse:
+      return "datamuse";
+    case Provider::OpenThesaurus:
+      return "othes";
+    case Provider::Wikipedia:
+      return "wp";
+    default:
+      return "";
+  }
+}
+
+bool providerServes(const Provider provider, const Lang lang) {
+  switch (provider) {
+    case Provider::Wiktionary:
+      // Entries are laid out for these editions only; others use English Wiktionary.
+      return lang == Lang::English || lang == Lang::German || lang == Lang::Persian;
+    case Provider::Wikipedia:
+      return true;
+    case Provider::EnglishWiktionary:
+      return lang != Lang::English;
+    case Provider::Datamuse:
+      return lang == Lang::English;
+    case Provider::OpenThesaurus:
+      return lang == Lang::German;
+    default:
+      return false;
+  }
+}
+
+Provider nextProvider(const Provider current, const Lang lang) {
+  uint8_t at = static_cast<uint8_t>(current) < kProviderCount ? static_cast<uint8_t>(current) : 0;
+  for (uint8_t i = 0; i < kProviderCount; ++i) {
+    at = static_cast<uint8_t>((at + 1) % kProviderCount);
+    if (providerServes(static_cast<Provider>(at), lang)) return static_cast<Provider>(at);
+  }
+  return current;
 }
 
 Extractor::Extractor(const Source source, const Lang lang, std::string word, std::string otherSpelling)
@@ -600,8 +712,18 @@ void Extractor::closeSection() {
   sectionOpen_ = false;
 }
 
+void Extractor::closeGroup() {
+  if (group_.empty()) return;
+  if (groups_ < kMaxSections * 2 && html_.size() < kMaxEntryBytes) {
+    ++groups_;
+    html_ += "<br><b>" + std::to_string(groups_) + ".</b> " + escapeHtml(shortened(group_, kMaxSenseBytes));
+  }
+  group_.clear();
+}
+
 void Extractor::onKey() {
   key_ = token_;
+  if (source_ == Source::OpenThesaurusSynonyms && key_ == "terms") closeGroup();
   if (source_ == Source::WiktionaryDefinitions && depth_ == 1) {
     closeSection();
     topKey_ = key_;
@@ -656,6 +778,38 @@ void Extractor::onString() {
         }
       }
       return;
+    case Source::DatamuseDefinitions: {
+      if (key_ == "word") {
+        // max=1 answers with the closest spelling; only the word itself counts.
+        wordMatches_ = sameIgnoringAsciiCase(token_, word_);
+      } else if (key_ == "defs" && wordMatches_ && html_.size() < kMaxEntryBytes) {
+        // A meaning: "n\tthe meaning" (the tab arrives as a space).
+        const size_t gap = token_.find(' ');
+        if (gap == std::string::npos) return;
+        const std::string tag = token_.substr(0, gap);
+        const std::string sense = token_.substr(gap + 1);
+        if (sense.empty()) return;
+        if (tag != lastPos_) {
+          closeSection();
+          if (sections_ >= kMaxSections) return;
+          ++sections_;
+          senses_ = 0;
+          lastPos_ = tag;
+          sectionOpen_ = true;
+          html_ += "<p><i>" + escapeHtml(datamusePos(tag)) + "</i>";
+        }
+        if (!sectionOpen_ || senses_ >= (sections_ == 1 ? kFirstSectionSenses : kLaterSectionSenses)) return;
+        ++senses_;
+        html_ += "<br><b>" + std::to_string(senses_) + ".</b> " + escapeHtml(shortened(sense, kMaxSenseBytes));
+      }
+      return;
+    }
+    case Source::OpenThesaurusSynonyms:
+      if (key_ == "term" && !token_.empty() && group_.size() < kMaxSenseBytes) {
+        if (!group_.empty()) group_ += ", ";
+        group_ += token_;
+      }
+      return;
     case Source::WikipediaSummary:
       if (depth_ != 1) return;
       if (key_ == "type") {
@@ -708,6 +862,16 @@ bool Extractor::finish(std::string& html) {
         if (plain.empty()) return false;
         body = "<p>" + escapeHtml(shortened(plain, 600)) + "</p>";
       }
+      break;
+    case Source::DatamuseDefinitions:
+      closeSection();
+      body = html_;
+      if (body.find("<b>1.</b>") == std::string::npos) body.clear();
+      break;
+    case Source::OpenThesaurusSynonyms:
+      closeGroup();
+      if (groups_ == 0) return false;
+      body = "<p><i>Synonyme</i>" + html_ + "</p>";
       break;
     case Source::WikipediaSummary:
       if (unusable_ || extract_.empty()) return false;

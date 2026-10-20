@@ -28,6 +28,7 @@
 #if CROSSINK_SCALABLE_FONTS
 #include "TtfRenderOptionsActivity.h"
 #endif
+#include "DictionariesActivity.h"
 #include "FrontlightTimePickerActivity.h"
 #include "KOReaderSettingsActivity.h"
 #include "KeyboardLayoutsActivity.h"
@@ -47,7 +48,7 @@
 #include "activities/util/KeyboardEntryActivity.h"
 #include "activities/util/OptionSelectionActivity.h"
 #include "components/CompactHeader.h"
-#include "components/TigerMark.h"
+#include "components/CodenameMark.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
@@ -77,7 +78,7 @@ constexpr size_t controlsHomeButtonCount = 4;
 constexpr size_t controlsPowerMinCount = 2;
 constexpr size_t controlsPowerMaxCount = 3;
 constexpr size_t controlsFrontButtonCount = 6;
-constexpr size_t controlsSideButtonBaseCount = 7;
+constexpr size_t controlsSideButtonBaseCount = 6;  // orientation-aware row removed (rotation is built in)
 
 void formatFrontlightScheduleTime(const uint16_t timeOfDay, char* const buf, const size_t len) {
   const FrontlightSchedule::TimeOfDay time = FrontlightSchedule::timeOfDayFromMinutes(timeOfDay);
@@ -147,19 +148,31 @@ std::string formatCompactDuration(const uint32_t seconds) {
 
 void drawSystemVersionFooter(const GfxRenderer& renderer, const int pageWidth, const int pageHeight,
                              const ThemeMetrics& metrics) {
-  // "VARAGH 1.1.0 Tiger" and the tiger mark; Check for Updates shows the full
+  // "VARAGH 1.3.0 Lion" and the codename mark; Check for Updates shows the full
   // version string.
-  const std::string label = std::string(tr(STR_CROSSINK)) + " " + TigerMark::versionLabel();
+  const std::string label = std::string(tr(STR_CROSSINK)) + " " + CodenameMark::versionLabel();
   const int bottomLineY =
       pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing - systemVersionFooterBottomInset;
-  TigerMark::drawLabelCentered(renderer, SMALL_FONT_ID, pageWidth, bottomLineY, label.c_str());
+  CodenameMark::drawLabelCentered(renderer, SMALL_FONT_ID, pageWidth, bottomLineY, label.c_str());
+}
+
+bool isNightTimeSetting(const SettingInfo& setting) {
+  return setting.value16Ptr == &CrossPointSettings::frontlightNightStart ||
+         setting.value16Ptr == &CrossPointSettings::frontlightNightEnd;
+}
+
+// Settings picked with the clock-style time picker.
+bool isLightTimeSetting(const SettingInfo& setting) {
+  return setting.value16Ptr == &CrossPointSettings::frontlightScheduleStart ||
+         setting.value16Ptr == &CrossPointSettings::frontlightScheduleEnd || isNightTimeSetting(setting);
 }
 
 std::string formatSettingValue(const SettingInfo& setting) {
-  if (setting.value16Ptr == &CrossPointSettings::frontlightScheduleStart ||
-      setting.value16Ptr == &CrossPointSettings::frontlightScheduleEnd) {
+  if (isLightTimeSetting(setting)) {
     const uint16_t timeOfDay = SETTINGS.*(setting.value16Ptr);
-    if (SETTINGS.frontlightScheduleEnabled == 0 || !FrontlightSchedule::isTimeOfDayValid(timeOfDay)) return "--";
+    const bool enabled = isNightTimeSetting(setting) ? SETTINGS.frontlightNightEnabled != 0
+                                                     : SETTINGS.frontlightScheduleEnabled != 0;
+    if (!enabled || !FrontlightSchedule::isTimeOfDayValid(timeOfDay)) return "--";
     char valueBuffer[16];
     formatFrontlightScheduleTime(timeOfDay, valueBuffer, sizeof(valueBuffer));
     return valueBuffer;
@@ -256,6 +269,7 @@ void SettingsActivity::rebuildSettingsLists() {
   controlsHomeButtonSettings.clear();
   controlsFrontButtonSettings.clear();
   controlsSideButtonSettings.clear();
+  controlsControlCenterSettings.clear();
   controlsTapsGesturesSettings.clear();
   controlsTwoFingerSwipeSettings.clear();
   controlsEdgeGestureSettings.clear();
@@ -301,6 +315,7 @@ void SettingsActivity::rebuildSettingsLists() {
   }
   displaySleepSettings = buildDisplaySleepSettingsList(allSettings);
   displayFrontlightSettings = buildDisplayFrontlightSettingsList(allSettings);
+  controlsControlCenterSettings = buildControlsControlCenterSettingsList(allSettings);
   readerSettings = buildReaderSettingsParentList(allSettings);
   readerFontSettings = buildReaderFontSettingsList(allSettings);
 #if CROSSINK_SCALABLE_FONTS
@@ -338,7 +353,8 @@ void SettingsActivity::rebuildSettingsLists() {
   const size_t expectedControlsCount = controlsParentBaseCount - (hasTouch ? 1u : 0u) + (hasHomeKey ? 1u : 0u) +
                                        (hasSettingByName(allSettings, StrId::STR_TILT_PAGE_TURN) ? 1u : 0u) +
                                        (hasSettingByName(allSettings, StrId::STR_TILT_PAGE_TURN_DIRECTION) ? 1u : 0u) +
-                                       (hasSettingByName(allSettings, StrId::STR_NEXT_PAGE) ? 1u : 0u);
+                                       (hasSettingByName(allSettings, StrId::STR_NEXT_PAGE) ? 1u : 0u) +
+                                       (Frontlight.present() && gpio.hasTouch() ? 1u : 0u);  // Control Center
   const size_t expectedFrontButtonCount = hasTouch ? 0u : controlsFrontButtonCount;
 #else
   controlsFrontButtonSettings = buildControlsFrontButtonSettingsList(allSettings);
@@ -347,7 +363,8 @@ void SettingsActivity::rebuildSettingsLists() {
   const size_t expectedControlsCount = controlsParentBaseCount + (gpio.hasHomeKey() ? 1u : 0u) +
                                        (hasSettingByName(allSettings, StrId::STR_TILT_PAGE_TURN) ? 1u : 0u) +
                                        (hasSettingByName(allSettings, StrId::STR_TILT_PAGE_TURN_DIRECTION) ? 1u : 0u) +
-                                       (hasSettingByName(allSettings, StrId::STR_NEXT_PAGE) ? 1u : 0u);
+                                       (hasSettingByName(allSettings, StrId::STR_NEXT_PAGE) ? 1u : 0u) +
+                                       (Frontlight.present() && gpio.hasTouch() ? 1u : 0u);  // Control Center
   constexpr size_t expectedFrontButtonCount = controlsFrontButtonCount;
 #endif
   if (controlsSettings.size() != expectedControlsCount ||
@@ -412,6 +429,9 @@ void SettingsActivity::setCurrentSettingsForCategory() {
           break;
         case SettingAction::ControlsSideButtons:
           currentSettings = &controlsSideButtonSettings;
+          break;
+        case SettingAction::ControlsControlCenter:
+          currentSettings = &controlsControlCenterSettings;
           break;
         case SettingAction::ControlsTapsGestures:
           currentSettings = &controlsTapsGesturesSettings;
@@ -478,6 +498,8 @@ StrId SettingsActivity::activeSubmenuTitleId() const {
       return StrId::STR_FRONT_BUTTONS;
     case SettingAction::ControlsSideButtons:
       return StrId::STR_SIDE_BUTTONS;
+    case SettingAction::ControlsControlCenter:
+      return StrId::STR_CC_CONTROL_CENTER;
     case SettingAction::ControlsTapsGestures:
       return StrId::STR_TAPS_AND_GESTURES;
     case SettingAction::ControlsTwoFingerSwipe:
@@ -1073,8 +1095,7 @@ void SettingsActivity::toggleCurrentSetting() {
     openSleepTimeoutPicker();
     return;
   }
-  if (setting.value16Ptr == &CrossPointSettings::frontlightScheduleStart ||
-      setting.value16Ptr == &CrossPointSettings::frontlightScheduleEnd) {
+  if (isLightTimeSetting(setting)) {
     openFrontlightScheduleTimePicker(setting.value16Ptr, setting.nameId);
     return;
   }
@@ -1181,6 +1202,9 @@ void SettingsActivity::toggleCurrentSetting() {
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);
         break;
+      case SettingAction::Dictionaries:
+        startActivityForResult(std::make_unique<DictionariesActivity>(renderer, mappedInput), resultHandler);
+        break;
       case SettingAction::Network:
         startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, false),
                                [](const ActivityResult&) {
@@ -1255,6 +1279,7 @@ void SettingsActivity::toggleCurrentSetting() {
       case SettingAction::ControlsTapsGestures:
       case SettingAction::ControlsTwoFingerSwipe:
       case SettingAction::ControlsEdgeGestures:
+      case SettingAction::ControlsControlCenter:
       case SettingAction::SystemDevice:
       case SettingAction::SystemFilesCache:
       case SettingAction::SystemReadingStats:
@@ -1666,10 +1691,7 @@ void SettingsActivity::render(RenderLock&&) {
                           &CrossPointSettings::screenMarginVertical ||
                       (*currentSettings)[selectedSettingIndex - 1].valuePtr ==
                           &CrossPointSettings::screenMarginHorizontal ||
-                      (*currentSettings)[selectedSettingIndex - 1].value16Ptr ==
-                          &CrossPointSettings::frontlightScheduleStart ||
-                      (*currentSettings)[selectedSettingIndex - 1].value16Ptr ==
-                          &CrossPointSettings::frontlightScheduleEnd)
+                      isLightTimeSetting((*currentSettings)[selectedSettingIndex - 1]))
                  ? tr(STR_SELECT)
                  : tr(STR_TOGGLE));
 

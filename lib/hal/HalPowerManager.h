@@ -86,6 +86,11 @@ class HalPowerManager {
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;
 
+  // Battery voltage in millivolts, read fresh (one short I2C or ADC read).
+  // 0 when the board cannot read it. Used by the speed log, which samples
+  // every few minutes.
+  uint16_t getBatteryMillivolts() const;
+
 #if CROSSINK_BATTERY_DIAG_LOG
   // Raw battery telemetry for the diagnostic log, kept behind the flag so
   // shipping builds carry neither the struct nor the extra I2C traffic.

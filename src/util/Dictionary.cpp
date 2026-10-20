@@ -11,6 +11,8 @@
 
 #include "GermanStemmer.h"
 #include "TextPool.h"
+#include "OnlineDictionaryText.h"
+#include "WordForms.h"
 
 // Static member definitions
 char Dictionary::wordBuf[256] = "";
@@ -19,6 +21,26 @@ namespace {
 constexpr char DICT_BIN[] = "dictionary.bin";
 std::string lookupDictPathOverride;
 bool lookupDictPathOverrideActive = false;
+char bookLanguage[3] = "";
+
+// "en-US" -> "en"; only the reading languages the settings offer.
+bool languageCode(const char* lang, char out[3]) {
+  onlinedict::Lang known;
+  if (!onlinedict::langFromCode(lang, known)) return false;
+  memcpy(out, onlinedict::code(known), 3);
+  return true;
+}
+
+std::string readSmallFile(const char* path) {
+  HalFile f;
+  if (!Storage.openFileForRead("DICT", path, f)) return "";
+  const int sz = static_cast<int>(f.fileSize());
+  std::string result(sz > 0 ? sz : 0, '\0');
+  const int n = sz > 0 ? f.read(&result[0], sz) : 0;
+  f.close();
+  result.resize(n > 0 ? static_cast<size_t>(n) : 0);
+  return result;
+}
 constexpr char GLOBAL_DICT_DIR[] = "/.crosspoint";
 
 bool isTextDefinitionType(char type) {
@@ -154,6 +176,12 @@ std::string Dictionary::readConfiguredDictPath(const char* cachePath) {
     // Per-book file absent or empty ("Use Global") — fall through to global.
   }
 
+  // The dictionary chosen for the book's language.
+  if (bookLanguage[0] != '\0') {
+    std::string byLanguage = readLanguageDictPath(bookLanguage);
+    if (!byLanguage.empty()) return byLanguage;
+  }
+
   // Read global dictionary.bin.
   snprintf(binPath, sizeof(binPath), "%s/%s", GLOBAL_DICT_DIR, DICT_BIN);
   HalFile f;
@@ -169,6 +197,36 @@ std::string Dictionary::readConfiguredDictPath(const char* cachePath) {
   if (n <= 0) return "";
   result.resize(static_cast<size_t>(n));
   return result;
+}
+
+std::string Dictionary::readLanguageDictPath(const char* lang) {
+  char code[3];
+  if (!languageCode(lang, code)) return "";
+  char binPath[128];
+  snprintf(binPath, sizeof(binPath), "%s/dictionary-%s.bin", GLOBAL_DICT_DIR, code);
+  return readSmallFile(binPath);
+}
+
+void Dictionary::saveLanguageDictPath(const char* lang, const char* folderPath) {
+  char code[3];
+  if (!languageCode(lang, code)) return;
+  char binPath[128];
+  snprintf(binPath, sizeof(binPath), "%s/dictionary-%s.bin", GLOBAL_DICT_DIR, code);
+  if (!folderPath || folderPath[0] == '\0') {
+    if (Storage.exists(binPath)) Storage.remove(binPath);
+    return;
+  }
+  HalFile f;
+  if (!Storage.openFileForWrite("DICT", binPath, f)) {
+    LOG_ERR("DICT", "Could not write %s", binPath);
+    return;
+  }
+  f.write(reinterpret_cast<const uint8_t*>(folderPath), strlen(folderPath));
+  f.close();
+}
+
+void Dictionary::setBookLanguage(const char* lang) {
+  if (!languageCode(lang, bookLanguage)) bookLanguage[0] = '\0';
 }
 
 void Dictionary::setLookupDictPathOverride(const char* folderPath) {
@@ -943,6 +1001,7 @@ DictLocation Dictionary::locateInSession(LookupSession& session, const std::stri
       const uint8_t sizeOffset = session.suffixBytes == 12 ? 8 : 4;
       const bool exactCase = strcmp(wordBuf, word.c_str()) == 0;
       if (!result.found || exactCase) {
+        result.exactCase = exactCase;
         result.headword.assign(wordBuf, static_cast<size_t>(len));
         result.offset = session.suffixBytes == 12 ? readBigEndian32(suffix + 4) : readBigEndian32(suffix);
         result.size = readBigEndian32(suffix + sizeOffset);
@@ -977,6 +1036,17 @@ DictLocation Dictionary::locate(const std::string& word, const DictLookupCallbac
 
 DictLocation Dictionary::locateWithStemVariants(const std::string& word, bool* matchedStem,
                                                 const DictLookupCallbacks& cbs, const char* cachePath) {
+  // A Persian word goes to the Persian dictionary whatever the book's language
+  // (a word chosen by hand with Switch Dictionary keeps its own override).
+  if (!lookupDictPathOverrideActive && WordForms::isArabicScript(word)) {
+    const std::string persian = readLanguageDictPath("fa");
+    if (!persian.empty() && persian != readConfiguredDictPath(cachePath)) {
+      setLookupDictPathOverride(persian.c_str());
+      DictLocation result = locateWithStemVariants(word, matchedStem, cbs, cachePath);
+      clearLookupDictPathOverride();
+      return result;
+    }
+  }
   if (matchedStem) *matchedStem = false;
   LookupSession session;
   if (!openLookupSession(session, cachePath)) {
@@ -986,9 +1056,30 @@ DictLocation Dictionary::locateWithStemVariants(const std::string& word, bool* m
   }
 
   DictLocation result = locateInSession(session, word, cbs);
-  if (!result.found && !result.readError && !(cbs.shouldCancel && cbs.shouldCancel(cbs.ctx))) {
+  const auto cancelled = [&cbs]() { return cbs.shouldCancel && cbs.shouldCancel(cbs.ctx); };
+  // The dictionary's own list of word forms knows "nodes" is "node" and "ging"
+  // is "gehen", so it is asked before any guessed base form. It also wins over
+  // an entry that matches only with other capitals: "cats" is "cat", not the
+  // abbreviation "CATS", and "kamen" is "kommen", not the town "Kamen".
+  const bool onlyOtherCase = result.found && !result.exactCase;
+  if ((!result.found || onlyOtherCase) && !result.readError && !cancelled() &&
+      Storage.exists(DictPaths(session.folderPath).syn().c_str())) {
+    result.altFormsTried = true;
+    const std::string canonical = resolveAltForm(word, cachePath);
+    if (!canonical.empty() && canonical != word) {
+      DictLocation alt = locateInSession(session, canonical, cbs);
+      if (alt.found || (alt.readError && !onlyOtherCase)) {
+        alt.altFormsTried = true;
+        alt.matchedAltForm = alt.found;
+        result = std::move(alt);
+      }
+    }
+  }
+  if (!result.found && !result.readError && !cancelled()) {
     const auto stemsOf = [&session](const std::string& w) {
-      return session.germanSource ? GermanStemmer::variants(w) : getStemVariants(w);
+      if (session.germanSource) return GermanStemmer::variants(w);
+      if (WordForms::isArabicScript(w)) return WordForms::persian(w);
+      return getStemVariants(w);
     };
 
     // Spelling repairs tried before stemming:
@@ -1007,13 +1098,15 @@ DictLocation Dictionary::locateWithStemVariants(const std::string& word, bool* m
     if (repaired != word && !repaired.empty()) {
       for (auto& stem : stemsOf(repaired)) stems.push_back(std::move(stem));
     }
+    const bool altFormsTried = result.altFormsTried;
     for (const auto& stem : stems) {
       result = locateInSession(session, stem, cbs);
+      result.altFormsTried = altFormsTried;
       if (result.found) {
         if (matchedStem) *matchedStem = true;
         break;
       }
-      if (result.readError || (cbs.shouldCancel && cbs.shouldCancel(cbs.ctx))) break;
+      if (result.readError || cancelled()) break;
     }
   }
 
@@ -1143,190 +1236,9 @@ std::string Dictionary::resolveAltForm(const std::string& word, const char* cach
 // ---------------------------------------------------------------------------
 
 std::vector<std::string> Dictionary::getStemVariants(const std::string& word) {
-  // These are deliberately English morphology rules. Applying them to UTF-8
-  // text can manufacture meaningless variants from another language, so
-  // non-ASCII words use exact and StarDict synonym lookup only.
+  // English morphology only: non-ASCII words would get meaningless variants.
   if (std::any_of(word.begin(), word.end(), [](const unsigned char c) { return c >= 0x80; })) return {};
-
-  std::string normalized = word;
-  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-
-  std::vector<std::string> variants;
-  variants.reserve(8);
-  size_t len = normalized.size();
-  if (len < 3) return variants;
-
-  auto endsWith = [&normalized, len](const char* suffix) {
-    size_t slen = strlen(suffix);
-    return len >= slen && normalized.compare(len - slen, slen, suffix) == 0;
-  };
-
-  std::string scratch;
-  scratch.reserve(len + 4);
-  auto addVariant = [&variants, &scratch, &normalized](size_t keep, const char* suffix) {
-    scratch.assign(normalized, 0, keep);
-    scratch.append(suffix);
-    if (scratch.size() < 2) return;
-    if (std::find(variants.begin(), variants.end(), scratch) != variants.end()) return;
-    variants.push_back(scratch);
-  };
-  auto addTail = [&variants, &scratch, &normalized, len](size_t start) {
-    scratch.assign(normalized, start, len - start);
-    if (scratch.size() < 2) return;
-    if (std::find(variants.begin(), variants.end(), scratch) != variants.end()) return;
-    variants.push_back(scratch);
-  };
-
-  // Plurals
-  if (endsWith("sses")) addVariant(len - 2, "");
-  if (endsWith("ses")) addVariant(len - 2, "is");
-  if (endsWith("ies")) {
-    addVariant(len - 3, "y");
-    addVariant(len - 2, "");
-  }
-  if (endsWith("ves")) {
-    addVariant(len - 3, "f");
-    addVariant(len - 3, "fe");
-    addVariant(len - 1, "");
-  }
-  if (endsWith("men")) addVariant(len - 3, "man");
-  if (endsWith("es") && !endsWith("sses") && !endsWith("ies") && !endsWith("ves")) {
-    addVariant(len - 2, "");
-    addVariant(len - 1, "");
-  }
-  if (endsWith("s") && !endsWith("ss") && !endsWith("us") && !endsWith("es")) {
-    addVariant(len - 1, "");
-  }
-
-  // Past tense
-  if (endsWith("ied")) {
-    addVariant(len - 3, "y");
-    addVariant(len - 1, "");
-  }
-  if (endsWith("ed") && !endsWith("ied")) {
-    addVariant(len - 2, "");
-    addVariant(len - 1, "");
-    if (len > 4 && normalized[len - 3] == normalized[len - 4]) {
-      addVariant(len - 3, "");
-    }
-  }
-
-  // Progressive
-  if (endsWith("ying")) {
-    addVariant(len - 4, "ie");
-  }
-  if (endsWith("ing") && !endsWith("ying")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-    if (len > 5 && normalized[len - 4] == normalized[len - 5]) {
-      addVariant(len - 4, "");
-    }
-  }
-
-  // Adverb
-  if (endsWith("ically")) {
-    addVariant(len - 6, "ic");
-    addVariant(len - 4, "");
-  }
-  if (endsWith("ally") && !endsWith("ically")) {
-    addVariant(len - 4, "al");
-    addVariant(len - 2, "");
-  }
-  if (endsWith("ily") && !endsWith("ally")) {
-    addVariant(len - 3, "y");
-  }
-  if (endsWith("ly") && !endsWith("ily") && !endsWith("ally")) {
-    addVariant(len - 2, "");
-  }
-
-  // Comparative / superlative
-  if (endsWith("ier")) {
-    addVariant(len - 3, "y");
-  }
-  if (endsWith("er") && !endsWith("ier")) {
-    addVariant(len - 2, "");
-    addVariant(len - 1, "");
-    if (len > 4 && normalized[len - 3] == normalized[len - 4]) {
-      addVariant(len - 3, "");
-    }
-  }
-  if (endsWith("iest")) {
-    addVariant(len - 4, "y");
-  }
-  if (endsWith("est") && !endsWith("iest")) {
-    addVariant(len - 3, "");
-    addVariant(len - 2, "");
-    if (len > 5 && normalized[len - 4] == normalized[len - 5]) {
-      addVariant(len - 4, "");
-    }
-  }
-
-  // Derivational suffixes
-  if (endsWith("ness")) addVariant(len - 4, "");
-  if (endsWith("ment")) addVariant(len - 4, "");
-  if (endsWith("ful")) addVariant(len - 3, "");
-  if (endsWith("less")) addVariant(len - 4, "");
-  if (endsWith("able")) {
-    addVariant(len - 4, "");
-    addVariant(len - 4, "e");
-  }
-  if (endsWith("ible")) {
-    addVariant(len - 4, "");
-    addVariant(len - 4, "e");
-  }
-  if (endsWith("ation")) {
-    addVariant(len - 5, "");
-    addVariant(len - 5, "e");
-    addVariant(len - 5, "ate");
-  }
-  if (endsWith("tion") && !endsWith("ation")) {
-    addVariant(len - 4, "te");
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("ion") && !endsWith("tion")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("al") && !endsWith("ial")) {
-    addVariant(len - 2, "");
-    addVariant(len - 2, "e");
-  }
-  if (endsWith("ial")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("ous")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("ive")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("ize")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("ise")) {
-    addVariant(len - 3, "");
-    addVariant(len - 3, "e");
-  }
-  if (endsWith("en")) {
-    addVariant(len - 2, "");
-    addVariant(len - 2, "e");
-  }
-
-  // Prefix removal
-  if (len > 5 && normalized.compare(0, 2, "un") == 0) addTail(2);
-  if (len > 6 && normalized.compare(0, 3, "dis") == 0) addTail(3);
-  if (len > 6 && normalized.compare(0, 3, "mis") == 0) addTail(3);
-  if (len > 6 && normalized.compare(0, 3, "pre") == 0) addTail(3);
-  if (len > 7 && normalized.compare(0, 4, "over") == 0) addTail(4);
-  if (len > 5 && normalized.compare(0, 2, "re") == 0) addTail(2);
-
-  return variants;
+  return WordForms::english(word);
 }
 
 // ---------------------------------------------------------------------------

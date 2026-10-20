@@ -40,8 +40,8 @@ TouchActionButtons::Layout promptActionLayout(const Rect& screen, const ThemeMet
 }
 
 #ifndef SIMULATOR
-uint8_t sLastStaDisconnectReason = 0;
-bool sConnectionAttemptLoggingActive = false;
+volatile uint8_t sLastStaDisconnectReason = 0;  // written by the Wi-Fi event task
+volatile bool sConnectionAttemptLoggingActive = false;
 bool sWifiEventLoggingRegistered = false;
 #endif
 
@@ -63,46 +63,23 @@ std::string getDisplayMacAddress() {
 }
 
 #ifndef SIMULATOR
+// Runs on the Wi-Fi event task, whose stack is small: it only notes what
+// happened, and the connection screen logs it from the main task. (VARAGH
+// 1.0.0 crashed 0.1 s after a failed connect, when this handler fired and
+// wrote log lines from that task.)
 void logWifiStationEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
-  if (!sConnectionAttemptLoggingActive) {
+  if (!sConnectionAttemptLoggingActive || event != ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
     return;
   }
-
-  switch (event) {
-    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      LOG_INF("WIFI", "STA event: connected to AP");
-      break;
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP: {
-      const uint8_t* ip = reinterpret_cast<const uint8_t*>(&info.got_ip.ip_info.ip.addr);
-      LOG_INF("WIFI", "STA event: got IP %u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
-      break;
-    }
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
-      uint8_t reason = info.wifi_sta_disconnected.reason;
-      if (reason == 0) {
-        reason = WIFI_REASON_UNSPECIFIED;
-      }
-      sLastStaDisconnectReason = reason;
-      LOG_INF("WIFI", "STA event: disconnected reason=%u(%s)", reason,
-              WiFi.disconnectReasonName(static_cast<wifi_err_reason_t>(reason)));
-      break;
-    }
-    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
-      LOG_INF("WIFI", "STA event: lost IP");
-      break;
-    default:
-      break;
-  }
+  const uint8_t reason = info.wifi_sta_disconnected.reason;
+  sLastStaDisconnectReason = reason != 0 ? reason : static_cast<uint8_t>(WIFI_REASON_UNSPECIFIED);
 }
 
 void ensureWifiEventLoggingRegistered() {
   if (sWifiEventLoggingRegistered) {
     return;
   }
-  WiFi.onEvent(logWifiStationEvent, ARDUINO_EVENT_WIFI_STA_CONNECTED);
-  WiFi.onEvent(logWifiStationEvent, ARDUINO_EVENT_WIFI_STA_GOT_IP);
   WiFi.onEvent(logWifiStationEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-  WiFi.onEvent(logWifiStationEvent, ARDUINO_EVENT_WIFI_STA_LOST_IP);
   sWifiEventLoggingRegistered = true;
 }
 #else

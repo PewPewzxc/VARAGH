@@ -57,8 +57,9 @@ class EndOfBookOptions {
 
  private:
   // FreeInkApp hosts the suggestion list (themed rows, touch routing); the title and
-  // button hints stay on the legacy UITheme calls. 4 rows (3 suggestions + Home) is
-  // the whole interaction surface; 2 handler slots give the row action headroom.
+  // button hints stay on the legacy UITheme calls. 5 rows (next in series, 3 folder
+  // suggestions, Home) is the whole interaction surface; 2 handler slots give the row
+  // action headroom.
   using UiApp = freeink::ui::FreeInkApp<6, 2>;
 
   static void listScreen(UiApp::ScreenType& screen, void* user);
@@ -89,10 +90,12 @@ class EndOfBookOptions {
   std::atomic<uint8_t> rating{0};
   // Written by the render task in loadOnce(), immutable afterwards; the main task only
   // reads it after isLoaded is observed true (acquire), so no further locking is needed.
+  // Absolute paths of the suggestions, in row order. VARAGH: the next book of
+  // the series, when the Library knows one, comes first.
   std::vector<std::string> names;
   // Built once with the suggestions so render() does not allocate on each e-ink refresh.
   std::vector<std::string> rowLabels;
-  std::array<freeink::ui::ListItem, MAX_SUGGESTIONS + 1> rowItems{};
+  std::array<freeink::ui::ListItem, MAX_SUGGESTIONS + 2> rowItems{};
   uint16_t rowCount = 0;
   // Input updates may overlap a repaint on the render task.
   std::atomic<int> selector{0};

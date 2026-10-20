@@ -1,18 +1,24 @@
 #include "FrontlightPanelActivity.h"
 
+#include <SpeedLog.h>
+
 #include <CrossInkHalFrontlight.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <Memory.h>
 
+#include <WiFi.h>
+
 #include <algorithm>
 #include <cstdio>
 
 #include "CrossPointSettings.h"
+#include "GlobalActions.h"
 #include "MappedInputManager.h"
 #include "activities/ActivityManager.h"
 #include "activities/RenderLock.h"
 #include "activities/home/BookActions.h"
+#include "activities/network/WifiSelectionActivity.h"
 #include "activities/settings/SettingsActivity.h"
 #include "components/DrawerHandle.h"
 #include "components/HeaderDate.h"
@@ -25,6 +31,10 @@
 #include "components/icons/readingStatsIcons.h"
 #include "components/icons/tablerIcons.h"
 #include "components/icons/touchscreenStateIcons.h"
+#include "components/icons/varaghIcons.h"
+#include "network/OnlineWifi.h"
+#include "network/WifiUtils.h"
+#include "util/FrontlightNight.h"
 #include "util/ReaderBookProgress.h"
 
 namespace fui = freeink::ui;
@@ -37,8 +47,63 @@ constexpr fui::ActionId ACTION_BRIGHTNESS_STEP = 4;
 constexpr fui::ActionId ACTION_WARMTH_STEP = 5;
 constexpr fui::ActionId ACTION_QUICK = 6;
 constexpr fui::ActionId ACTION_DISMISS = 7;
-constexpr int BRIGHTNESS_STEP = 5;
-constexpr int FINE_STEP = 1;
+constexpr fui::ActionId ACTION_CC_BUTTON = 8;
+
+// Control Center layout (design C). The card starts below the battery row,
+// which ends at y 26 in every theme.
+constexpr int CC_CARD_TOP = 34;
+constexpr int CC_CARD_SIDE = 12;
+constexpr int CC_CARD_PAD = 22;
+constexpr int CC_CARD_RADIUS = 28;
+constexpr int CC_LIGHT_H = 84;
+constexpr int CC_KNOB_W = 72;  // round knob; "100%" in UI_10 bold is 58 px
+constexpr int CC_STEP_D = 52;   // round - / + buttons beside the light slider
+constexpr int CC_STEP_GAP = 8;
+constexpr int CC_SMALL_STEP_D = 40;  // - / + beside the warmth slider
+constexpr int CC_TRACK_H = 12;  // thin track under both knobs
+constexpr int CC_WARM_KNOB_D = 34;
+constexpr int CC_WARMTH_GAP = 18;
+constexpr int CC_WARMTH_H = 40;
+constexpr int CC_ICON = 24;
+constexpr int CC_BUTTONS_GAP = 26;
+constexpr int CC_PILL_W = 92;
+constexpr int CC_PILL_H = 60;
+constexpr int CC_ROW_PITCH = 104;  // pill + label + gap
+constexpr int CC_GRABBER_BAND = 24;
+
+const freeink::Icon* controlButtonIcon(const uint8_t button, const bool on) {
+  switch (button) {
+    case CrossPointSettings::CC_TAP_TO_LOOK_UP: return &icon_v_dictionary_24;
+    case CrossPointSettings::CC_WIFI: return &icon_v_wifi_24;
+    case CrossPointSettings::CC_DARK: return &icon_v_contrast_24;
+    case CrossPointSettings::CC_TOUCH_LOCK: return &icon_v_lock_24;
+    case CrossPointSettings::CC_LIGHT: return on ? &icon_v_bulb_on_24 : &icon_v_bulb_24;
+    case CrossPointSettings::CC_NIGHT_LIGHT: return &icon_v_moon_24;
+    case CrossPointSettings::CC_GUIDE_DOTS: return &icon_v_more_24;
+    case CrossPointSettings::CC_FOCUS_READING: return &icon_v_text_size_24;
+    case CrossPointSettings::CC_REFRESH: return &icon_v_refresh_24;
+    case CrossPointSettings::CC_SYNC: return &icon_v_sync_24;
+    case CrossPointSettings::CC_SLEEP: return &icon_v_power_24;
+    case CrossPointSettings::CC_SETTINGS: return &icon_v_gear_24;
+    case CrossPointSettings::CC_READING_STATS: return &icon_v_stats_24;
+    case CrossPointSettings::CC_LIBRARY: return &icon_v_library_24;
+    case CrossPointSettings::CC_APPS: return &icon_v_apps_24;
+    case CrossPointSettings::CC_FILE_TRANSFER: return &icon_v_transfer_24;
+    case CrossPointSettings::CC_ROTATE: return &icon_v_rotate_24;
+    default: return nullptr;
+  }
+}
+
+StrId controlButtonLabel(const uint8_t button) {
+  static constexpr StrId LABELS[] = {
+      StrId::STR_CC_EMPTY,       StrId::STR_CC_TAP_TO_LOOK_UP, StrId::STR_CC_WIFI,
+      StrId::STR_CC_DARK,        StrId::STR_CC_TOUCH_LOCK,     StrId::STR_CC_LIGHT,
+      StrId::STR_CC_NIGHT_LIGHT, StrId::STR_CC_GUIDE_DOTS,     StrId::STR_CC_FOCUS_READING,
+      StrId::STR_CC_REFRESH,     StrId::STR_CC_SYNC,           StrId::STR_CC_SLEEP,
+      StrId::STR_CC_SETTINGS,    StrId::STR_CC_READING_STATS,  StrId::STR_CC_LIBRARY,
+      StrId::STR_CC_APPS,        StrId::STR_CC_FILE_TRANSFER,  StrId::STR_CC_ROTATE};
+  return button < CrossPointSettings::CONTROL_CENTER_BUTTON_COUNT ? LABELS[button] : StrId::STR_CC_EMPTY;
+}
 constexpr int HEADER_ICON_SIZE = 24;
 constexpr int HEADER_BUTTON_WIDTH = 64;
 constexpr int HEADER_CONTENT_BOTTOM_GAP = 8;
@@ -89,6 +154,7 @@ void FrontlightPanelActivity::onEnter() {
   app.on(ACTION_WARMTH_STEP, &FrontlightPanelActivity::onWarmthStepEvent, this);
   app.on(ACTION_QUICK, &FrontlightPanelActivity::onQuickActionEvent, this);
   app.on(ACTION_DISMISS, &FrontlightPanelActivity::onDismissEvent, this);
+  app.on(ACTION_CC_BUTTON, &FrontlightPanelActivity::onControlButtonEvent, this);
   app.setScreen(&FrontlightPanelActivity::panelScreen, this);
   prepareReaderDetailsLayout();
   requestUpdate();
@@ -102,7 +168,7 @@ void FrontlightPanelActivity::onExit() {
   const bool frontlightChanged =
       !context.showReaderDetails && (SETTINGS.frontlightBrightness != brightness ||
                                      SETTINGS.frontlightWarmth != warmth || SETTINGS.frontlightOn != (lightOn ? 1 : 0));
-  if (frontlightChanged || inversionChanged || touchscreenChanged) {
+  if (frontlightChanged || inversionChanged || touchscreenChanged || settingsDirty) {
     if (!context.showReaderDetails) {
       SETTINGS.frontlightBrightness = brightness;
       SETTINGS.frontlightWarmth = warmth;
@@ -126,28 +192,52 @@ void FrontlightPanelActivity::onExternalFrontlightChange() {
 void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<FrontlightPanelActivity*>(user);
   if (event.dragPermille < 0) return;
-  self->brightness = percentFromPermille(event.dragPermille);
-  Frontlight.setBrightness(self->brightness);
+  const uint8_t next =
+      self->context.showReaderDetails
+          ? percentFromPermille(event.dragPermille)
+          : lightPercentFromPermille(travelPermille(event.dragPermille, self->lightSliderW, CC_KNOB_W));
+  if (next != self->brightness) {
+    self->brightness = next;
+    Frontlight.setBrightness(next);
+    self->sliderMoved = true;
+  }
   // Adjusting brightness while off is an obvious "I want light" intent.
   if (!self->lightOn) {
     self->lightOn = true;
     Frontlight.setOn(true);
+    self->sliderMoved = true;
   }
 }
 
 void FrontlightPanelActivity::onWarmthEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<FrontlightPanelActivity*>(user);
   if (event.dragPermille < 0) return;
-  self->warmth = percentFromPermille(event.dragPermille);
-  Frontlight.setWarmth(self->warmth);
+  const uint8_t next = percentFromPermille(self->context.showReaderDetails
+                                               ? event.dragPermille
+                                               : travelPermille(event.dragPermille, self->warmthSliderW, CC_WARM_KNOB_D));
+  if (next == self->warmth) return;
+  self->warmth = next;
+  Frontlight.setWarmth(next);
+  self->sliderMoved = true;
 }
 
 void FrontlightPanelActivity::onBrightnessStepEvent(const fui::ActionEvent& event, void* user) {
-  static_cast<FrontlightPanelActivity*>(user)->adjustBrightness(event.value * FINE_STEP);
+  // Always 1 %: the steps are for exact adjustment. The new number is the
+  // feedback; a grey tap flash would cost two more screen refreshes per tap.
+  auto* self = static_cast<FrontlightPanelActivity*>(user);
+  self->app.clearTapFlash();
+  self->adjustBrightness(event.value);
 }
 
 void FrontlightPanelActivity::onWarmthStepEvent(const fui::ActionEvent& event, void* user) {
-  static_cast<FrontlightPanelActivity*>(user)->adjustWarmth(event.value * FINE_STEP);
+  auto* self = static_cast<FrontlightPanelActivity*>(user);
+  self->app.clearTapFlash();
+  self->adjustWarmth(event.value);
+}
+
+void FrontlightPanelActivity::onControlButtonEvent(const fui::ActionEvent& event, void* user) {
+  auto* self = static_cast<FrontlightPanelActivity*>(user);
+  self->activateControlButton(SETTINGS.controlCenterSlot(event.value), event.longPress);
 }
 
 void FrontlightPanelActivity::onToggleEvent(const fui::ActionEvent&, void* user) {
@@ -329,8 +419,15 @@ void FrontlightPanelActivity::loop() {
   if (uiReady) {
     snap = touchSnapshotFrom(mappedInput);
     if (snap.touchPressed || snap.touchHeld || snap.touchReleased) {
+      sliderMoved = false;
       const auto event = app.route(snap);
-      if (app.invalidated()) requestUpdate();
+      // Each frame is a ~250 ms panel refresh: a finger jitter that left the
+      // value as it was must not queue one.
+      const bool idleDrag = event && event.dragPermille >= 0 && !sliderMoved;
+      if (app.invalidated() && !idleDrag) {
+        if (event) lastInputMs = millis();
+        requestUpdate();
+      }
       if (event) {
         if (event.dragPermille >= 0) draggingSlider = true;
         return;
@@ -356,9 +453,9 @@ void FrontlightPanelActivity::loop() {
   if (context.showReaderDetails) return;
 
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left},
-                                       [this] { adjustBrightness(-BRIGHTNESS_STEP); });
+                                       [this] { adjustBrightness(-1); });
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right},
-                                       [this] { adjustBrightness(BRIGHTNESS_STEP); });
+                                       [this] { adjustBrightness(1); });
 }
 
 Rect FrontlightPanelActivity::homeButtonRect() const {
@@ -388,15 +485,7 @@ int FrontlightPanelActivity::computePanelBottom() const {
     const auto sheet = frontlightSheetProps();
     return y + DrawerHandle::bandHeight(sheet);
   }
-  y += tokens.spaceLg;                     // leading spacer
-  y += tokens.rowHeight + tokens.spaceSm;  // brightness label + frontlight toggle row
-  y += tokens.rowHeight + tokens.spaceLg;  // brightness slider
-  if (Frontlight.hasColorTemperature()) {
-    y += lh + tokens.spaceSm + tokens.rowHeight + tokens.spaceLg;  // warmth label + slider
-  }
-  y += tokens.spaceLg + ACTION_BAR_HEIGHT;  // trailing padding + actions
-  const auto sheet = frontlightSheetProps();
-  return y + DrawerHandle::bandHeight(sheet);
+  return controlCenterBottom();
 }
 
 void FrontlightPanelActivity::prepareReaderDetailsLayout() {
@@ -409,7 +498,7 @@ void FrontlightPanelActivity::prepareReaderDetailsLayout() {
       renderer.wrappedText(UI_12_FONT_ID, context.bookDetails.title.c_str(), width, 2, EpdFontFamily::BOLD);
 }
 
-void FrontlightPanelActivity::drawReaderDetails(fui::Screen<20>& screen) {
+void FrontlightPanelActivity::drawReaderDetails(UiApp::ScreenType& screen) {
   const auto& theme = screen.theme();
   const fui::Insets sideInset{0, static_cast<int16_t>(theme.spaceLg * 2), 0, static_cast<int16_t>(theme.spaceLg * 2)};
   screen.spacer(static_cast<int16_t>(theme.spaceLg * 2));
@@ -445,6 +534,10 @@ void FrontlightPanelActivity::panelScreen(UiApp::ScreenType& screen, void* user)
 }
 
 void FrontlightPanelActivity::buildPanelScreen(UiApp::ScreenType& screen) {
+  if (!context.showReaderDetails) {
+    buildControlCenter(screen);
+    return;
+  }
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto& theme = screen.theme();
   const fui::SheetProps sheet = frontlightSheetProps();
@@ -627,6 +720,36 @@ void FrontlightPanelActivity::render(RenderLock&&) {
   // clearScreen — same as the theme popups draw over the current frame.
   panelBottom = computePanelBottom();
   uiReady = false;
+  if (!context.showReaderDetails) {
+    // Status row (clock, battery) on white, then the card below it. The theme
+    // header's title lane and rule fall under the card's backdrop and vanish.
+    const int width = renderer.getScreenWidth();
+    renderer.fillRect(0, 0, width, panelBottom + 6, false);
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, width, TouchHeaderBackButton::height(metrics, mappedInput)},
+                   "", nullptr, false);
+    renderer.fillRect(0, CC_CARD_TOP - 4, width, panelBottom + 10 - CC_CARD_TOP, false);
+    const uint32_t frameStartMs = millis();
+#ifndef SIMULATOR
+    const uint32_t panelStartUs = HalDisplay::panelTimeUs();
+#endif
+    renderer.setSmoothRoundEnds(true);
+    app.render();
+    renderer.setSmoothRoundEnds(false);
+    uiReady = true;
+    if (optionPopup.isActive()) optionPopup.render(renderer);
+    renderer.displayBuffer();
+#ifndef SIMULATOR
+    const auto panelMs = static_cast<int32_t>((HalDisplay::panelTimeUs() - panelStartUs) / 1000U);
+#else
+    const int32_t panelMs = -1;
+#endif
+    const uint32_t sinceInput = frameStartMs - lastInputMs;
+    SpeedLog::recordNamed("cc.frame", millis() - frameStartMs,
+                          lastInputMs != 0 && sinceInput < 5000 ? static_cast<int32_t>(sinceInput) : -1, panelMs);
+    lastInputMs = 0;
+    return;
+  }
   app.render();
   uiReady = true;
   drawHeader();
@@ -636,4 +759,322 @@ void FrontlightPanelActivity::render(RenderLock&&) {
   if (optionPopup.isActive()) optionPopup.render(renderer);
 
   renderer.displayBuffer();
+}
+
+// ---------------------------------------------------------------------------
+// VARAGH Control Center (design C): a calm card with the light and warmth
+// sliders and eight buttons the reader picks in Settings > Controls.
+
+// Buttons in use: empty slots are skipped and the rest close up, four a row.
+int FrontlightPanelActivity::controlButtonCount() const {
+  int count = 0;
+  for (int slot = 0; slot < CrossPointSettings::CONTROL_CENTER_SLOTS; ++slot) {
+    count += SETTINGS.controlCenterSlot(slot) != CrossPointSettings::CC_EMPTY ? 1 : 0;
+  }
+  return count;
+}
+
+int FrontlightPanelActivity::controlCenterBottom() const {
+  int y = CC_CARD_TOP + CC_CARD_PAD + CC_LIGHT_H;
+  if (Frontlight.hasColorTemperature()) y += CC_WARMTH_GAP + CC_WARMTH_H;
+  // The card is only as tall as the rows of buttons it shows (none, one or two).
+  const int rows = (controlButtonCount() + 3) / 4;
+  if (rows > 0) y += CC_BUTTONS_GAP + CC_ROW_PITCH * rows - 10;  // a row's label ends 10 px before the next pitch
+  return y + CC_GRABBER_BAND;
+}
+
+bool FrontlightPanelActivity::controlButtonOn(const uint8_t button) const {
+  switch (button) {
+    case CrossPointSettings::CC_TAP_TO_LOOK_UP:
+      return SETTINGS.tapToLookUp != 0;
+    case CrossPointSettings::CC_WIFI:
+      return OnlineWifi::manualOn();
+    case CrossPointSettings::CC_DARK:
+      return SETTINGS.screenInverted != 0;
+    case CrossPointSettings::CC_TOUCH_LOCK:
+      return pendingTouchscreenDisabled;
+    case CrossPointSettings::CC_LIGHT:
+      return lightOn;
+    case CrossPointSettings::CC_NIGHT_LIGHT:
+      return FrontlightNight::isNight();
+    case CrossPointSettings::CC_GUIDE_DOTS:
+      return SETTINGS.guideReadingEnabled != 0;
+    case CrossPointSettings::CC_FOCUS_READING:
+      return SETTINGS.focusReadingEnabled != 0;
+    default:
+      return false;
+  }
+}
+
+bool FrontlightPanelActivity::controlButtonEnabled(const uint8_t button) const {
+  switch (button) {
+    case CrossPointSettings::CC_EMPTY:
+      return false;
+    case CrossPointSettings::CC_READING_STATS:
+      return context.showReadingStatsAction && SETTINGS.shouldTrackReadingStats();
+    case CrossPointSettings::CC_ROTATE:
+      return context.activeEpub;
+    default:
+      return true;
+  }
+}
+
+// A thin track, black up to the knob and outlined after it, under a round
+// white knob. Solid black and white only: no grey dots for the e-ink to blur.
+void FrontlightPanelActivity::drawThinSlider(const int left, const int right, const int midY, const int knobX,
+                                             const int knobD) const {
+  const int top = midY - CC_TRACK_H / 2;
+  renderer.drawRoundedRect(left, top, right - left, CC_TRACK_H, 2, CC_TRACK_H / 2, true);
+  if (knobX > left) renderer.fillRoundedRect(left, top, knobX - left, CC_TRACK_H, CC_TRACK_H / 2, Color::Black);
+  renderer.fillRoundedRect(knobX - knobD / 2, midY - knobD / 2, knobD, knobD, knobD / 2, Color::White);
+  renderer.drawRoundedRect(knobX - knobD / 2, midY - knobD / 2, knobD, knobD, 2, knobD / 2, true);
+}
+
+void FrontlightPanelActivity::buildControlCenter(UiApp::ScreenType& screen) {
+  auto& target = screen.target();
+  const int width = renderer.getScreenWidth();
+  const int x0 = CC_CARD_SIDE;
+  const int x1 = width - CC_CARD_SIDE;
+  const int cardBottom = panelBottom;
+
+  // Card: a soft dotted shadow, white body, 2 px rim.
+  renderer.fillRoundedRect(x0 + 3, CC_CARD_TOP + 4, x1 - x0, cardBottom - CC_CARD_TOP, CC_CARD_RADIUS,
+                           Color::LightGray);
+  renderer.fillRoundedRect(x0, CC_CARD_TOP, x1 - x0, cardBottom - CC_CARD_TOP, CC_CARD_RADIUS, Color::White);
+  renderer.drawRoundedRect(x0, CC_CARD_TOP, x1 - x0, cardBottom - CC_CARD_TOP, 2, CC_CARD_RADIUS, true);
+
+  // Taps outside the card close it; the grabber band closes it too.
+  const int screenH = renderer.getScreenHeight();
+  screen.frame().hit(fui::Rect{0, static_cast<int16_t>(cardBottom + 6), static_cast<int16_t>(width),
+                               static_cast<int16_t>(screenH - cardBottom - 6)},
+                     ACTION_DISMISS, 0, fui::InputTouch);
+  drawerHandleRect = fui::Rect{static_cast<int16_t>(width / 2 - 60), static_cast<int16_t>(cardBottom - CC_GRABBER_BAND),
+                               120, CC_GRABBER_BAND};
+  screen.frame().hit(drawerHandleRect, ACTION_DISMISS, 0, fui::InputTouch);
+  renderer.fillRoundedRect(width / 2 - 24, cardBottom - 14, 48, 5, 2, Color::Black);
+
+  // Light: round - and + buttons for exact steps, between them a big
+  // capsule, dark grey up to the knob, the percent in the knob.
+  const int left = x0 + CC_CARD_PAD;
+  const int right = x1 - CC_CARD_PAD;
+  int y = CC_CARD_TOP + CC_CARD_PAD;
+  const int stepCy = y + CC_LIGHT_H / 2;
+  for (const int side : {-1, +1}) {
+    const int bx = side < 0 ? left : right - CC_STEP_D;
+    renderer.fillRoundedRect(bx, stepCy - CC_STEP_D / 2, CC_STEP_D, CC_STEP_D, CC_STEP_D / 2, Color::White);
+    renderer.drawRoundedRect(bx, stepCy - CC_STEP_D / 2, CC_STEP_D, CC_STEP_D, 2, CC_STEP_D / 2, true);
+    target.bitmap(fui::Rect{static_cast<int16_t>(bx + (CC_STEP_D - CC_ICON) / 2),
+                            static_cast<int16_t>(stepCy - CC_ICON / 2), CC_ICON, CC_ICON},
+                  fui::bitmapFromIcon(side < 0 ? icon_v_minus_24 : icon_v_plus_24), fui::BitmapMode::Center);
+    screen.frame().hit(fui::Rect{static_cast<int16_t>(bx - 6), static_cast<int16_t>(y),
+                                 static_cast<int16_t>(CC_STEP_D + 12), CC_LIGHT_H},
+                       ACTION_BRIGHTNESS_STEP, static_cast<int16_t>(side), fui::InputTouch);
+  }
+  const int sliderL = left + CC_STEP_D + CC_STEP_GAP;
+  const int sliderR = right - CC_STEP_D - CC_STEP_GAP;
+  const int travelStart = sliderL + CC_KNOB_W / 2;
+  const int travelEnd = sliderR - CC_KNOB_W / 2;
+  const uint8_t shown = brightness;
+  const int knobX = travelStart + (travelEnd - travelStart) * lightPermilleFromPercent(shown) / 1000;
+  drawThinSlider(sliderL, sliderR, stepCy, knobX, CC_KNOB_W);
+  char percent[8];
+  std::snprintf(percent, sizeof(percent), "%u%%", static_cast<unsigned>(shown));
+  // UI_10 bold keeps "100%" (58 px) inside the 72 px knob.
+  const int textW = renderer.getTextWidth(UI_10_FONT_ID, percent, EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, knobX - textW / 2, y + (CC_LIGHT_H - renderer.getLineHeight(UI_10_FONT_ID)) / 2,
+                    percent, true, EpdFontFamily::BOLD);
+  // The whole slider takes drags, the knob's overhang at either end too.
+  lightSliderW = sliderR - sliderL;
+  screen.frame().hit(fui::Rect{static_cast<int16_t>(sliderL), static_cast<int16_t>(y),
+                               static_cast<int16_t>(lightSliderW), CC_LIGHT_H},
+                     ACTION_BRIGHTNESS, 0, fui::InputTouch | fui::InputDrag);
+  y += CC_LIGHT_H;
+
+  // Warmth: - and + at the ends, then cold (snowflake) and warm (flame).
+  if (Frontlight.hasColorTemperature()) {
+    y += CC_WARMTH_GAP;
+    const int midY = y + CC_WARMTH_H / 2;
+    const int stepInset = (CC_STEP_D - CC_SMALL_STEP_D) / 2;  // centred under the light's - / +
+    for (const int side : {-1, +1}) {
+      const int bx = side < 0 ? left + stepInset : right - stepInset - CC_SMALL_STEP_D;
+      renderer.fillRoundedRect(bx, midY - CC_SMALL_STEP_D / 2, CC_SMALL_STEP_D, CC_SMALL_STEP_D, CC_SMALL_STEP_D / 2,
+                               Color::White);
+      renderer.drawRoundedRect(bx, midY - CC_SMALL_STEP_D / 2, CC_SMALL_STEP_D, CC_SMALL_STEP_D, 2,
+                               CC_SMALL_STEP_D / 2, true);
+      target.bitmap(fui::Rect{static_cast<int16_t>(bx + (CC_SMALL_STEP_D - CC_ICON) / 2),
+                              static_cast<int16_t>(midY - CC_ICON / 2), CC_ICON, CC_ICON},
+                    fui::bitmapFromIcon(side < 0 ? icon_v_minus_24 : icon_v_plus_24), fui::BitmapMode::Center);
+      screen.frame().hit(fui::Rect{static_cast<int16_t>(bx - 8), static_cast<int16_t>(y - 10),
+                                   static_cast<int16_t>(CC_SMALL_STEP_D + 16), static_cast<int16_t>(CC_WARMTH_H + 20)},
+                         ACTION_WARMTH_STEP, static_cast<int16_t>(side), fui::InputTouch);
+    }
+    const int coldX = left + CC_STEP_D + CC_STEP_GAP;
+    const int warmX = right - CC_STEP_D - CC_STEP_GAP - CC_ICON;
+    target.bitmap(fui::Rect{static_cast<int16_t>(coldX), static_cast<int16_t>(midY - CC_ICON / 2), CC_ICON, CC_ICON},
+                  fui::bitmapFromIcon(icon_v_snowflake_24), fui::BitmapMode::Center);
+    target.bitmap(fui::Rect{static_cast<int16_t>(warmX), static_cast<int16_t>(midY - CC_ICON / 2), CC_ICON, CC_ICON},
+                  fui::bitmapFromIcon(icon_v_flame_on_24), fui::BitmapMode::Center);
+    const int trackL = coldX + CC_ICON + 8;
+    const int trackR = warmX - 8;
+    // The knob covers each end of the track at 0 % and 100 %.
+    const int wx = trackL + CC_WARM_KNOB_D / 2 + (trackR - trackL - CC_WARM_KNOB_D) * warmth / 100;
+    drawThinSlider(trackL, trackR, midY, wx, CC_WARM_KNOB_D);
+    warmthSliderW = trackR - trackL;
+    screen.frame().hit(fui::Rect{static_cast<int16_t>(trackL), static_cast<int16_t>(y - 8),
+                                 static_cast<int16_t>(trackR - trackL), static_cast<int16_t>(CC_WARMTH_H + 16)},
+                       ACTION_WARMTH, 0, fui::InputTouch | fui::InputDrag);
+    y += CC_WARMTH_H;
+  }
+
+  // Eight buttons in two rows: black when switched on, label underneath.
+  y += CC_BUTTONS_GAP;
+  const int columnW = (x1 - x0 - 24) / 4;
+  int shownIndex = 0;
+  for (int slot = 0; slot < CrossPointSettings::CONTROL_CENTER_SLOTS; ++slot) {
+    const uint8_t button = SETTINGS.controlCenterSlot(slot);
+    const bool on = controlButtonOn(button);
+    const freeink::Icon* icon = controlButtonIcon(button, on);
+    if (!icon) continue;
+    const bool enabled = controlButtonEnabled(button);
+    const int position = shownIndex++;
+    const int cx = x0 + 12 + columnW * (position % 4) + columnW / 2;
+    const int top = y + CC_ROW_PITCH * (position / 4);
+    const int pillX = cx - CC_PILL_W / 2;
+    if (on) {
+      renderer.fillRoundedRect(pillX, top, CC_PILL_W, CC_PILL_H, CC_PILL_H / 2, Color::Black);
+    } else {
+      // Not available here (no book open): lightly dotted.
+      renderer.fillRoundedRect(pillX, top, CC_PILL_W, CC_PILL_H, CC_PILL_H / 2,
+                               enabled ? Color::White : Color::LightGray);
+      renderer.drawRoundedRect(pillX, top, CC_PILL_W, CC_PILL_H, 1, CC_PILL_H / 2, true);
+    }
+    target.bitmap(fui::Rect{static_cast<int16_t>(cx - CC_ICON / 2),
+                            static_cast<int16_t>(top + (CC_PILL_H - CC_ICON) / 2), CC_ICON, CC_ICON},
+                  fui::bitmapFromIcon(*icon), fui::BitmapMode::Center,
+                  fui::Paint::solid(on ? fui::Color::White : fui::Color::Black));
+    const auto style = on ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    const std::string label =
+        renderer.truncatedText(SMALL_FONT_ID, I18N.get(controlButtonLabel(button)), columnW - 4, style);
+    const int lw = renderer.getTextWidth(SMALL_FONT_ID, label.c_str(), style);
+    renderer.drawText(SMALL_FONT_ID, cx - lw / 2, top + CC_PILL_H + 6, label.c_str(), true, style);
+    if (enabled) {
+      screen.frame().hit(fui::Rect{static_cast<int16_t>(cx - columnW / 2), static_cast<int16_t>(top - 4),
+                                   static_cast<int16_t>(columnW), static_cast<int16_t>(CC_ROW_PITCH - 8)},
+                         ACTION_CC_BUTTON, static_cast<int16_t>(slot), fui::InputTouch | fui::InputLongPress);
+    }
+  }
+}
+
+void FrontlightPanelActivity::toggleNightLight() {
+  FrontlightNight::setNight(!FrontlightNight::isNight());
+  brightness = Frontlight.brightness();
+  warmth = Frontlight.warmth();
+  settingsDirty = true;
+  requestUpdate();
+}
+
+void FrontlightPanelActivity::openWifiList() {
+  // No auto-connect: hold means "show me the networks".
+  auto list = makeUniqueNoThrow<WifiSelectionActivity>(renderer, mappedInput, false);
+  if (!list) return;
+  startActivityForResult(std::move(list), [this](const ActivityResult&) {
+    if (hasActiveStationWifiConnection()) {
+      // Connected from the list: keep it, as the Wi-Fi button does.
+      OnlineWifi::adoptConnection();
+    } else if (!OnlineWifi::manualOn() && WiFi.getMode() != WIFI_MODE_NULL) {
+      WiFi.disconnect(false);
+      delay(30);
+      WiFi.mode(WIFI_OFF);
+    }
+    requestUpdate();
+  });
+}
+
+void FrontlightPanelActivity::finishWithAction(const FrontlightPanelAction action) {
+  FrontlightPanelResult result;
+  result.state = drawerState;
+  result.activeEpub = context.activeEpub;
+  result.bookPath = context.bookPath;
+  result.action = action;
+  setResult(ActivityResult(std::move(result)));
+  finish();
+}
+
+void FrontlightPanelActivity::activateControlButton(const uint8_t button, const bool longPress) {
+  if (!controlButtonEnabled(button)) return;
+  switch (button) {
+    case CrossPointSettings::CC_TAP_TO_LOOK_UP:
+      SETTINGS.tapToLookUp = SETTINGS.tapToLookUp ? 0 : 1;
+      settingsDirty = true;
+      requestUpdate();
+      return;
+    case CrossPointSettings::CC_WIFI:
+      if (longPress) {
+        openWifiList();
+        return;
+      }
+      OnlineWifi::setManual(!OnlineWifi::manualOn());
+      requestUpdate();
+      return;
+    case CrossPointSettings::CC_DARK:
+      SETTINGS.screenInverted = SETTINGS.screenInverted ? 0 : 1;
+      display.setInverted(SETTINGS.screenInverted != 0);
+      requestUpdate();
+      return;
+    case CrossPointSettings::CC_TOUCH_LOCK:
+      toggleReaderTouchscreen();
+      return;
+    case CrossPointSettings::CC_LIGHT:
+      toggleLight();
+      return;
+    case CrossPointSettings::CC_NIGHT_LIGHT:
+      toggleNightLight();
+      return;
+    case CrossPointSettings::CC_GUIDE_DOTS:
+    case CrossPointSettings::CC_FOCUS_READING: {
+      const bool dots = button == CrossPointSettings::CC_GUIDE_DOTS;
+      if (context.activeEpub) {
+        // A book keeps these per book: its reader toggles, saves and lays out.
+        finishWithAction(dots ? FrontlightPanelAction::ToggleGuideDots : FrontlightPanelAction::ToggleFocusReading);
+        return;
+      }
+      uint8_t& value = dots ? SETTINGS.guideReadingEnabled : SETTINGS.focusReadingEnabled;
+      value = value ? 0 : 1;
+      settingsDirty = true;
+      requestUpdate();
+      return;
+    }
+    case CrossPointSettings::CC_REFRESH:
+      display.fullRefreshNext();
+      close();
+      return;
+    case CrossPointSettings::CC_SYNC:
+      openSyncDialog();
+      return;
+    case CrossPointSettings::CC_SLEEP:
+      // The power button's own routine: goToSleep() alone only draws the
+      // sleep screen (and replaced this panel mid-loop), it never slept.
+      enterDeepSleep();
+      return;
+    case CrossPointSettings::CC_SETTINGS:
+      openGlobalSettings();
+      return;
+    case CrossPointSettings::CC_READING_STATS:
+      openReadingStats();
+      return;
+    case CrossPointSettings::CC_LIBRARY:
+      activityManager.goToLibrary();
+      return;
+    case CrossPointSettings::CC_APPS:
+      activityManager.goToApps();
+      return;
+    case CrossPointSettings::CC_FILE_TRANSFER:
+      activityManager.goToFileTransfer(context.bookPath);
+      return;
+    case CrossPointSettings::CC_ROTATE:
+      finishWithAction(FrontlightPanelAction::RotateRight);
+      return;
+    default:
+      return;
+  }
 }

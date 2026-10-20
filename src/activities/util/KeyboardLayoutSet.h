@@ -9,7 +9,10 @@ namespace keyboard_layouts {
 
 struct LayoutInfo {
   freeink::ui::KeyboardLayoutId id;
+  // The UI language this layout belongs to; Language::_COUNT for a layout
+  // without one (Persian), which then shows `name` in the layout list.
   Language language;
+  const char* name = nullptr;
 };
 
 // Table position is the persisted bit assignment. Append future layouts so
@@ -24,6 +27,7 @@ inline constexpr LayoutInfo ALL[] = {
     {freeink::ui::KeyboardLayoutId::CyrillicBe, Language::BE},
     {freeink::ui::KeyboardLayoutId::CyrillicKk, Language::KK},
     {freeink::ui::KeyboardLayoutId::HebrewIl, Language::HE},
+    {freeink::ui::KeyboardLayoutId::PersianFa, Language::FA},
 };
 inline constexpr uint8_t COUNT = sizeof(ALL) / sizeof(ALL[0]);
 static_assert(COUNT <= 16, "keyboard layout mask is uint16_t");

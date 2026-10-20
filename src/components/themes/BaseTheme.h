@@ -57,7 +57,8 @@ enum class ThemeTabBarAppearance : uint8_t {
 // Keep its bounds in one place so changing a theme cannot subtly shift the
 // clock or battery percentage relative to the other main themes.
 namespace StatusBarMetrics {
-constexpr int batteryWidth = 15;
+// VARAGH 1.3.0: 22 px body + 2 px nub (was 15 x 12 with three bars).
+constexpr int batteryWidth = 24;
 constexpr int batteryHeight = 12;
 constexpr int sideInset = 12;
 }  // namespace StatusBarMetrics

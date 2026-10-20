@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "KeyboardShiftState.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
@@ -55,6 +56,8 @@ class KeyboardEntryActivity : public Activity {
   freeink::ui::KeyboardLayoutId layoutId = freeink::ui::KeyboardLayoutId::QwertyEn;
   bool showLangKey = false;
   bool shifted = false;
+  // Letter layers: Shift for one letter, or Caps Lock (double tap or hold).
+  KeyboardShiftState letterShift;
   bool symbols = false;
   bool urlPanel = false;  // URL snippet panel replaces the letter layer
 

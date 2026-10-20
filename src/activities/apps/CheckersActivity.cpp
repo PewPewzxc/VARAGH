@@ -487,7 +487,7 @@ void CheckersActivity::render(RenderLock&&) {
   layout();
   renderer.clearScreen();
   gameui::drawHeader(renderer, mappedInput, tr(STR_GAME_CHECKERS));
-  if (panel == Panel::Board && game->started()) newHold.draw(renderer, tr(STR_GAME_NEW_SHORT));
+  if (panel == Panel::Board && game->started()) newHold.draw(renderer, tr(STR_GAME_NEW_SHORT), tr(STR_HOLD_FOR_NEW_GAME));
 
   const checkers::Side bottom = flipped() ? checkers::Dark : checkers::Light;
   drawStrip(topStripY, otherSide(bottom));

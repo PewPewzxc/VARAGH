@@ -16,7 +16,7 @@ namespace {
 
 constexpr char kLog[] = "/.crosspoint/speed-log.csv";
 constexpr char kOld[] = "/.crosspoint/speed-log.old.csv";
-constexpr int kColumns = 17;
+constexpr int kColumns = 20;
 
 std::vector<std::string> lines(const std::string& text) {
   std::vector<std::string> out;
@@ -132,4 +132,78 @@ TEST_F(SpeedLogTest, UnwritableCardIsRetriedOncePerMinuteNotEveryTick) {
   long long records = 0, dropped = 0;
   tally(lines(Storage.text(kLog)), records, dropped);
   EXPECT_EQ(records + dropped, 60);
+}
+
+TEST_F(SpeedLogTest, ClockMovesOnFromTheLastContextRefresh) {
+  SpeedLog::Context context;
+  char out[24];
+  SpeedLog::formatClock(context, 0, out, sizeof(out));
+  EXPECT_STREQ(out, "");  // clock not set yet
+
+  context.clockValid = true;
+  context.year = 2026;
+  context.month = 12;
+  context.day = 31;
+  context.hour = 23;
+  context.minute = 58;
+  context.clockAtMs = 1000;
+  SpeedLog::formatClock(context, 1000, out, sizeof(out));
+  EXPECT_STREQ(out, "2026-12-31 23:58");
+  // Three minutes later the year has turned.
+  SpeedLog::formatClock(context, 1000 + 3 * 60000, out, sizeof(out));
+  EXPECT_STREQ(out, "2027-01-01 00:01");
+  // A leap day.
+  context.year = 2028;
+  context.month = 2;
+  context.day = 28;
+  context.hour = 23;
+  context.minute = 30;
+  SpeedLog::formatClock(context, 1000 + 45 * 60000, out, sizeof(out));
+  EXPECT_STREQ(out, "2028-02-29 00:15");
+}
+
+TEST_F(SpeedLogTest, StartLineCarriesVoltageClockAndNote) {
+  SpeedLog::Context context;
+  context.batteryPercent = 56;
+  context.batteryMillivolts = 3871;
+  context.clockValid = true;
+  context.year = 2026;
+  context.month = 10;
+  context.day = 19;
+  context.hour = 21;
+  context.minute = 5;
+  context.clockAtMs = fakeclock::nowMs;
+  SpeedLog::setContext(context);
+  SpeedLog::recordNote(SpeedLog::Event::Start, "v=1.3.0-x4-pro reset=DEEPSLEEP, wake=Power");
+  SpeedLog::flush();
+
+  const auto all = lines(Storage.text(kLog));
+  ASSERT_EQ(all.size(), 2u);
+  EXPECT_EQ(fields(all[1]), kColumns) << all[1];
+  EXPECT_NE(all[1].find(",start,"), std::string::npos);
+  EXPECT_NE(all[1].find(",56,"), std::string::npos);
+  // The comma inside the note cannot split the column.
+  EXPECT_NE(all[1].find(",3871,2026-10-19 21:05,v=1.3.0-x4-pro reset=DEEPSLEEP_ wake=Power"), std::string::npos)
+      << all[1];
+  SpeedLog::setContext(SpeedLog::Context{});
+}
+
+TEST_F(SpeedLogTest, LogFromAnOlderBuildMovesAsideAtTheNextStart) {
+  const std::string tiger =
+      "t_ms,event,ms,a,b,battery,charging,light,cpu_mhz,heap_free,heap_min,psram_free,loop_stack,render_stack,"
+      "font_hits,font_sd_reads,font_sd_ms\n3463,boot,3463,-1,-1,85,0,0,240,1,1,1,1,1,1,1,1\n";
+  Storage.put(kLog, tiger);
+  SpeedLog::recordNote(SpeedLog::Event::Start, "v=test");
+  SpeedLog::flush();
+
+  EXPECT_EQ(Storage.text(kOld), tiger);
+  const auto now = lines(Storage.text(kLog));
+  ASSERT_EQ(now.size(), 2u);
+  EXPECT_EQ(fields(now[0]), kColumns);
+  EXPECT_EQ(fields(now[1]), kColumns);
+
+  // A log already in the new layout is kept and appended to.
+  SpeedLog::recordNote(SpeedLog::Event::Start, "v=test2");
+  SpeedLog::flush();
+  EXPECT_EQ(lines(Storage.text(kLog)).size(), 3u);
 }

@@ -10,8 +10,10 @@
 #include "CheckersActivity.h"
 #include "ChessActivity.h"
 #include "ClockActivity.h"
+#include "GoActivity.h"
 #include "MappedInputManager.h"
 #include "SudokuActivity.h"
+#include "TicTacToeActivity.h"
 #include "WordleActivity.h"
 #include "fontIds.h"
 
@@ -26,7 +28,7 @@ constexpr int kIconSize = 100;
 constexpr int kIconTop = 21;
 constexpr int kNameTop = 135;
 constexpr int kStatusTop = 171;
-constexpr int kRowHeight = 92;
+constexpr int kRowHeight = 72;
 constexpr int kRowGap = 12;
 constexpr uint8_t kFileMagic[3] = {'V', 'A', 'P'};
 
@@ -98,6 +100,46 @@ void drawCheckersIcon(const GfxRenderer& renderer, const int x, const int y) {
   gameui::ring(renderer, lightX, lightY, radius - 6, 1, true);
 }
 
+// The grid with a few marks in it.
+void drawTicTacToeIcon(const GfxRenderer& renderer, const int x, const int y) {
+  constexpr int cell = kIconSize / 3;
+  for (int i = 1; i < 3; ++i) {
+    renderer.fillRect(x + i * cell - 1, y + 2, 3, kIconSize - 4, true);
+    renderer.fillRect(x + 2, y + i * cell - 1, kIconSize - 4, 3, true);
+  }
+  for (const int at : {0, 8}) {
+    const int left = x + (at % 3) * cell + 8;
+    const int top = y + (at / 3) * cell + 6;
+    renderer.drawLine(left, top, left + cell - 16, top + cell - 16, 5, true);
+    renderer.drawLine(left, top + cell - 16, left + cell - 16, top, 5, true);
+  }
+  for (const int at : {2, 4}) {
+    gameui::ring(renderer, x + (at % 3) * cell + cell / 2, y + (at / 3) * cell + cell / 2, 10, 4, true);
+  }
+}
+
+// A corner of a Go board with a few stones on it.
+void drawGoIcon(const GfxRenderer& renderer, const int x, const int y) {
+  constexpr int lines = 5;
+  constexpr int step = kIconSize / lines;
+  constexpr int first = step / 2;
+  for (int i = 0; i < lines; ++i) {
+    renderer.fillRect(x + first, y + first + i * step, step * (lines - 1) + 1, i == 0 ? 3 : 2, true);
+    renderer.fillRect(x + first + i * step, y + first, i == 0 ? 3 : 2, step * (lines - 1) + 1, true);
+  }
+  const auto stone = [&](const int column, const int row, const bool black) {
+    const int cx = x + first + column * step;
+    const int cy = y + first + row * step;
+    gameui::disc(renderer, cx, cy, step / 2 - 1, black);
+    gameui::ring(renderer, cx, cy, step / 2 - 1, black ? 1 : 3, true);
+  };
+  stone(1, 1, true);
+  stone(2, 1, false);
+  stone(2, 2, true);
+  stone(3, 2, false);
+  stone(1, 3, false);
+}
+
 // A calendar leaf showing today: the month across the top, the day below.
 void drawClockIcon(const GfxRenderer& renderer, const int x, const int y) {
   renderer.drawRoundedRect(x, y, kIconSize, kIconSize, 3, 12, true);
@@ -136,7 +178,7 @@ void drawSwitch(const GfxRenderer& renderer, const int x, const int y, const boo
 }
 
 // The names the app screens give themselves, in the order of AppId.
-constexpr const char* kActivityNames[] = {"Wordle", "Sudoku", "Chess", "Checkers", "Clock"};
+constexpr const char* kActivityNames[] = {"Wordle", "Sudoku", "Chess", "Checkers", "Clock", "TicTacToe", "Go"};
 
 }  // namespace
 
@@ -224,21 +266,32 @@ void AppsActivity::readStatus() {
   status[Checkers] = line;
   ClockActivity::statusLine(line, sizeof(line));
   status[Clock] = line;
+  TicTacToeActivity::statusLine(line, sizeof(line));
+  status[TicTacToe] = line;
+  GoActivity::statusLine(line, sizeof(line));
+  status[Go] = line;
 }
 
 void AppsActivity::layout() {
   const int width = renderer.getScreenWidth();
   const int top = gameui::contentTop(renderer, mappedInput);
   const int tileWidth = (width - 2 * kTileMargin - (kColumns - 1) * kTileGap) / kColumns;
+  int visible = 0;
+  for (const int app : kOrder) visible += hidden(app) ? 0 : 1;
+  // Up to three rows keep the full tiles; a fourth row makes them shorter
+  // (icon and name, no status line) so all of them fit.
+  const int tileRows = (visible + kColumns - 1) / kColumns;
+  const int tileHeight =
+      tileRows <= 3 ? kTileHeight
+                    : (gameui::contentBottom(renderer) - top - (tileRows - 1) * kTileGap) / tileRows;
   shownCount = 0;
-  for (int app = 0; app < kAppCount; ++app) {
+  int row = 0;
+  for (const int app : kOrder) {
+    rows[app] = {kTileMargin, top + row++ * (kRowHeight + kRowGap), width - 2 * kTileMargin, kRowHeight};
     if (hidden(app)) continue;
     tiles[shownCount] = {kTileMargin + (shownCount % kColumns) * (tileWidth + kTileGap),
-                         top + (shownCount / kColumns) * (kTileHeight + kTileGap), tileWidth, kTileHeight};
+                         top + (shownCount / kColumns) * (tileHeight + kTileGap), tileWidth, tileHeight};
     shown[shownCount++] = app;
-  }
-  for (int app = 0; app < kAppCount; ++app) {
-    rows[app] = {kTileMargin, top + app * (kRowHeight + kRowGap), width - 2 * kTileMargin, kRowHeight};
   }
   manageBox = gameui::headerCornerBox(renderer, mappedInput, tr(STR_APPS_MANAGE));
 
@@ -290,6 +343,12 @@ void AppsActivity::open(const AppId app) {
       break;
     case Checkers:
       activity = std::make_unique<CheckersActivity>(renderer, mappedInput);
+      break;
+    case TicTacToe:
+      activity = std::make_unique<TicTacToeActivity>(renderer, mappedInput);
+      break;
+    case Go:
+      activity = std::make_unique<GoActivity>(renderer, mappedInput);
       break;
     default:
       activity = std::make_unique<ClockActivity>(renderer, mappedInput);
@@ -369,6 +428,12 @@ void AppsActivity::drawIcon(const int app, const int x, const int y) const {
     case Checkers:
       drawCheckersIcon(renderer, x, y);
       break;
+    case TicTacToe:
+      drawTicTacToeIcon(renderer, x, y);
+      break;
+    case Go:
+      drawGoIcon(renderer, x, y);
+      break;
     default:
       drawClockIcon(renderer, x, y);
       break;
@@ -376,16 +441,20 @@ void AppsActivity::drawIcon(const int app, const int x, const int y) const {
 }
 
 void AppsActivity::drawTiles() const {
-  const char* names[kAppCount] = {tr(STR_GAME_WORDLE), tr(STR_GAME_SUDOKU), tr(STR_GAME_CHESS),
-                                  tr(STR_GAME_CHECKERS), tr(STR_APP_CLOCK)};
+  const char* names[kAppCount] = {tr(STR_GAME_WORDLE),   tr(STR_GAME_SUDOKU), tr(STR_GAME_CHESS),
+                                  tr(STR_GAME_CHECKERS), tr(STR_APP_CLOCK),   tr(STR_GAME_TICTACTOE),
+                                  tr(STR_GAME_GO)};
   for (int i = 0; i < shownCount; ++i) {
     const int app = shown[i];
     const gameui::Box& tile = tiles[i];
     renderer.drawRoundedRect(tile.x, tile.y, tile.w, tile.h, 2, 12, true);
-    drawIcon(app, tile.x + (tile.w - kIconSize) / 2, tile.y + kIconTop);
-    gameui::centredText(renderer, UI_12_FONT_ID, {tile.x, tile.y + kNameTop, tile.w, 30}, names[app], true,
-                        EpdFontFamily::BOLD);
-    if (!status[app].empty()) {
+    const bool compact = tile.h < kTileHeight;
+    const int iconTop = compact ? (tile.h - kIconSize - 34) / 2 : kIconTop;
+    drawIcon(app, tile.x + (tile.w - kIconSize) / 2, tile.y + iconTop);
+    gameui::centredText(renderer, UI_12_FONT_ID,
+                        {tile.x, tile.y + (compact ? iconTop + kIconSize + 4 : kNameTop), tile.w, 30}, names[app],
+                        true, EpdFontFamily::BOLD);
+    if (!compact && !status[app].empty()) {
       gameui::centredText(renderer, SMALL_FONT_ID, {tile.x, tile.y + kStatusTop, tile.w, 22},
                           renderer.truncatedText(SMALL_FONT_ID, status[app].c_str(), tile.w - 16).c_str());
     }
@@ -397,8 +466,9 @@ void AppsActivity::drawTiles() const {
 }
 
 void AppsActivity::drawManage() const {
-  const char* names[kAppCount] = {tr(STR_GAME_WORDLE), tr(STR_GAME_SUDOKU), tr(STR_GAME_CHESS),
-                                  tr(STR_GAME_CHECKERS), tr(STR_APP_CLOCK)};
+  const char* names[kAppCount] = {tr(STR_GAME_WORDLE),   tr(STR_GAME_SUDOKU), tr(STR_GAME_CHESS),
+                                  tr(STR_GAME_CHECKERS), tr(STR_APP_CLOCK),   tr(STR_GAME_TICTACTOE),
+                                  tr(STR_GAME_GO)};
   for (int app = 0; app < kAppCount; ++app) {
     const gameui::Box& row = rows[app];
     renderer.drawRoundedRect(row.x, row.y, row.w, row.h, 2, 12, true);
@@ -409,7 +479,7 @@ void AppsActivity::drawManage() const {
     drawSwitch(renderer, row.x + row.w - 66 - 22, row.y + (row.h - 36) / 2, !hidden(app));
     if (app == Clock) gameui::button(renderer, clockSettingsBox, tr(STR_SETTINGS_SHORT), false);
   }
-  const int y = rows[kAppCount - 1].y + kRowHeight + 14;
+  const int y = rows[kOrder[kAppCount - 1]].y + kRowHeight + 14;
   int lineY = y;
   for (const auto& line : renderer.wrappedText(SMALL_FONT_ID, tr(STR_APPS_HIDDEN_NOTE),
                                                renderer.getScreenWidth() - 60, 3)) {

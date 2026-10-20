@@ -1,5 +1,6 @@
 #include "HalSystem.h"
 
+#include <cstring>
 #include <string>
 
 #include "AppVersion.h"
@@ -234,6 +235,11 @@ void IRAM_ATTR __wrap_panic_print_backtrace(const void* frame, int core) {
 
 namespace HalSystem {
 
+namespace {
+// Last log lines before the crash, copied at begin() on a panic reboot.
+std::string crashLogs;
+}  // namespace
+
 void begin() {
   // On a panic reboot, preserve diagnostics until checkPanic() has tried to write them to the SD card.
   // Ordinary boots clear any stale retained diagnostics.
@@ -252,12 +258,20 @@ void begin() {
     if (sanitizeLogHead()) {
       clearLastLogs();
     }
+    // Keep the lines from before the crash apart from the ones this boot logs
+    // before checkPanic() writes the report.
+    crashLogs = getLastLogs();
   }
 }
 
-void checkPanic() {
+void checkPanic(const char* when) {
   if (isRebootFromPanic()) {
     auto panicInfo = getPanicInfo(true);
+    if (when != nullptr && when[0] != '\0') {
+      const size_t lineEnd = panicInfo.find('\n');
+      panicInfo.insert(lineEnd == std::string::npos ? panicInfo.size() : lineEnd + 1,
+                       std::string("Report written: ") + when + " (device clock, after the restart)\n");
+    }
     auto file = Storage.open("/crash_report.txt", O_WRITE | O_CREAT | O_TRUNC);
     if (file) {
       const size_t written = file.write(panicInfo.c_str(), panicInfo.size());
@@ -304,9 +318,11 @@ std::string getPanicInfo(bool full) {
     char elfSha[65] = {};
     esp_app_get_elf_sha256(elfSha, sizeof(elfSha));
     info += "\nFirmware ELF SHA256: " + std::string(elfSha);
+    info += "\nFirmware commit: " CROSSINK_GIT_SHA;
+    if (strcmp(CROSSINK_GIT_DIRTY, "0") != 0) info += " (with changes not yet committed)";
     info += "\n\nPanic reason: ";
     info += panicMessage[0] ? panicMessage : "(not captured; see exception registers)";
-    info += "\n\nLast logs:\n" + getLastLogs();
+    info += "\n\nLast logs before the crash:\n" + (crashLogs.empty() ? getLastLogs() : crashLogs);
     auto toHex = [](uint32_t value) {
       char buffer[9];
       snprintf(buffer, sizeof(buffer), "%08X", value);

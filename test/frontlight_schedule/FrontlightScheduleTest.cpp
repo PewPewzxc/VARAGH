@@ -74,3 +74,41 @@ TEST(FrontlightSchedule, UnsetTimeStartsAtNoonAndRoundTripsTwelveHourValues) {
   EXPECT_EQ(FrontlightSchedule::minutesFromTimeOfDay(afternoon.hour12, afternoon.minute, afternoon.isPm),
             timeOfDay(16, 43));
 }
+
+// VARAGH 1.3.0: night light and the Control Center light slider.
+#include "FrontlightNight.h"
+#include "FrontlightPanelModel.h"
+
+TEST(FrontlightNight, NightAcrossMidnight) {
+  EXPECT_TRUE(FrontlightNight::scheduleWantsNight(true, 22 * 60, 7 * 60, 23 * 60));
+  EXPECT_TRUE(FrontlightNight::scheduleWantsNight(true, 22 * 60, 7 * 60, 3 * 60));
+  EXPECT_FALSE(FrontlightNight::scheduleWantsNight(true, 22 * 60, 7 * 60, 7 * 60));
+  EXPECT_FALSE(FrontlightNight::scheduleWantsNight(true, 22 * 60, 7 * 60, 12 * 60));
+  EXPECT_FALSE(FrontlightNight::scheduleWantsNight(false, 22 * 60, 7 * 60, 23 * 60));
+}
+
+TEST(LightSlider, LeftHalfIsZeroToTwentyPercent) {
+  EXPECT_EQ(lightPercentFromPermille(0), 0);
+  EXPECT_EQ(lightPercentFromPermille(500), 20);
+  EXPECT_EQ(lightPercentFromPermille(1000), 100);
+  EXPECT_EQ(lightPercentFromPermille(100), 4);
+  EXPECT_EQ(lightPercentFromPermille(200), 8);
+  EXPECT_EQ(lightPercentFromPermille(-5), 0);
+  EXPECT_EQ(lightPercentFromPermille(1200), 100);
+}
+
+TEST(LightSlider, EveryPercentRoundTrips) {
+  for (int p = 0; p <= 100; ++p) {
+    EXPECT_EQ(lightPercentFromPermille(lightPermilleFromPercent(static_cast<uint8_t>(p))), p) << p;
+  }
+}
+
+TEST(LightSlider, KnobOverhangReachesTheEnds) {
+  // 300 px slider, 64 px knob: the centre travels from pixel 32 to pixel 268.
+  EXPECT_EQ(travelPermille(0, 300, 64), 0);       // on the left overhang
+  EXPECT_EQ(travelPermille(107, 300, 64), 0);     // pixel 32: knob at the start
+  EXPECT_EQ(travelPermille(1000, 300, 64), 1000); // on the right overhang
+  EXPECT_EQ(travelPermille(897, 300, 64), 1000);  // pixel 268: knob at the end
+  EXPECT_EQ(travelPermille(500, 300, 64), 495);   // pixel 149: 117 of 236
+  EXPECT_EQ(travelPermille(500, 40, 64), 0);      // no travel: no division by zero
+}

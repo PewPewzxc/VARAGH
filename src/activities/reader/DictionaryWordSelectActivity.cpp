@@ -161,6 +161,7 @@ void DictionaryWordSelectActivity::onEnter() {
   missedWord_.store(false, std::memory_order_release);
   Dictionary::clearLookupDictPathOverride();
   mappedInput.setReaderTouchscreenOverride(true);
+  controller.setOnlineFallback(true);
   ignoreInitialBackRelease_ = mappedInput.isPressed(MappedInputManager::Button::Back);
   const bool consumeInitialConfirm = mappedInput.isPressed(MappedInputManager::Button::Confirm);
   if (!buildWorkingSet(consumeInitialConfirm)) {
@@ -721,6 +722,7 @@ bool DictionaryWordSelectActivity::extractWords() {
           return;
         }
         const char* storedPart = textPool + offset;
+        if (!utf8ContainsLookupCharacter(std::string(storedPart, part.length))) return;
         const int16_t measuredPartWidth = measureWordAdvanceX(renderer, SETTINGS.getReaderFontId(), storedPart,
                                                               part.length, wordStyle, sanitizeScratch, scratchHalf);
         const int partOffsetX = dictionaryWordPartVisualOffset(fullWordWidth, offsetX, measuredPartWidth, wordIsRtl);
@@ -967,8 +969,44 @@ void DictionaryWordSelectActivity::handleAskInput() {
     DictUtils::cancelAndFinish(*this);
     return;
   }
+  // VARAGH: while the bubble shows, the selection can still change. Right (or
+  // Down / page forward) adds the next word, Left (or Up / page back) takes the
+  // last one off, and either handle can be dragged. Look Up, Highlight and Add
+  // to then use the new selection. A selection that already continues from the
+  // previous page stays as it is.
+  using Button = MappedInputManager::Button;
+  const auto released = [this](const Button a, const Button b, const Button c) {
+    return mappedInput.wasReleased(a) || mappedInput.wasReleased(b) || mappedInput.wasReleased(c);
+  };
+  const int resize = released(Button::Right, Button::Down, Button::PageForward) ? 1
+                     : released(Button::Left, Button::Up, Button::PageBack)     ? -1
+                                                                                : 0;
+  if (resize != 0) {
+    if (!hasCrossPageSelection_ && navigator.resizeCompletedSelection(resize)) askSelectionChanged();
+    return;
+  }
+  const int lineHeight = renderer.getLineHeight(SETTINGS.getReaderFontId());
   int x = 0;
   int y = 0;
+  if (askDragEdge_ != 0) {
+    if (mappedInput.isScreenTouchHeld(x, y)) {
+      const int idx = navigator.wordIndexAtPoint(x, y, lineHeight);
+      if (idx >= 0 && navigator.moveCompletedSelectionEdge(askDragEdge_ == 1, idx)) {
+        forceFullRepaintOnNextRender();
+        requestUpdate();
+      }
+      return;
+    }
+    // Finger lifted: the bubble moves to the new selection.
+    askDragEdge_ = 0;
+    askSelectionChanged();
+    return;
+  }
+  // The bubble's buttons win over a handle that sits close to them.
+  if (!hasCrossPageSelection_ && mappedInput.wasScreenTouchDown(x, y) && askChoiceAt(x, y) < 0) {
+    askDragEdge_ = static_cast<uint8_t>(navigator.completedHandleAt(x, y, lineHeight));
+    if (askDragEdge_ != 0) return;
+  }
   if (!mappedInput.wasScreenTapped(x, y)) return;
   const int choice = askChoiceAt(x, y);
   if (choice < 0) {
@@ -986,6 +1024,22 @@ void DictionaryWordSelectActivity::handleAskInput() {
   } else {
     openAddTo(askPhrase_, askWordCount_, AddToFrom::AskBubble);
   }
+}
+
+void DictionaryWordSelectActivity::askSelectionChanged() {
+  int from = -1;
+  int to = -1;
+  if (!navigator.getLookupSelectionRange(from, to)) return;
+  askPhrase_ = navigator.buildPhrase(from, to);
+  askWordCount_ = navigator.getLookupSelectionWordCount();
+  captureClippingRequest(/*keepSelection=*/true);
+  {
+    // The bubble keeps its last place if it does not fit the new selection.
+    RenderLock lock(*this);
+    layoutAskBubble();
+  }
+  forceFullRepaintOnNextRender();
+  requestUpdate();
 }
 
 bool DictionaryWordSelectActivity::selectFirstWordForTouchDrag() {
@@ -1331,6 +1385,18 @@ void DictionaryWordSelectActivity::loop() {
         setResult(ActivityResult{});
         finish();
         break;
+      case DictionaryLookupController::LookupEvent::TryOnline: {
+        // Not on the card and Wi-Fi is on: the online sources, in place.
+        const std::string saved = OnlineDictionaryActivity::begin(renderer, mappedInput, controller.getLookupWord(), cachePath,
+                                                                  onlinedict::Provider::None, false);
+        if (saved.empty()) {
+          controller.setNotFound();
+          break;
+        }
+        Dictionary::setLookupDictPathOverride(saved.c_str());
+        controller.startLookup(onlinedict::normalizeWord(controller.getLookupWord()), false);
+        break;
+      }
       case DictionaryLookupController::LookupEvent::SwitchDictionary:
         openDictionarySwitch();
         break;

@@ -49,11 +49,26 @@ void EndOfBookOptions::loadOnce(const std::string& currentBookPath, const std::s
   }
   bookAuthor = author;
   rating.store(BookRatings::get(bookPath), std::memory_order_relaxed);
-  names = NextBookFinder::findNextBooks(currentBookPath, MAX_SUGGESTIONS);
+  const std::vector<std::string> siblings = NextBookFinder::findNextBooks(currentBookPath, MAX_SUGGESTIONS);
+  NextBookFinder::SeriesNext seriesNext;
+  const bool hasSeriesNext = NextBookFinder::findNextInSeries(currentBookPath, seriesNext);
   selector.store(0, std::memory_order_relaxed);
+  names.clear();
+  rowLabels.clear();
+  if (hasSeriesNext) {
+    // "Next in series: Title (3)"
+    char label[160];
+    snprintf(label, sizeof(label), tr(STR_EOB_NEXT_IN_SERIES), seriesNext.title.c_str(), seriesNext.position.c_str());
+    names.push_back(seriesNext.path);
+    rowLabels.emplace_back(label);
+  }
+  for (const auto& sibling : siblings) {
+    std::string path = folder == "/" ? "/" + sibling : folder + "/" + sibling;
+    if (hasSeriesNext && path == seriesNext.path) continue;  // already the first row
+    names.push_back(std::move(path));
+    rowLabels.push_back(displayName(sibling));
+  }
   if (!names.empty()) {
-    rowLabels.reserve(names.size() + 1);
-    std::transform(names.begin(), names.end(), std::back_inserter(rowLabels), displayName);
     rowLabels.emplace_back(tr(STR_EOB_HOME));
     rowCount = static_cast<uint16_t>(rowLabels.size());
     for (uint16_t index = 0; index < rowCount; ++index) {
@@ -140,7 +155,7 @@ std::string EndOfBookOptions::fullPath(const size_t index) const {
   if (index >= names.size()) {
     return {};
   }
-  return folder == "/" ? "/" + names[index] : folder + "/" + names[index];
+  return names[index];
 }
 
 void EndOfBookOptions::onRowEvent(const fui::ActionEvent& event, void* user) {

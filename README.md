@@ -13,6 +13,23 @@ their features are kept.
 > VARAGH is an independent community project, not affiliated with or endorsed by
 > Xteink, CrossInk or CrossPoint.
 
+## New in 1.3.0 "Lion" 🦁
+
+- **Control Center:** swipe down for the light and warmth sliders with exact
+  1 % − / + buttons, and eight buttons you choose (Settings → Controls).
+- **Night light:** a second brightness and warmth from evening to morning.
+- **Dictionaries per language:** one page with a tab per language, each with
+  its own card dictionary and two online sources; more sources (Datamuse,
+  OpenThesaurus, English Wiktionary), asked by themselves when Wi-Fi is on.
+- **Persian menus** and a Persian keyboard; **Caps Lock**.
+- **Better word lookup** (word forms such as went → go, می‌روم → رفتن) and
+  **resizing a selection** with handles or the buttons in Ask mode.
+- **Rotation that turns the buttons and touch** with the screen.
+- **One bold icon style** across the whole firmware, made for e-ink.
+- **Go** and **Tic Tac Toe**, and **Next in series** at the end of a book.
+
+See the [changelog](CHANGELOG.md) for everything.
+
 ## New in 1.2.1 "Tiger"
 
 - **Tap to Look Up:** a tap on a word opens its meaning, with no holding

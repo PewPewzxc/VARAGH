@@ -317,8 +317,12 @@ struct HoldButton {
   static constexpr unsigned long kHoldMs = 1200;
   static constexpr uint8_t kSteps = 4;
 
+  static constexpr unsigned long kHintMs = 2000;
+
   Box box;
   uint8_t step = 0;  // 0 = not held, kSteps = full
+  // A plain tap shows a short note under the button: it needs a hold.
+  unsigned long hintUntilMs = 0;
 
   // Call on every loop. Returns true once, when the hold is complete; sets
   // `repaint` when the fill has to be drawn again.
@@ -341,12 +345,29 @@ struct HoldButton {
       step = now;
       repaint = true;
     }
+    if (box.w > 0 && input.wasScreenTapped(x, y) && box.grown(8).contains(x, y)) {
+      hintUntilMs = millis() + kHintMs;
+      repaint = true;
+    } else if (hintUntilMs != 0 && static_cast<long>(millis() - hintUntilMs) >= 0) {
+      hintUntilMs = 0;
+      repaint = true;
+    }
     return false;
   }
 
-  void draw(const GfxRenderer& renderer, const char* label) const {
+  void draw(const GfxRenderer& renderer, const char* label, const char* hint) const {
     cornerButton(renderer, box, label);
     if (step > 0) renderer.invertRect(box.x + 4, box.y + 4, (box.w - 8) * step / kSteps, box.h - 8);
+    if (hintUntilMs == 0) return;
+    // The note sits under the button, right edges lined up, over whatever is there.
+    const int textW = renderer.getTextWidth(SMALL_FONT_ID, hint);
+    const int w = textW + 24;
+    const int h = renderer.getLineHeight(SMALL_FONT_ID) + 14;
+    const int x = box.x + box.w - w;
+    const int y = box.y + box.h + 6;
+    renderer.fillRoundedRect(x, y, w, h, 10, Color::White);
+    renderer.drawRoundedRect(x, y, w, h, 2, 10, true);
+    renderer.drawText(SMALL_FONT_ID, x + 12, y + 7, hint, true);
   }
 };
 

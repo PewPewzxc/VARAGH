@@ -121,6 +121,15 @@ size_t WordSelectNavigator::getLookupSelectionWordCount() const {
   return static_cast<size_t>(fromIdx <= toIdx ? toIdx - fromIdx : fromIdx - toIdx) + 1;
 }
 
+bool WordSelectNavigator::resizeCompletedSelection(const int delta) {
+  if (completedSelectionStart < 0 || completedSelectionEnd < 0 || (delta != 1 && delta != -1)) return false;
+  int& end = completedSelectionEnd >= completedSelectionStart ? completedSelectionEnd : completedSelectionStart;
+  const int next = resizedSelectionEnd(words, std::min(completedSelectionStart, completedSelectionEnd), end, delta);
+  if (next < 0) return false;
+  end = next;
+  return true;
+}
+
 const WordSelectNavigator::WordInfo* WordSelectNavigator::getWordAt(int idx) const {
   if (idx < 0 || idx >= static_cast<int>(words.size())) return nullptr;
   return &words[idx];
@@ -181,46 +190,26 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
   if (rows.empty()) return false;
 
   const auto orient = renderer.getOrientation();
-  const bool isLandscapeCw = orient == GfxRenderer::Orientation::LandscapeClockwise;
-  const bool isLandscapeCcw = orient == GfxRenderer::Orientation::LandscapeCounterClockwise;
-  const bool isInverted = orient == GfxRenderer::Orientation::PortraitInverted;
-  const bool landscape = isLandscapeCw || isLandscapeCcw;
+  const bool landscape = orient == GfxRenderer::Orientation::LandscapeClockwise ||
+                         orient == GfxRenderer::Orientation::LandscapeCounterClockwise;
 
   bool rowPrevPressed, rowNextPressed, wordPrevPressed, wordNextPressed;
   bool wordPrevHeld, wordNextHeld;
 
-  if (isLandscapeCw) {
-    rowPrevPressed = input.wasReleased(MappedInputManager::Button::Left);
-    rowNextPressed = input.wasReleased(MappedInputManager::Button::Right);
-    wordPrevPressed = input.wasReleased(MappedInputManager::Button::Down);
-    wordNextPressed = input.wasReleased(MappedInputManager::Button::Up);
-    wordPrevHeld = input.isPressed(MappedInputManager::Button::Down);
-    wordNextHeld = input.isPressed(MappedInputManager::Button::Up);
-  } else if (landscape) {
-    const bool frontNavSwapped = input.isFrontNavButtonSwapActive();
-    rowPrevPressed =
-        input.wasReleased(frontNavSwapped ? MappedInputManager::Button::Left : MappedInputManager::Button::Right);
-    rowNextPressed =
-        input.wasReleased(frontNavSwapped ? MappedInputManager::Button::Right : MappedInputManager::Button::Left);
-    wordPrevPressed = input.wasReleased(MappedInputManager::Button::Up);
-    wordNextPressed = input.wasReleased(MappedInputManager::Button::Down);
-    wordPrevHeld = input.isPressed(MappedInputManager::Button::Up);
-    wordNextHeld = input.isPressed(MappedInputManager::Button::Down);
-  } else if (isInverted) {
-    rowPrevPressed = input.wasReleased(MappedInputManager::Button::Down);
-    rowNextPressed = input.wasReleased(MappedInputManager::Button::Up);
-    wordPrevPressed = input.wasReleased(MappedInputManager::Button::Right);
-    wordNextPressed = input.wasReleased(MappedInputManager::Button::Left);
-    wordPrevHeld = input.isPressed(MappedInputManager::Button::Right);
-    wordNextHeld = input.isPressed(MappedInputManager::Button::Left);
-  } else {
-    rowPrevPressed = input.wasReleased(MappedInputManager::Button::Up);
-    rowNextPressed = input.wasReleased(MappedInputManager::Button::Down);
-    wordPrevPressed = input.wasReleased(MappedInputManager::Button::Left);
-    wordNextPressed = input.wasReleased(MappedInputManager::Button::Right);
-    wordPrevHeld = input.isPressed(MappedInputManager::Button::Left);
-    wordNextHeld = input.isPressed(MappedInputManager::Button::Right);
-  }
+  // The input manager already gives turned buttons the job of the button in
+  // the same place in portrait (util/ButtonRotation.h). Left/Up mean "back";
+  // in landscape the front row runs along a side, so it moves between lines.
+  using B = MappedInputManager::Button;
+  const B rowPrev = landscape ? B::Left : B::Up;
+  const B rowNext = landscape ? B::Right : B::Down;
+  const B wordPrev = landscape ? B::Up : B::Left;
+  const B wordNext = landscape ? B::Down : B::Right;
+  rowPrevPressed = input.wasReleased(rowPrev);
+  rowNextPressed = input.wasReleased(rowNext);
+  wordPrevPressed = input.wasReleased(wordPrev);
+  wordNextPressed = input.wasReleased(wordNext);
+  wordPrevHeld = input.isPressed(wordPrev);
+  wordNextHeld = input.isPressed(wordNext);
 
   const unsigned long now = millis();
   const bool repeatDue = (wordPrevHeld || wordNextHeld) && input.getHeldTime() >= WORD_REPEAT_START_MS &&
@@ -348,9 +337,8 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
   return changed;
 }
 
-bool WordSelectNavigator::selectWordAtPoint(const int x, const int y, const int lineHeight, bool* hit) {
-  if (hit) *hit = false;
-  if (rows.empty() || words.empty() || lineHeight <= 0) return false;
+int WordSelectNavigator::wordIndexAtPoint(const int x, const int y, const int lineHeight) const {
+  if (rows.empty() || words.empty() || lineHeight <= 0) return -1;
 
   const int horizontalPad = 6;
   const int verticalPad = std::max(4, lineHeight / 4);
@@ -374,6 +362,48 @@ bool WordSelectNavigator::selectWordAtPoint(const int x, const int y, const int 
     }
   }
 
+  return bestIdx;
+}
+
+int WordSelectNavigator::completedHandleAt(const int x, const int y, const int lineHeight) const {
+  if (completedSelectionStart < 0 || completedSelectionEnd < 0) return 0;
+  const auto* first = getWordAt(std::min(completedSelectionStart, completedSelectionEnd));
+  const auto* last = getWordAt(std::max(completedSelectionStart, completedSelectionEnd));
+  if (!first || !last) return 0;
+  // Generous targets around the knobs drawn by drawTouchDragCursor().
+  constexpr int reach = 28;
+  const int startX = first->screenX - 4;
+  const int startY = first->screenY - 2 - HANDLE_KNOB_RADIUS;
+  const int endX = last->screenX + last->width + 4;
+  const int endY = last->screenY + lineHeight + 2 + HANDLE_KNOB_RADIUS;
+  const int toStart = std::abs(x - startX) + std::abs(y - startY);
+  const int toEnd = std::abs(x - endX) + std::abs(y - endY);
+  if (toEnd <= 2 * reach && toEnd <= toStart) return 2;
+  if (toStart <= 2 * reach) return 1;
+  return 0;
+}
+
+bool WordSelectNavigator::moveCompletedSelectionEdge(const bool startEdge, int idx) {
+  if (completedSelectionStart < 0 || completedSelectionEnd < 0 || idx < 0 || idx >= static_cast<int>(words.size())) {
+    return false;
+  }
+  if (completedSelectionStart > completedSelectionEnd) std::swap(completedSelectionStart, completedSelectionEnd);
+  // Never past the other end: the selection keeps at least one word.
+  if (startEdge) {
+    idx = std::min(idx, completedSelectionEnd);
+    if (idx == completedSelectionStart) return false;
+    completedSelectionStart = idx;
+  } else {
+    idx = std::max(idx, completedSelectionStart);
+    if (idx == completedSelectionEnd) return false;
+    completedSelectionEnd = idx;
+  }
+  return true;
+}
+
+bool WordSelectNavigator::selectWordAtPoint(const int x, const int y, const int lineHeight, bool* hit) {
+  if (hit) *hit = false;
+  const int bestIdx = wordIndexAtPoint(x, y, lineHeight);
   if (bestIdx < 0) return false;
   if (hit) *hit = true;
   const int targetRow = words[bestIdx].row;

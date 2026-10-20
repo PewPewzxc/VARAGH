@@ -6,9 +6,13 @@
 #include <Memory.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <string_view>
 
 #include "CrossPointSettings.h"
+#include "LibraryBuilder.h"
+#include "LibraryIndexFile.h"
 
 namespace {
 constexpr size_t NAME_BUFFER_SIZE = 500;
@@ -82,4 +86,49 @@ std::vector<std::string> NextBookFinder::findNextBooks(const std::string& curren
   dir.close();
 
   return result;
+}
+
+bool NextBookFinder::findNextInSeries(const std::string& currentBookPath, SeriesNext& out) {
+  if (currentBookPath.empty()) return false;
+  library::LibraryIndexFile index;
+  if (!index.open(library::libraryIndexPath())) return false;
+
+  const library::BookIdentity identity{library::clixPathHash(currentBookPath.data(), currentBookPath.size()), 0};
+  uint16_t recentRow = 0xFFFF;
+  if (!index.recentRowsFor(&identity, 1, &recentRow) || recentRow == 0xFFFF) return false;
+  const uint16_t current = index.ordinalForRow(library::SortOrder::RecentAsc, recentRow);
+  library::ClixRecord record{};
+  std::string series;
+  uint32_t position = library::CLIX_UNKNOWN_SERIES_POSITION;
+  if (current == 0xFFFF || !index.readRecord(current, record) || !index.readSeries(record, series) || series.empty() ||
+      !index.readSeriesPosition(record, position) || position == library::CLIX_UNKNOWN_SERIES_POSITION) {
+    return false;
+  }
+
+  // Series order sorts by series name, then position: the next book is the
+  // first one after this one with the same series and a higher number.
+  const uint16_t count = index.bookCount();
+  uint16_t row = 0;
+  while (row < count && index.ordinalForRow(library::SortOrder::SeriesAsc, row) != current) ++row;
+  for (++row; row < count; ++row) {
+    const uint16_t ordinal = index.ordinalForRow(library::SortOrder::SeriesAsc, row);
+    library::ClixRecord candidate{};
+    std::string candidateSeries;
+    uint32_t candidatePosition = library::CLIX_UNKNOWN_SERIES_POSITION;
+    if (ordinal == 0xFFFF || !index.readRecord(ordinal, candidate) || !index.readSeries(candidate, candidateSeries)) {
+      return false;
+    }
+    if (candidateSeries != series) return false;  // past the end of this series
+    if (!index.readSeriesPosition(candidate, candidatePosition) ||
+        candidatePosition == library::CLIX_UNKNOWN_SERIES_POSITION || candidatePosition <= position) {
+      continue;  // same number (another copy) or no number
+    }
+    std::string author;
+    if (!index.readPath(candidate, out.path) || !index.readDisplayText(candidate, out.title, author)) return false;
+    if (out.path == currentBookPath) continue;
+    out.series = series;
+    out.position = seriesPositionText(candidatePosition);
+    return true;
+  }
+  return false;
 }

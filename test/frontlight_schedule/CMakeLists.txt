@@ -4,6 +4,7 @@ add_executable(FrontlightScheduleTest
 
 target_include_directories(FrontlightScheduleTest PRIVATE
   ${REPO_ROOT}/src/util
+  ${REPO_ROOT}/src/activities/util
 )
 
 target_link_libraries(FrontlightScheduleTest PRIVATE

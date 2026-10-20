@@ -114,6 +114,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 
   enum ORIENTATION {
     PORTRAIT = 0,       // 480x800 logical coordinates (current default)
+    // Seen from Portrait: LANDSCAPE_CW is the device turned 90° right (clockwise),
+    // LANDSCAPE_CCW turned 90° left. The labels say so ("Turned right 90°").
     LANDSCAPE_CW = 1,   // 800x480 logical coordinates, rotated 180° (swap top/bottom)
     INVERTED = 2,       // 480x800 logical coordinates, inverted
     LANDSCAPE_CCW = 3,  // 800x480 logical coordinates, native panel orientation
@@ -396,6 +398,31 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     TILT_PAGE_TURN_DIRECTION_COUNT
   };
 
+  // VARAGH Control Center buttons (Settings > Controls > Control Center).
+  // Values are persisted: append only.
+  enum CONTROL_CENTER_BUTTON : uint8_t {
+    CC_EMPTY = 0,
+    CC_TAP_TO_LOOK_UP,
+    CC_WIFI,
+    CC_DARK,
+    CC_TOUCH_LOCK,
+    CC_LIGHT,
+    CC_NIGHT_LIGHT,
+    CC_GUIDE_DOTS,
+    CC_FOCUS_READING,
+    CC_REFRESH,
+    CC_SYNC,
+    CC_SLEEP,
+    CC_SETTINGS,
+    CC_READING_STATS,
+    CC_LIBRARY,
+    CC_APPS,
+    CC_FILE_TRANSFER,
+    CC_ROTATE,
+    CONTROL_CENTER_BUTTON_COUNT
+  };
+  static constexpr int CONTROL_CENTER_SLOTS = 8;
+
   // Long-press Confirm (menu button) quick action in reader
   enum LONG_PRESS_MENU_ACTION {
     LONG_MENU_OFF = 0,
@@ -532,7 +559,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     HOLD_ADD_TO = 3,
     HOLD_ACTION_COUNT
   };
-  uint8_t wordHoldAction = HOLD_LOOK_UP;
+  uint8_t wordHoldAction = HOLD_ASK;
   // VARAGH: a tap on a word looks it up. Taps then no longer turn the page in
   // a book (swipes still do); a long press still selects several words.
   uint8_t tapToLookUp = 0;
@@ -546,6 +573,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // online dictionary answers in place instead of restarting twice. Costs
   // battery for as long as a book is open. See network/OnlineWifi.h.
   uint8_t onlineDictWifiAlwaysOn = 0;
+  // VARAGH 1.3.0: the reading languages chosen in Settings > Reader >
+  // Dictionaries, one bit per onlinedict::Lang (English, German, Persian).
+  uint16_t readingLanguages = 0x0007;
   uint8_t customBootscreenEnabled = 1;
   uint8_t tapToHideStatusBar = 1;
   // Disables all touchscreen input while a reader is active. Reader menus temporarily override this.
@@ -730,6 +760,29 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t frontlightScheduleEnabled = 0;
   uint16_t frontlightScheduleStart = 0xFFFF;
   uint16_t frontlightScheduleEnd = 0xFFFF;
+  // VARAGH night light: dimmer and warmer between the two times. The live
+  // brightness/warmth above belong to the day or the night set
+  // (frontlightLiveIsNight); the other set waits in frontlightOther*.
+  uint8_t frontlightNightEnabled = 0;
+  uint16_t frontlightNightStart = 22 * 60;
+  uint16_t frontlightNightEnd = 7 * 60;
+  uint8_t frontlightOtherBrightness = 8;
+  uint8_t frontlightOtherWarmth = 80;
+  uint8_t frontlightLiveIsNight = 0;
+  // Control Center buttons, one CONTROL_CENTER_BUTTON each.
+  uint8_t ccSlot1 = CC_TAP_TO_LOOK_UP;
+  uint8_t ccSlot2 = CC_WIFI;
+  uint8_t ccSlot3 = CC_DARK;
+  uint8_t ccSlot4 = CC_LIGHT;
+  uint8_t ccSlot5 = CC_REFRESH;
+  uint8_t ccSlot6 = CC_TOUCH_LOCK;
+  uint8_t ccSlot7 = CC_SYNC;
+  uint8_t ccSlot8 = CC_SETTINGS;
+  uint8_t controlCenterSlot(const int i) const {
+    const uint8_t slots[CONTROL_CENTER_SLOTS] = {ccSlot1, ccSlot2, ccSlot3, ccSlot4,
+                                                 ccSlot5, ccSlot6, ccSlot7, ccSlot8};
+    return i >= 0 && i < CONTROL_CENTER_SLOTS && slots[i] < CONTROL_CENTER_BUTTON_COUNT ? slots[i] : CC_EMPTY;
+  }
   // Language setting (Language enum index, default 0 = EN)
   uint8_t language = 0;
   // Enabled keyboard layouts. Zero derives a default from the UI language;

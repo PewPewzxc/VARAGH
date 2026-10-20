@@ -24,8 +24,10 @@ class OnlineDictionaryActivity final : public Activity {
   // same path is returned (or an empty string when there is no entry).
   // Otherwise the Wi-Fi lookup starts (the reader closes and the device
   // restarts) and an empty string is returned.
+  // `only` asks that one source and no other ("Try another source").
   static std::string begin(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& word,
-                           const std::string& bookCachePath);
+                           const std::string& bookCachePath,
+                           onlinedict::Provider only = onlinedict::Provider::None, bool allowRestart = true);
 
   void onEnter() override;
   void loop() override;

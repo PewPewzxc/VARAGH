@@ -30,7 +30,10 @@ class AppsActivity final : public Activity {
   void render(RenderLock&&) override;
 
  private:
-  enum AppId { Wordle = 0, Sudoku = 1, Chess = 2, Checkers = 3, Clock = 4, kAppCount = 5 };
+  // The numbers are kept in files (resume, hidden apps): a new app gets the next one.
+  enum AppId { Wordle = 0, Sudoku = 1, Chess = 2, Checkers = 3, Clock = 4, TicTacToe = 5, Go = 6, kAppCount = 7 };
+  // The order of the tiles and of the rows in Manage: the games, then the Clock.
+  static constexpr AppId kOrder[kAppCount] = {Wordle, Sudoku, Chess, Checkers, Go, TicTacToe, Clock};
   static constexpr char kSavePath[] = "/.crosspoint/games/apps.bin";
 
   void layout();

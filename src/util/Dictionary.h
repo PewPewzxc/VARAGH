@@ -58,6 +58,12 @@ struct DictLocation {
   // The index could not be opened, sought, or read to a complete entry. This
   // is not a genuine dictionary miss and must not be presented as one.
   bool readError = false;
+  // locateWithStemVariants(): the .syn list of word forms was asked, and the
+  // entry was found through it ("nodes" -> "node").
+  bool altFormsTried = false;
+  bool matchedAltForm = false;
+  // The headword has exactly the word's capitals (not only a case-folded match).
+  bool exactCase = false;
 };
 
 struct DictDefinitionSlice {
@@ -86,6 +92,14 @@ class Dictionary {
   // This is memory-only; callers must clear it when the lookup activity exits.
   static void setLookupDictPathOverride(const char* folderPath);
   static void clearLookupDictPathOverride();
+
+  // VARAGH 1.3.0: a dictionary per language ("en", "de", "fa"), kept in
+  // /.crosspoint/dictionary-<lang>.bin. Empty = none chosen for that language.
+  static std::string readLanguageDictPath(const char* lang);
+  static void saveLanguageDictPath(const char* lang, const char* folderPath);
+  // The open book's language (memory only): its dictionary comes before the
+  // general one when the book has no dictionary of its own. "" = none.
+  static void setBookLanguage(const char* lang);
 
   // Writes folderPath to /.crosspoint/dictionary.bin (global setting).
   // Pass empty string to clear the global dictionary.
@@ -124,8 +138,9 @@ class Dictionary {
   static DictLocation locate(const std::string& word, const DictLookupCallbacks& cbs = {},
                              const char* cachePath = nullptr);
 
-  // Search the exact word and then its stem variants while reusing one open
-  // index/accelerator session. matchedStem is set only when a variant matched.
+  // Search the exact word, then the .syn list of word forms, then guessed base
+  // forms (smallest change first), reusing one open index/accelerator session.
+  // matchedStem is set only when a guessed form matched.
   static DictLocation locateWithStemVariants(const std::string& word, bool* matchedStem,
                                              const DictLookupCallbacks& cbs = {}, const char* cachePath = nullptr);
 

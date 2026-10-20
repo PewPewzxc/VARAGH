@@ -2,6 +2,84 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.3.0 "Lion" 🦁] - not released yet
+
+Based on VARAGH 1.2.1. Updating keeps your settings, books, reading progress,
+highlights, flashcards and saved games. Built and tuned for the X4 Pro.
+
+### Added
+
+- **Control Center.** Swipe down from the top edge: a card with the light
+  slider (the left half covers 0–20 % for fine low light), the warmth slider
+  (cold on the left, warm on the right), round − / + buttons on both that move
+  exactly 1 %, and eight buttons you choose in **Settings → Controls → Control
+  Center** from: Tap to Look Up, Wi-Fi, Dark, Touch lock, Light, Night light,
+  Guide Dots, Focus Reading, Refresh, Sync, Sleep, Settings, Reading stats,
+  Library, Apps, File transfer, Rotate, or Empty. Empty places are left out
+  and the card gets shorter. Wi-Fi: a tap connects to a saved network in
+  range; a hold opens the network list.
+- **Night light** (Settings → Display → Frontlight): from a time you pick
+  until a time you pick, the reader uses a second brightness and warmth, and
+  goes back to the day values in the morning.
+- **Dictionaries** (Settings → Reader): one page for every language you read,
+  with a tab for each (+ adds a language, hold a tab to remove it). Each
+  language has its own **offline dictionary** on the card and a **first and
+  second online source**. A language without a choice gets its dictionary
+  from the card (one in the same language first, such as German–German). A
+  book uses the dictionary of its language; Persian words use the Persian
+  one in any book. **Keep Wi-Fi on in books** is on the same page.
+- **More online sources:** Datamuse (English meanings, from WordNet),
+  OpenThesaurus (German synonyms) and English Wiktionary (meanings in English
+  of German, Persian and other words), next to Wiktionary and Wikipedia. The
+  popup names the source and offers **Try Another Source**. When the word is
+  not on the card and Wi-Fi is already on, the online sources are asked by
+  themselves.
+- **Persian menus.** Persian is now a menu language, written right to left,
+  with a Persian keyboard (System → Device → Keyboard layouts).
+- **Caps Lock** on the keyboard: tap Shift twice or hold it.
+- **Better word lookup:** "nodes" finds node, "cats" cat, "went" go,
+  "kamen" kommen, "می‌روم" رفتن, using the dictionary's own word forms first.
+  Looking up several words tries the whole phrase first ("good fortune").
+- **Resize a selection in Ask mode.** While the Ask bubble shows, drag the
+  handles at either end, or press Right / Down / page forward to add the next
+  word and Left / Up / page back to take one off. One press is one word as it
+  looks on the page. **Ask** is now the default for Long Press on a Word.
+- **Next in series** at the end of a book, from the Library.
+- **Go** (9×9, 13×13, 19×19; tap twice to place, or move with the buttons)
+  and **Tic Tac Toe** in Apps.
+- **A Lion face** and "1.3.0 Lion" on the boot screen and in Settings.
+
+### Changed
+
+- **One icon style everywhere.** Every icon in the firmware is redrawn in one
+  bold-line style made for e-ink (lines 2.8 px, whole pixels, no grey).
+- **Rotation turns the buttons and touch with the screen.** "Turn right 90°"
+  and "Turn left 90°" always turn exactly 90° that way; the front buttons and
+  the touch screen follow, so the forward button is still forward. The
+  separate "orientation aware" settings are gone. The sleep screen is always
+  drawn upright.
+- **Battery icon:** a new design in every theme, with a bolt while charging
+  and "!" at 15 % or less.
+- **Hold buttons in apps** (New game, Give up) show "Hold to …" for two
+  seconds when tapped.
+- **Logs for finding slow spots:** `speed-log.csv` gets battery voltage, the
+  clock, the kind of input and screen refresh for each page, book-opening
+  steps, Wi-Fi steps and Control Center frames; a crash report names the
+  firmware commit and keeps only the lines from before the crash.
+
+### Fixed
+
+- **Persian text:** Guide Dots sit in the right place in right-to-left lines,
+  and Persian lines in dictionary entries are laid out right to left. Books
+  laid out by an earlier version are laid out again once (new cache version).
+- **Wi-Fi:** the Wi-Fi event handler no longer writes logs from the Wi-Fi
+  task (a suspected cause of an old crash on a failed connection).
+
+### Known issues
+
+- **Focus Reading for Persian** does not work yet; it is planned for a later
+  version.
+
 ## [VARAGH v1.2.1 "Tiger"] - 2026-10-13
 
 Based on VARAGH 1.2.0. Updating keeps your settings, books, reading progress,

@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "network/HttpDownloader.h"
+#include "network/OnlineWifi.h"
+#include "network/WifiUtils.h"
 #include "util/Dictionary.h"
 
 namespace OnlineDictionary {
@@ -201,15 +203,15 @@ bool mergeIndex(const std::string& oldPath, const std::string& newPath, const Sa
   return ok;
 }
 
-bool writeInfo(const DictPaths& paths, const onlinedict::Lang lang, const uint32_t wordCount,
-               const uint32_t indexBytes) {
+bool writeInfo(const DictPaths& paths, const onlinedict::Lang lang, const onlinedict::Provider provider,
+               const uint32_t wordCount, const uint32_t indexBytes) {
   char info[320];
   snprintf(info, sizeof(info),
            "StarDict's dict ifo file\nversion=2.4.2\nwordcount=%u\nidxfilesize=%u\n"
-           "bookname=Online (Wiktionary)\nsametypesequence=h\nlang=%s-%s\n"
-           "description=Answers saved by the VARAGH online dictionary. Wiktionary and Wikipedia, CC BY-SA 4.0.\n",
-           static_cast<unsigned>(wordCount), static_cast<unsigned>(indexBytes), onlinedict::code(lang),
-           onlinedict::code(lang));
+           "bookname=Online (%s)\nsametypesequence=h\nlang=%s-%s\n"
+           "description=Answers saved by the VARAGH online dictionary from %s.\n",
+           static_cast<unsigned>(wordCount), static_cast<unsigned>(indexBytes), onlinedict::providerName(provider),
+           onlinedict::code(lang), onlinedict::code(lang), onlinedict::providerName(provider));
   return writeWholeFile(paths.ifo(), info);
 }
 
@@ -226,7 +228,7 @@ std::string temporaryIndexPath(const DictPaths& paths) { return paths.idx() + ".
 // lost between the two leaves only the finished new index, under its temporary
 // name: it is put in place here. (Power lost earlier leaves the old index and
 // an unfinished temporary one, which the next save simply writes again.)
-void recoverIndex(const DictPaths& paths, const onlinedict::Lang lang) {
+void recoverIndex(const DictPaths& paths, const onlinedict::Lang lang, const onlinedict::Provider provider) {
   const std::string tmpPath = temporaryIndexPath(paths);
   if (Storage.exists(paths.idx().c_str()) || !Storage.exists(tmpPath.c_str())) return;
   uint32_t wordCount = 0;
@@ -239,7 +241,67 @@ void recoverIndex(const DictPaths& paths, const onlinedict::Lang lang) {
   }
   LOG_INF("ODICT", "Put back a saved-answers index of %u words", static_cast<unsigned>(wordCount));
   removeLookupAids(paths);
-  writeInfo(paths, lang, wordCount, indexBytes);
+  writeInfo(paths, lang, provider, wordCount, indexBytes);
+}
+
+// Request file, second line: "en" (1.2.x) or "en:<provider>:<second>".
+std::string requestLangLine(const Request& request) {
+  std::string line = onlinedict::code(request.lang);
+  line += ':' + std::to_string(static_cast<unsigned>(request.provider));
+  line += ':' + std::to_string(static_cast<unsigned>(request.second));
+  return line;
+}
+
+bool parseRequestLangLine(const std::string& line, Request& request) {
+  const size_t colon = line.find(':');
+  if (!onlinedict::langFromCode(line.substr(0, colon).c_str(), request.lang)) return false;
+  request.provider = onlinedict::Provider::Wiktionary;
+  request.second = onlinedict::Provider::None;
+  if (colon == std::string::npos) return true;
+  const size_t colon2 = line.find(':', colon + 1);
+  const int first = atoi(line.c_str() + colon + 1);
+  const int second = colon2 == std::string::npos ? static_cast<int>(onlinedict::Provider::None) : atoi(line.c_str() + colon2 + 1);
+  if (first >= 0 && first < onlinedict::kProviderCount) request.provider = static_cast<onlinedict::Provider>(first);
+  if (second >= 0 && second <= static_cast<int>(onlinedict::Provider::None)) {
+    request.second = static_cast<onlinedict::Provider>(second);
+  }
+  return true;
+}
+
+// Sources per language: "<code> <first> <second>" a line, read once.
+constexpr char kSourcesPath[] = "/.crosspoint/online-sources.txt";
+uint8_t sources[onlinedict::kLangCount][2];
+bool sourcesLoaded = false;
+
+void defaultSources(const onlinedict::Lang lang, uint8_t out[2]) {
+  using onlinedict::Lang;
+  using onlinedict::Provider;
+  const bool own = lang == Lang::English || lang == Lang::German || lang == Lang::Persian;
+  out[0] = static_cast<uint8_t>(own ? Provider::Wiktionary : Provider::EnglishWiktionary);
+  out[1] = static_cast<uint8_t>(lang == Lang::English ? Provider::Datamuse
+                                : own                 ? Provider::EnglishWiktionary
+                                                      : Provider::Wikipedia);
+}
+
+void loadSources() {
+  if (sourcesLoaded) return;
+  sourcesLoaded = true;
+  for (uint8_t i = 0; i < onlinedict::kLangCount; ++i) defaultSources(static_cast<onlinedict::Lang>(i), sources[i]);
+  if (!Storage.exists(kSourcesPath)) return;
+  char buffer[512];
+  const size_t length = Storage.readFileToBuffer(kSourcesPath, buffer, sizeof(buffer) - 1);
+  buffer[length] = '\0';
+  for (char* line = strtok(buffer, "\n"); line; line = strtok(nullptr, "\n")) {
+    onlinedict::Lang lang;
+    int first = 0;
+    int second = 0;
+    if (!onlinedict::langFromCode(line, lang) || sscanf(line + 2, "%d %d", &first, &second) != 2) continue;
+    const auto i = static_cast<uint8_t>(lang);
+    if (first >= 0 && first < onlinedict::kProviderCount) sources[i][0] = static_cast<uint8_t>(first);
+    if (second >= 0 && second <= static_cast<int>(onlinedict::Provider::None)) {
+      sources[i][1] = static_cast<uint8_t>(second);
+    }
+  }
 }
 
 }  // namespace
@@ -247,7 +309,7 @@ void recoverIndex(const DictPaths& paths, const onlinedict::Lang lang) {
 bool saveRequest(const Request& request) {
   Storage.mkdir("/.crosspoint");
   std::string content = request.answered ? "answered\n" : "ask\n";
-  content += onlinedict::code(request.lang);
+  content += requestLangLine(request);
   content += '\n';
   content += request.word;
   content += '\n';
@@ -266,7 +328,7 @@ bool loadRequest(Request& request) {
   const std::string langCode = content.substr(firstBreak + 1, secondBreak - firstBreak - 1);
   std::string word = content.substr(secondBreak + 1);
   while (!word.empty() && (word.back() == '\n' || word.back() == '\r')) word.pop_back();
-  if (word.empty() || !onlinedict::langFromCode(langCode.c_str(), request.lang)) return false;
+  if (word.empty() || !parseRequestLangLine(langCode, request)) return false;
   request.word = word;
   request.answered = status == "answered";
   return true;
@@ -276,14 +338,76 @@ void clearRequest() {
   if (Storage.exists(kRequestPath)) Storage.remove(kRequestPath);
 }
 
-std::string storePath(const onlinedict::Lang lang) {
-  return std::string(kStoreDir) + "/online-" + onlinedict::code(lang);
+std::string storePath(const onlinedict::Lang lang, const onlinedict::Provider provider) {
+  std::string path = std::string(kStoreDir) + "/online-" + onlinedict::code(lang);
+  const char* tag = onlinedict::providerFileTag(provider);
+  if (tag[0] != '\0') {
+    path += '-';
+    path += tag;
+  }
+  return path;
 }
 
-bool hasSaved(const onlinedict::Lang lang, const std::string& word) {
-  const std::string base = storePath(lang);
+bool isStorePath(const std::string& path, onlinedict::Lang& lang, onlinedict::Provider& provider) {
+  const std::string prefix = std::string(kStoreDir) + "/online-";
+  if (path.compare(0, prefix.size(), prefix) != 0) return false;
+  for (uint8_t li = 0; li < onlinedict::kLangCount; ++li) {
+    const auto l = static_cast<onlinedict::Lang>(li);
+    for (uint8_t p = 0; p < onlinedict::kProviderCount; ++p) {
+      if (path == storePath(l, static_cast<onlinedict::Provider>(p))) {
+        lang = l;
+        provider = static_cast<onlinedict::Provider>(p);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+onlinedict::Provider preferredProvider(const onlinedict::Lang lang) {
+  loadSources();
+  const auto provider = static_cast<onlinedict::Provider>(sources[static_cast<uint8_t>(lang)][0]);
+  if (onlinedict::providerServes(provider, lang)) return provider;
+  uint8_t fallback[2];
+  defaultSources(lang, fallback);
+  return static_cast<onlinedict::Provider>(fallback[0]);
+}
+
+onlinedict::Provider secondProvider(const onlinedict::Lang lang) {
+  loadSources();
+  const auto second = static_cast<onlinedict::Provider>(sources[static_cast<uint8_t>(lang)][1]);
+  if (second == onlinedict::Provider::None || !onlinedict::providerServes(second, lang)) {
+    return onlinedict::Provider::None;
+  }
+  return second == preferredProvider(lang) ? onlinedict::Provider::None : second;
+}
+
+void setSources(const onlinedict::Lang lang, const onlinedict::Provider first, const onlinedict::Provider second) {
+  loadSources();
+  sources[static_cast<uint8_t>(lang)][0] = static_cast<uint8_t>(first);
+  sources[static_cast<uint8_t>(lang)][1] = static_cast<uint8_t>(second);
+  std::string content;
+  for (uint8_t i = 0; i < onlinedict::kLangCount; ++i) {
+    char line[24];
+    snprintf(line, sizeof(line), "%s %u %u\n", onlinedict::code(static_cast<onlinedict::Lang>(i)),
+             static_cast<unsigned>(sources[i][0]), static_cast<unsigned>(sources[i][1]));
+    content += line;
+  }
+  Storage.mkdir("/.crosspoint");
+  writeWholeFile(kSourcesPath, content);
+}
+
+bool readyInPlace(const std::string& bookCachePath) {
+  if (!OnlineWifi::enabled() || !hasActiveStationWifiConnection()) return false;
+  onlinedict::Lang lang;
+  onlinedict::Provider provider;
+  return !isStorePath(Dictionary::readDictPath(bookCachePath.c_str()), lang, provider);
+}
+
+bool hasSaved(const onlinedict::Lang lang, const onlinedict::Provider provider, const std::string& word) {
+  const std::string base = storePath(lang, provider);
   const DictPaths paths(base);
-  recoverIndex(paths, lang);
+  recoverIndex(paths, lang, provider);
   if (!Storage.exists(paths.idx().c_str())) return false;
   HalFile file;
   if (!Storage.openFileForRead("ODICT", paths.idx(), file)) return false;
@@ -295,12 +419,13 @@ bool hasSaved(const onlinedict::Lang lang, const std::string& word) {
   return found;
 }
 
-bool save(const onlinedict::Lang lang, const std::string& word, const std::string& html) {
+bool save(const onlinedict::Lang lang, const onlinedict::Provider provider, const std::string& word,
+          const std::string& html) {
   if (word.empty() || word.size() > kMaxWordBytes || html.empty()) return false;
   Storage.mkdir(kStoreDir);
-  const std::string base = storePath(lang);
+  const std::string base = storePath(lang, provider);
   const DictPaths paths(base);
-  recoverIndex(paths, lang);
+  recoverIndex(paths, lang, provider);
 
   // Definitions are only ever appended; a replaced answer leaves its old bytes behind.
   HalFile dict = Storage.open(paths.dict().c_str(), O_WRONLY | O_CREAT | O_AT_END);
@@ -328,10 +453,11 @@ bool save(const onlinedict::Lang lang, const std::string& word, const std::strin
   if (!Storage.rename(tmpPath.c_str(), paths.idx().c_str())) return false;
 
   removeLookupAids(paths);
-  return writeInfo(paths, lang, wordCount, indexBytes);
+  return writeInfo(paths, lang, provider, wordCount, indexBytes);
 }
 
-Outcome fetch(const onlinedict::Lang lang, std::string& word, std::string& html, const FetchOptions& options) {
+Outcome fetch(const onlinedict::Lang lang, const onlinedict::Provider provider, std::string& word, std::string& html,
+              const FetchOptions& options) {
   enum class Answer : uint8_t { Entry, NoEntry, AskAgain, Unreachable, Cancelled };
   // found gets the spelling an entry was found under.
   const auto request = [&](const std::string& url, const onlinedict::Source source, const std::string& title,
@@ -369,6 +495,45 @@ Outcome fetch(const onlinedict::Lang lang, std::string& word, std::string& html,
   const std::string asked = onlinedict::normalizeWord(word);
   if (asked.empty()) return Outcome::NotFound;
   const std::string otherCase = onlinedict::otherCase(asked);
+
+  // One question for the single-answer sources: the word as asked, then its
+  // other capitalisation ("Essen" / "essen").
+  const auto askSimple = [&](const onlinedict::Source source, std::string (*url)(const std::string&)) {
+    for (const std::string* title : {&asked, &otherCase}) {
+      if (title->empty()) continue;
+      std::string found;
+      const Answer answer = request(url(*title), source, *title, std::string(), found);
+      if (answer == Answer::Entry) {
+        word = found;
+        return Outcome::Found;
+      }
+      if (answer == Answer::Cancelled) return Outcome::Cancelled;
+      if (answer == Answer::Unreachable) return Outcome::NoConnection;
+    }
+    return Outcome::NotFound;
+  };
+  switch (provider) {
+    case onlinedict::Provider::EnglishWiktionary:
+      return askSimple(onlinedict::Source::WiktionaryDefinitions, &onlinedict::englishWiktionaryUrl);
+    case onlinedict::Provider::Datamuse:
+      return askSimple(onlinedict::Source::DatamuseDefinitions, &onlinedict::datamuseUrl);
+    case onlinedict::Provider::OpenThesaurus:
+      return askSimple(onlinedict::Source::OpenThesaurusSynonyms, &onlinedict::openThesaurusUrl);
+    case onlinedict::Provider::Wikipedia: {
+      std::string found;
+      const Answer answer = request(onlinedict::summaryUrl(lang, asked), onlinedict::Source::WikipediaSummary, asked,
+                                    std::string(), found);
+      if (answer == Answer::Entry) {
+        word = asked;
+        return Outcome::Found;
+      }
+      return answer == Answer::Cancelled     ? Outcome::Cancelled
+             : answer == Answer::Unreachable ? Outcome::NoConnection
+                                             : Outcome::NotFound;
+    }
+    default:
+      break;  // the word's own Wiktionary, below
+  }
   const onlinedict::Source dictionarySource = lang == onlinedict::Lang::English
                                                   ? onlinedict::Source::WiktionaryDefinitions
                                                   : onlinedict::Source::WiktionaryExtract;
@@ -414,6 +579,22 @@ Outcome fetch(const onlinedict::Lang lang, std::string& word, std::string& html,
   if (summary == Answer::Unreachable) return Outcome::NoConnection;
   LOG_INF("ODICT", "No online entry");
   return Outcome::NotFound;
+}
+
+Outcome fetchWithFallback(Request& request, std::string& word, std::string& html, const FetchOptions& options) {
+  const std::string asked = word;
+  Outcome outcome = fetch(request.lang, request.provider, word, html, options);
+  if (outcome == Outcome::Found || outcome == Outcome::Cancelled || request.second == onlinedict::Provider::None ||
+      request.second == request.provider) {
+    return outcome;
+  }
+  LOG_INF("ODICT", "No answer from %s, asking %s", onlinedict::providerName(request.provider),
+          onlinedict::providerName(request.second));
+  word = asked;
+  const Outcome second = fetch(request.lang, request.second, word, html, options);
+  if (second == Outcome::Found) request.provider = request.second;
+  // A first source that did not respond is still worth saying, unless the second answered.
+  return second == Outcome::NotFound && outcome == Outcome::NoConnection ? outcome : second;
 }
 
 }  // namespace OnlineDictionary

@@ -146,6 +146,7 @@ void KeyboardEntryActivity::onEnter() {
   const uint16_t enabledLayouts = keyboard_layouts::enabled();
   showLangKey = (enabledLayouts & (enabledLayouts - 1)) != 0;
   shifted = false;
+  letterShift.off();
   symbols = false;
   urlPanel = false;
   cursorMode = false;
@@ -294,8 +295,13 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
     case fui::QWERTY_KEY_SHIFT:
       delPressCount = 0;
       hintVisible = false;
-      // Letters: case toggle. Symbols: pages between "?123" and "#+=".
-      shifted = !shifted;
+      // Letters: Shift / Caps Lock. Symbols: pages between "?123" and "#+=".
+      if (symbols || urlPanel) {
+        shifted = !shifted;
+      } else {
+        letterShift.tap(millis(), longPress);
+        shifted = letterShift.shifted();
+      }
       clampSelection();
       return true;
     case fui::QWERTY_KEY_MODE:
@@ -306,6 +312,7 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
       } else {
         symbols = !symbols;
         shifted = false;
+        letterShift.off();
       }
       clampSelection();
       return true;
@@ -316,6 +323,7 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
       if (nextLayout == layoutId) return false;
       layoutId = nextLayout;
       shifted = false;
+      letterShift.off();
       clampSelection();
       return true;
     }
@@ -325,6 +333,7 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
       urlPanel = !urlPanel;
       symbols = false;
       shifted = false;
+      letterShift.off();
       clampSelection();
       return true;
     case fui::QWERTY_KEY_ENTER:
@@ -354,7 +363,9 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
       if (!out) return false;
       insertUtf8(out);
       if (shifted && !symbols) {
-        shifted = false;  // shift auto-releases after one character
+        // One-letter Shift lets go; Caps Lock stays on.
+        letterShift.afterCharacter();
+        shifted = letterShift.shifted();
         clampSelection();
       }
       return true;
@@ -1114,6 +1125,9 @@ void KeyboardEntryActivity::render(RenderLock&&) {
     }
   }
   props.keyAction = ACTION_KEY;  // one action id; loop() dispatches on key value
+  // VARAGH: the Shift key shows it is on (filled), and Caps Lock with a bar under the arrow.
+  props.shiftOn = shifted && !symbols && !urlPanel;
+  props.shiftLocked = props.shiftOn && letterShift.capsLock();
   props.okLabel = tr(STR_OK_BUTTON);
   // Match the label to the layer the mode key leads back from: the symbols
   // layer and the URL snippet panel both label it "abc" in the static tables.
@@ -1122,8 +1136,11 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   props.inputMask = static_cast<uint16_t>(fui::InputTouch | fui::InputLongPress);
   props.selectedIndex =
       (cursorMode || !buttonSelectionVisible.load()) ? -1 : static_cast<int16_t>(selectedLogicalIndex());
-  props.labelText.font = layoutId == fui::KeyboardLayoutId::ArabicAr && !symbols ? fui::GfxRendererTarget::FONT_SMALL
-                                                                                 : fui::GfxRendererTarget::FONT_BODY;
+  // Twelve keys a row: the Arabic-script layouts use the smaller labels.
+  const bool twelveWide =
+      layoutId == fui::KeyboardLayoutId::ArabicAr || layoutId == fui::KeyboardLayoutId::PersianFa;
+  props.labelText.font =
+      twelveWide && !symbols ? fui::GfxRendererTarget::FONT_SMALL : fui::GfxRendererTarget::FONT_BODY;
   props.altText.font = fui::GfxRendererTarget::FONT_SMALL;
   props.gap = props.rowGap = static_cast<int16_t>(keyboardGap(metrics));
   if (urlPanel) props.uniformKeyWidth = false;

@@ -209,7 +209,8 @@ void LibrarySettingsActivity::buildScreen(UiApp::ScreenType& screen) {
   props.rowGap = 0;
   props.labelText = props.valueText = props.headerText = screen.theme().bodyText;
   props.headerText.bold = true;
-  props.rtl = (I18N.getLanguage() == Language::AR || I18N.getLanguage() == Language::HE);
+  props.rtl = (I18N.getLanguage() == Language::AR || I18N.getLanguage() == Language::HE ||
+               I18N.getLanguage() == Language::FA);
   props.rowStyles = screen.theme().listRow;
   props.rowStyles.selected.background = fui::Paint::dither(fui::Color::LightGray);
   props.rowStyles.selected.foreground = fui::Paint::solid(fui::Color::Black);

@@ -20,9 +20,9 @@ struct Rect;
 // the content underneath stays on screen below the panel, and a tap there
 // dismisses it. State is persisted once on exit (SPIFFS write throttling).
 class FrontlightPanelActivity final : public Activity {
-  // The sun toggle, two sliders, and four -/+ targets need seven interaction
-  // slots. Keep small headroom for the panel's fixed controls.
-  using UiApp = freeink::ui::FreeInkApp<20, 7>;
+  // Control Center: two sliders with their end targets, eight buttons, the
+  // grabber and the outside-tap dismiss; reader details: a five-slot bar.
+  using UiApp = freeink::ui::FreeInkApp<24, 10>;
 
   ButtonNavigator buttonNavigator;
 
@@ -66,7 +66,25 @@ class FrontlightPanelActivity final : public Activity {
   // content margin, and dismiss threshold all agree.
   int computePanelBottom() const;
   void prepareReaderDetailsLayout();
-  void drawReaderDetails(freeink::ui::Screen<20>& screen);
+  void drawReaderDetails(UiApp::ScreenType& screen);
+  // VARAGH Control Center (boards with a front light).
+  static void onControlButtonEvent(const freeink::ui::ActionEvent& event, void* user);
+  void drawThinSlider(int left, int right, int midY, int knobX, int knobD) const;
+  int lightSliderW = 1;    // Control Center slider widths, for the drag maths
+  int warmthSliderW = 1;
+  bool sliderMoved = false;  // the routed drag changed a value (needs a frame)
+  uint32_t lastInputMs = 0;  // for the cc.frame speed-log line
+  void buildControlCenter(UiApp::ScreenType& screen);
+  int controlCenterBottom() const;
+  int controlButtonCount() const;
+  bool controlButtonOn(uint8_t button) const;
+  bool controlButtonEnabled(uint8_t button) const;
+  void activateControlButton(uint8_t button, bool longPress);
+  void openWifiList();
+  void toggleNightLight();
+  void finishWithAction(FrontlightPanelAction action);
+  // A reader or global setting changed here; saved once on exit.
+  bool settingsDirty = false;
   void adjustBrightness(int delta);
   void adjustWarmth(int delta);
   void toggleLight();

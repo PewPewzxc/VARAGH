@@ -382,7 +382,7 @@ void SudokuActivity::render(RenderLock&&) {
     const int centreY = gameui::headerTitleCentreY(renderer, mappedInput);
     gameui::centredText(renderer, UI_10_FONT_ID, {left, centreY - 16, newHold.box.x - 8 - left, 34},
                         levelName(game.difficulty()));
-    newHold.draw(renderer, tr(STR_GAME_NEW_SHORT));
+    newHold.draw(renderer, tr(STR_GAME_NEW_SHORT), tr(STR_HOLD_FOR_NEW_GAME));
   }
 
   drawGrid();

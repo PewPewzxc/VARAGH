@@ -215,6 +215,7 @@ class DictionaryDefinitionActivity final : public Activity {
   void collectDefinitionAdvanceText(const char* text, EpdFontFamily::Style style);
   static void collectSpanForAdvances(void* ctx, const StyledSpan& span);
   void extractWordsFromLayout();
+  bool lineIsRtl(const PooledLine& line) const;
   void openDictionarySwitch();
   void openAddTo();
   void addToCategory(uint16_t categoryId);

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "network/OnlineDictionary.h"
 #include "../activities/Activity.h"
 #include "../activities/reader/DictionarySuggestionsActivity.h"
 #include "CrossPointSettings.h"
@@ -67,6 +68,9 @@ void logDictionaryLookupTaskEnd() {
 void DictionaryLookupController::startLookup(const std::string& word, bool recordHistory) {
   MemoryBudget::logHeapShape("dict.lookup_start");
   lookupWord = word;
+  // Set before the worker starts; it reads this on its own task.
+  phraseFallbackWord_ = std::move(pendingPhraseFallback_);
+  pendingPhraseFallback_.clear();
   foundWord.clear();
   foundLocation = DictLocation{};
   lookupProgress = 0;
@@ -139,8 +143,10 @@ DictionaryLookupController::LookupEvent DictionaryLookupController::handleInput(
 
       if (foundLocation.found) {
         foundWord = std::move(foundLocation.headword);
-        foundStatus =
-            nextIsSuggestion ? FoundStatus::Suggestion : (lookupMatchedStem ? FoundStatus::Stem : FoundStatus::Direct);
+        foundStatus = nextIsSuggestion           ? FoundStatus::Suggestion
+                      : foundLocation.matchedAltForm ? FoundStatus::AltForm
+                      : lookupMatchedStem            ? FoundStatus::Stem
+                                                     : FoundStatus::Direct;
         nextIsSuggestion = false;
         return LookupEvent::FoundDefinition;
       }
@@ -150,8 +156,8 @@ DictionaryLookupController::LookupEvent DictionaryLookupController::handleInput(
         return LookupEvent::None;
       }
 
-      // Try alt forms
-      if (shouldOfferAltForms_ && Dictionary::hasAltForms(cachePath.c_str())) {
+      // Try alt forms (unless the lookup already asked the .syn list itself)
+      if (shouldOfferAltForms_ && !foundLocation.altFormsTried && Dictionary::hasAltForms(cachePath.c_str())) {
         altFormWord = lookupWord;
         state = LookupState::AltFormPrompt;
 #if CROSSINK_APP_CAP_TOUCH
@@ -163,6 +169,9 @@ DictionaryLookupController::LookupEvent DictionaryLookupController::handleInput(
         return LookupEvent::None;
       }
 
+      if (onlineFallback_ && !nextIsSuggestion && OnlineDictionary::readyInPlace(cachePath)) {
+        return LookupEvent::TryOnline;
+      }
       handleLookupFailed();
       return LookupEvent::None;
     }
@@ -523,6 +532,29 @@ bool DictionaryLookupController::handleConfirmLookup(const WordSelectNavigator& 
 
 void DictionaryLookupController::lookupOrPopup(const std::string& rawWord, const size_t highlightedWordCount) {
   shouldOfferAltForms_ = highlightedWordCount <= 3;
+  // Several selected words are looked up as a phrase first ("ice cream"), each
+  // word cleaned of its punctuation; the first word is the fallback.
+  std::string phrase;
+  std::string firstWord;
+  if (highlightedWordCount > 1) {
+    size_t start = 0;
+    while (start < rawWord.size()) {
+      size_t end = rawWord.find(' ', start);
+      if (end == std::string::npos) end = rawWord.size();
+      const std::string word = Dictionary::cleanWord(rawWord.substr(start, end - start));
+      if (!word.empty()) {
+        if (firstWord.empty()) firstWord = word;
+        if (!phrase.empty()) phrase += ' ';
+        phrase += word;
+      }
+      start = end + 1;
+    }
+  }
+  if (!phrase.empty() && phrase != firstWord) {
+    pendingPhraseFallback_ = firstWord;
+    startLookup(phrase);
+    return;
+  }
   std::string cleaned = Dictionary::cleanWord(rawWord);
   if (cleaned.empty()) {
     showNoWordPopup();
@@ -614,6 +646,11 @@ void DictionaryLookupController::runLookup() {
     return;
   }
   foundLocation = Dictionary::locateWithStemVariants(lookupWord, &lookupMatchedStem, cbs, cachePath.c_str());
+  if (!foundLocation.found && !foundLocation.readError && !lookupCancelRequested && !phraseFallbackWord_.empty()) {
+    // No entry for the whole phrase: the first selected word, as before 1.3.0.
+    lookupWord = phraseFallbackWord_;
+    foundLocation = Dictionary::locateWithStemVariants(lookupWord, &lookupMatchedStem, cbs, cachePath.c_str());
+  }
   lookupReadError = foundLocation.readError;
   lookupCancelled = lookupCancelRequested.load();
   lookupDone = true;

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "CrossPointSettings.h"
+#include "util/ButtonRotation.h"
 #include "DeviceCapabilities.h"
 #include "GlobalActions.h"
 #if CROSSINK_APP_CAP_TOUCH
@@ -40,17 +41,11 @@ struct SideLayoutMap {
 };
 
 bool shouldSwapReaderSideButtons(const bool readerMode) {
-  return readerMode && SETTINGS.sideButtonOrientationAware && SETTINGS.orientation != CrossPointSettings::PORTRAIT;
+  return readerMode && ButtonRotation::swapSide(SETTINGS.orientation);
 }
 
-bool shouldSwapReaderFrontNavButtons(const CrossPointSettings::FRONT_BUTTON_ORIENTATION_AWARE orientationMode) {
-  if (orientationMode == CrossPointSettings::FRONT_ORIENTATION_AWARE_OFF) {
-    return false;
-  }
-  return SETTINGS.orientation == CrossPointSettings::LANDSCAPE_CW ||
-         SETTINGS.orientation == CrossPointSettings::LANDSCAPE_CCW ||
-         (orientationMode == CrossPointSettings::FRONT_ORIENTATION_AWARE_NAV_BUTTONS &&
-          SETTINGS.orientation == CrossPointSettings::INVERTED);
+bool shouldSwapReaderFrontNavButtons() {
+  return ButtonRotation::front(SETTINGS.orientation) == ButtonRotation::Front::SwapLeftRight;
 }
 
 ButtonIndex invertFrontButtonPosition(const ButtonIndex button) {
@@ -74,15 +69,11 @@ ButtonIndex mapFrontButtonForReaderOrientation(const ButtonIndex button, const B
     return button;
   }
 
-  const auto orientationMode =
-      static_cast<CrossPointSettings::FRONT_BUTTON_ORIENTATION_AWARE>(SETTINGS.frontButtonOrientationAware);
-
-  if (orientationMode == CrossPointSettings::FRONT_ORIENTATION_AWARE_ALL_BUTTONS &&
-      SETTINGS.orientation == CrossPointSettings::INVERTED) {
+  if (ButtonRotation::front(SETTINGS.orientation) == ButtonRotation::Front::MirrorRow) {
     return invertFrontButtonPosition(button);
   }
 
-  if (shouldSwapReaderFrontNavButtons(orientationMode)) {
+  if (shouldSwapReaderFrontNavButtons()) {
     if (button == leftButton) {
       return rightButton;
     }
@@ -238,8 +229,7 @@ uint8_t MappedInputManager::mappedFrontButtonFor(const Button button) const {
 bool MappedInputManager::shouldUsePowerAsConfirmFallback() const { return !readerMode || powerAsConfirmInReaderMode; }
 
 bool MappedInputManager::isFrontNavButtonSwapActive() const {
-  return readerMode && shouldSwapReaderFrontNavButtons(static_cast<CrossPointSettings::FRONT_BUTTON_ORIENTATION_AWARE>(
-                           SETTINGS.frontButtonOrientationAware));
+  return readerMode && shouldSwapReaderFrontNavButtons();
 }
 
 bool MappedInputManager::shouldMirrorPowerAsConfirmHold() const {
@@ -1066,7 +1056,7 @@ namespace {
 
 bool isRightToLeftUiLanguage() {
   const auto language = I18N.getLanguage();
-  return language == Language::AR || language == Language::HE;
+  return language == Language::AR || language == Language::HE || language == Language::FA;
 }
 
 }  // namespace

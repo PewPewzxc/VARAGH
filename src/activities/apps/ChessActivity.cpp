@@ -548,7 +548,7 @@ void ChessActivity::render(RenderLock&&) {
   layout();
   renderer.clearScreen();
   gameui::drawHeader(renderer, mappedInput, tr(STR_GAME_CHESS));
-  if (panel == Panel::Board && game->started()) newHold.draw(renderer, tr(STR_GAME_NEW_SHORT));
+  if (panel == Panel::Board && game->started()) newHold.draw(renderer, tr(STR_GAME_NEW_SHORT), tr(STR_HOLD_FOR_NEW_GAME));
 
   drawStrip(topStripY, settings.flipped ? chess::White : chess::Black);
   drawBoard();

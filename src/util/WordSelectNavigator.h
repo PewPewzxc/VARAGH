@@ -134,6 +134,34 @@ class WordSelectNavigator {
     completedSelectionStart = -1;
     completedSelectionEnd = -1;
   }
+  // VARAGH: moves the end of a finished selection by one word (+1 adds the next
+  // word, -1 takes the last one off), keeping at least one word and staying on
+  // this page. The two halves of a word hyphenated across lines count as one.
+  // False when the selection cannot change that way.
+  bool resizeCompletedSelection(int delta);
+  // Index of the word under a touch point, or -1.
+  int wordIndexAtPoint(int x, int y, int lineHeight) const;
+  // 1 = near the start handle, 2 = near the end handle, 0 = neither.
+  int completedHandleAt(int x, int y, int lineHeight) const;
+  // Moves one end of the finished selection to word idx (never past the other end).
+  bool moveCompletedSelectionEdge(bool startEdge, int idx);
+  // The new selection end after one word more (delta 1) or less (-1), or -1
+  // when it cannot move. Pieces with no space between them (the halves of a
+  // word broken over two lines, a word split by a style change) count as one.
+  template <typename WordList>
+  static int resizedSelectionEnd(const WordList& words, int start, int end, int delta) {
+    const int count = static_cast<int>(words.size());
+    const auto glued = [&](const int i) {
+      return i > 0 && i < count && (words[i].continuationOf == i - 1 || words[i].joinWithoutSpaceBefore);
+    };
+    int next = end + delta;
+    if (delta > 0) {
+      while (glued(next + 1)) ++next;
+    } else {
+      while (next >= start && glued(next + 1)) --next;
+    }
+    return next < start || next >= count ? -1 : next;
+  }
 
   // Word at flat index idx. nullptr if out of bounds.
   const WordInfo* getWordAt(int idx) const;

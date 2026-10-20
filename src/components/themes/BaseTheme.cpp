@@ -36,52 +36,50 @@ constexpr int detachedHeaderBatteryTopInset = 5;
 
 }  // namespace
 
+// VARAGH 1.3.0 battery: a rounded body with a nub, filled smoothly to the
+// charge, a bolt in a white notch while charging, and "!" when nearly empty.
 void BaseTheme::drawBatteryOutline(const GfxRenderer& renderer, int x, int y, int battWidth, int rectHeight,
                                    const bool foregroundBlack) {
-  // Top line
-  renderer.drawLine(x + 1, y, x + battWidth - 3, y, foregroundBlack);
-  // Bottom line
-  renderer.drawLine(x + 1, y + rectHeight - 1, x + battWidth - 3, y + rectHeight - 1, foregroundBlack);
-  // Left line
+  const int right = x + battWidth - 3;  // body's right edge; the nub follows
+  renderer.drawLine(x + 1, y, right - 1, y, foregroundBlack);
+  renderer.drawLine(x + 1, y + rectHeight - 1, right - 1, y + rectHeight - 1, foregroundBlack);
   renderer.drawLine(x, y + 1, x, y + rectHeight - 2, foregroundBlack);
-  // Battery end
-  renderer.drawLine(x + battWidth - 2, y + 1, x + battWidth - 2, y + rectHeight - 2, foregroundBlack);
-  renderer.drawPixel(x + battWidth - 1, y + 3, foregroundBlack);
-  renderer.drawPixel(x + battWidth - 1, y + rectHeight - 4, foregroundBlack);
-  renderer.drawLine(x + battWidth - 0, y + 4, x + battWidth - 0, y + rectHeight - 5, foregroundBlack);
+  renderer.drawLine(right, y + 1, right, y + rectHeight - 2, foregroundBlack);
+  renderer.fillRect(x + battWidth - 2, y + rectHeight / 2 - 2, 2, 4, foregroundBlack);
 }
 
 void BaseTheme::drawBatteryLightningBolt(const GfxRenderer& renderer, int boltX, int boltY,
                                          const bool foregroundBlack) {
-  // Draw lightning bolt (white/inverted on black fill for visibility)
-  renderer.drawLine(boltX + 4, boltY + 0, boltX + 5, boltY + 0, foregroundBlack);
-  renderer.drawLine(boltX + 3, boltY + 1, boltX + 4, boltY + 1, foregroundBlack);
-  renderer.drawLine(boltX + 2, boltY + 2, boltX + 5, boltY + 2, foregroundBlack);
-  renderer.drawLine(boltX + 3, boltY + 3, boltX + 4, boltY + 3, foregroundBlack);
-  renderer.drawLine(boltX + 2, boltY + 4, boltX + 3, boltY + 4, foregroundBlack);
-  renderer.drawLine(boltX + 1, boltY + 5, boltX + 4, boltY + 5, foregroundBlack);
-  renderer.drawLine(boltX + 2, boltY + 6, boltX + 3, boltY + 6, foregroundBlack);
-  renderer.drawLine(boltX + 1, boltY + 7, boltX + 2, boltY + 7, foregroundBlack);
+  // 8x12, one row per byte, MSB = leftmost pixel.
+  static constexpr uint8_t BOLT[12] = {0x0C, 0x1C, 0x18, 0x38, 0x7F, 0x7E, 0xFE, 0x1C, 0x18, 0x30, 0x30, 0x20};
+  for (int row = 0; row < 12; ++row) {
+    for (int col = 0; col < 8; ++col) {
+      if (BOLT[row] & (0x80 >> col)) renderer.drawPixel(boltX + col, boltY + row, foregroundBlack);
+    }
+  }
 }
 
 void BaseTheme::fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage,
                                 const bool foregroundBlack) const {
-  const bool charging = gpio.isUsbConnected();
+  const bool charging = gpio.isUsbConnected() && percentage < 100;
+  const int innerX = rect.x + 2;
+  const int innerY = rect.y + 2;
+  const int innerWidth = rect.width - 6;
+  const int innerHeight = rect.height - 4;
+  int fill = (innerWidth * std::min<int>(percentage, 100) + 50) / 100;
+  if (percentage > 0 && fill == 0) fill = 1;
+  if (fill > 0) renderer.fillRect(innerX, innerY, fill, innerHeight, foregroundBlack);
 
   if (charging) {
-    // Solid fill when charging so lightning bolt is visible.
-    renderer.fillRect(rect.x + 2, rect.y + 2, rect.width - 5, rect.height - 4, foregroundBlack);
-    drawBatteryLightningBolt(renderer, rect.x + 4, rect.y + 2, !foregroundBlack);
-  } else {
-    if (percentage > 10) {
-      renderer.fillRect(rect.x + 2, rect.y + 2, 3, rect.height - 4, foregroundBlack);
-    }
-    if (percentage > 40) {
-      renderer.fillRect(rect.x + 6, rect.y + 2, 3, rect.height - 4, foregroundBlack);
-    }
-    if (percentage > 70) {
-      renderer.fillRect(rect.x + 10, rect.y + 2, 3, rect.height - 4, foregroundBlack);
-    }
+    // A white notch through the body with the bolt in it.
+    const int boltX = rect.x + (rect.width - 3 - 8) / 2;
+    renderer.fillRect(boltX, rect.y + 1, 8, rect.height - 2, !foregroundBlack);
+    drawBatteryLightningBolt(renderer, boltX, rect.y, foregroundBlack);
+  } else if (percentage <= 15) {
+    // Nearly empty: "!" in the empty part of the body.
+    const int markX = innerX + innerWidth - 5;
+    renderer.fillRect(markX, innerY, 2, innerHeight - 3, foregroundBlack);
+    renderer.fillRect(markX, innerY + innerHeight - 2, 2, 2, foregroundBlack);
   }
 }
 

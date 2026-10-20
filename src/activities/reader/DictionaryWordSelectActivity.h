@@ -163,6 +163,8 @@ class DictionaryWordSelectActivity final : public Activity {
   };
   static constexpr int kAskChoices = 3;
   bool askOpen_ = false;
+  // Selection handle being dragged under the Ask bubble: 1 = start, 2 = end.
+  uint8_t askDragEdge_ = 0;
   AskBubble askBubble_;
   std::string askPhrase_;
   size_t askWordCount_ = 0;
@@ -218,6 +220,7 @@ class DictionaryWordSelectActivity final : public Activity {
   void drawAskBubble() const;
   int askChoiceAt(int x, int y) const;
   void handleAskInput();
+  void askSelectionChanged();
   void renderDefinitionBackground();
   static void renderDefinitionBackgroundCallback(void* context);
   bool buildWorkingSet(bool consumeInitialConfirm);

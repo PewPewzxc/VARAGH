@@ -51,6 +51,7 @@ class GfxRenderer {
   HalDisplay& display;
   RenderMode renderMode;
   mutable bool absoluteGrayPlanes = false;
+  bool smoothRoundEnds = false;
   Orientation orientation;
   bool fadingFix;
   uint8_t* frameBuffer = nullptr;
@@ -350,6 +351,10 @@ class GfxRenderer {
   // Grayscale functions
   void setRenderMode(RenderMode mode);
   bool grayPlanesAreAbsolute() const { return absoluteGrayPlanes; }
+  // VARAGH: round corners without the one-pixel bump at their outermost point
+  // (a pixel counts when its centre is within radius + 1/2). Used by the
+  // Control Center only; other screens keep their exact look.
+  void setSmoothRoundEnds(const bool on) { smoothRoundEnds = on; }
   bool supportsAbsoluteGrayscale() const;
   bool displayAbsoluteGrayscaleBase(HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH) const;
   // Direct grayscale folds the B/W base into the grayscale pass

@@ -10,6 +10,12 @@
 HalDisplay display;
 
 uint32_t HalDisplay::panelTimeUs_ = 0;
+uint32_t HalDisplay::refreshCounts_ = 0;
+
+void HalDisplay::countRefresh(const RefreshMode mode) {
+  const unsigned shift = mode == FAST_REFRESH ? 0 : mode == HALF_REFRESH ? 8 : 16;
+  refreshCounts_ += 1u << shift;
+}
 
 namespace {
 // Adds the duration of one panel call (SPI transfer and/or waveform wait) to
@@ -102,12 +108,17 @@ EInkDisplay::RefreshMode convertRefreshMode(HalDisplay::RefreshMode mode) {
 
 void HalDisplay::displayBuffer(HalDisplay::RefreshMode mode, bool turnOffScreen) {
   const PanelTimer timer(panelTimeUs_);
+  if (fullRefreshNext_) {
+    fullRefreshNext_ = false;
+    mode = RefreshMode::FULL_REFRESH;
+  }
   HalSpiBus::Lock spiLock;
 
   if (gpio.deviceIsX3() && mode == RefreshMode::HALF_REFRESH) {
     einkDisplay.requestResync(1);
   }
 
+  countRefresh(mode);
   einkDisplay.displayBuffer(convertRefreshMode(mode), turnOffScreen);
 }
 
@@ -118,10 +129,15 @@ void HalDisplay::setInverted(bool inverted) {
 
 void HalDisplay::displayBufferAsync(HalDisplay::RefreshMode mode) {
   const PanelTimer timer(panelTimeUs_);
+  if (fullRefreshNext_) {
+    fullRefreshNext_ = false;
+    mode = RefreshMode::FULL_REFRESH;
+  }
   if (gpio.deviceIsX3() && mode == RefreshMode::HALF_REFRESH) {
     einkDisplay.requestResync(1);
   }
 
+  countRefresh(mode);
   einkDisplay.displayBufferAsyncNoShadow(convertRefreshMode(mode));
 }
 
@@ -147,6 +163,7 @@ bool HalDisplay::displayGrayscaleBase(GrayscaleMode mode, RefreshMode fallback, 
   const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
   if (gpio.deviceIsX3() && fallback == HALF_REFRESH) einkDisplay.requestResync(1);
+  countGrayscale();
   return einkDisplay.displayGrayscaleBase(mode, convertRefreshMode(fallback), turnOffScreen);
 }
 
@@ -158,6 +175,7 @@ void HalDisplay::refreshDisplay(HalDisplay::RefreshMode mode, bool turnOffScreen
     einkDisplay.requestResync(1);
   }
 
+  countRefresh(mode);
   einkDisplay.refreshDisplay(convertRefreshMode(mode), turnOffScreen);
 }
 
@@ -191,6 +209,7 @@ void HalDisplay::displayGrayscaleBase(RefreshMode fallback, bool turnOffScreen) 
     einkDisplay.requestResync(1);
   }
 
+  countGrayscale();
   einkDisplay.displayGrayscaleBase(convertRefreshMode(fallback), turnOffScreen);
 }
 
@@ -222,6 +241,7 @@ void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
 void HalDisplay::displayGrayBuffer(bool turnOffScreen) {
   const PanelTimer timer(panelTimeUs_);
   HalSpiBus::Lock spiLock;
+  countGrayscale();
   einkDisplay.displayGrayBuffer(turnOffScreen);
 }
 

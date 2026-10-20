@@ -34,11 +34,11 @@ constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // VARAGH: v181 = CrossInk v80 + VARAGH script fallback (Persian/IPA words are
 // measured in the fallback font). VARAGH numbers start at 181 so its caches
 // never match a CrossInk cache of the same number (VARAGH 1.0/1.1.0 used v78).
-constexpr uint8_t SECTION_FILE_VERSION = 181;
+constexpr uint8_t SECTION_FILE_VERSION = 182;
 // Suspended incremental build: valid pages plus LUTs and a parse-watermark trailer.
 // Change this with layout or payload changes so stale partial pages cannot resume
 // under a different layout contract.
-constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xE1;  // must differ from 181 (0xB5)
+constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xE1;  // must differ from 182 (0xB6)
 constexpr uint32_t HEADER_SIZE =
     sizeof(SECTION_CACHE_MAGIC) + sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(bool) +
     sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) + sizeof(uint8_t) +

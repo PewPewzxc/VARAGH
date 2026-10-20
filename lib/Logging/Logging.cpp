@@ -98,6 +98,8 @@ std::string getLastLogs() {
     if (logMessages[idx][0] != '\0') {
       const size_t len = strnlen(logMessages[idx], MAX_ENTRY_LEN);
       output.append(logMessages[idx], len);
+      // A line cut at MAX_ENTRY_LEN (or logged without one) still ends here.
+      if (output.back() != '\n') output.push_back('\n');
     }
   }
   return output;

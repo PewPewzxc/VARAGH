@@ -244,3 +244,77 @@ TEST(OnlineDictionaryText, LongSummaryIsCutOnAWord) {
   EXPECT_LT(html.size(), 1100u);
   EXPECT_NE(html.find("word\xE2\x80\xA6</p>"), std::string::npos);
 }
+
+// VARAGH 1.3.0: the second sources.
+TEST(OnlineDictionaryText, DatamuseMeanings) {
+  const std::string json =
+      R"([{"word":"node","score":1,"defs":["n\ta connecting point","n\tany thickened enlargement",)"
+      R"("v\tto form a node"]}])";
+  std::string html;
+  ASSERT_TRUE(extract(Source::DatamuseDefinitions, Lang::English, "node", json, html));
+  EXPECT_NE(html.find("<i>noun</i>"), std::string::npos);
+  EXPECT_NE(html.find("<b>1.</b> a connecting point"), std::string::npos);
+  EXPECT_NE(html.find("<i>verb</i>"), std::string::npos);
+  EXPECT_NE(html.find("Datamuse"), std::string::npos);
+}
+
+TEST(OnlineDictionaryText, DatamuseOtherSpellingIsNoEntry) {
+  // sp= answers with the closest word; "nod" is not "node".
+  const std::string json = R"([{"word":"nod","score":1,"defs":["n\ta sign of assent"]}])";
+  std::string html;
+  EXPECT_FALSE(extract(Source::DatamuseDefinitions, Lang::English, "node", json, html));
+  EXPECT_FALSE(extract(Source::DatamuseDefinitions, Lang::English, "node", "[]", html));
+}
+
+TEST(OnlineDictionaryText, OpenThesaurusSynonyms) {
+  const std::string json =
+      R"({"metaData":{"apiVersion":"0.2"},"synsets":[{"id":1,"categories":[],"terms":[{"term":"essen"},)"
+      R"({"term":"speisen"},{"term":"futtern","level":"umgangssprachlich"}]},{"id":2,"categories":[],)"
+      R"("terms":[{"term":"Essen"},{"term":"Mahlzeit"}]}]})";
+  std::string html;
+  ASSERT_TRUE(extract(Source::OpenThesaurusSynonyms, Lang::German, "essen", json, html));
+  EXPECT_NE(html.find("<b>1.</b> essen, speisen, futtern"), std::string::npos);
+  EXPECT_NE(html.find("<b>2.</b> Essen, Mahlzeit"), std::string::npos);
+  EXPECT_NE(html.find("OpenThesaurus.de"), std::string::npos);
+  EXPECT_FALSE(extract(Source::OpenThesaurusSynonyms, Lang::German, "xyz", R"({"synsets":[]})", html));
+}
+
+TEST(OnlineDictionaryText, EnglishWiktionaryKeepsTheWordsLanguage) {
+  // English Wiktionary for a German word: only the "de" block is read.
+  const std::string json =
+      R"j({"en":[{"partOfSpeech":"Noun","definitions":[{"definition":"food (English sense)"}]}],)j"
+      R"j("de":[{"partOfSpeech":"Noun","definitions":[{"definition":"food, meal"}]}]})j";
+  std::string html;
+  ASSERT_TRUE(extract(Source::WiktionaryDefinitions, Lang::German, "Essen", json, html));
+  EXPECT_NE(html.find("food, meal"), std::string::npos);
+  EXPECT_EQ(html.find("English sense"), std::string::npos);
+}
+
+TEST(OnlineDictionaryText, ProvidersPerLanguage) {
+  using onlinedict::Provider;
+  EXPECT_TRUE(onlinedict::providerServes(Provider::Datamuse, Lang::English));
+  EXPECT_FALSE(onlinedict::providerServes(Provider::Datamuse, Lang::German));
+  EXPECT_TRUE(onlinedict::providerServes(Provider::OpenThesaurus, Lang::German));
+  EXPECT_FALSE(onlinedict::providerServes(Provider::EnglishWiktionary, Lang::English));
+  EXPECT_EQ(onlinedict::nextProvider(Provider::Wiktionary, Lang::English), Provider::Datamuse);
+  EXPECT_EQ(onlinedict::nextProvider(Provider::Datamuse, Lang::English), Provider::Wikipedia);
+  EXPECT_EQ(onlinedict::nextProvider(Provider::Wikipedia, Lang::English), Provider::Wiktionary);
+  EXPECT_EQ(onlinedict::nextProvider(Provider::Wiktionary, Lang::Persian), Provider::EnglishWiktionary);
+  EXPECT_EQ(onlinedict::nextProvider(Provider::EnglishWiktionary, Lang::Persian), Provider::Wikipedia);
+}
+
+TEST(OnlineDictionaryText, MoreLanguages) {
+  using onlinedict::Provider;
+  Lang lang = Lang::English;
+  ASSERT_TRUE(onlinedict::langFromCode("fr", lang));
+  EXPECT_EQ(lang, Lang::French);
+  EXPECT_FALSE(onlinedict::langFromCode("xx", lang));
+  EXPECT_EQ(onlinedict::languageFor("\xDA\xA9\xD8\xAA\xD8\xA7\xD8\xA8", "ar-ar"), Lang::Arabic);
+  EXPECT_FALSE(onlinedict::providerServes(Provider::Wiktionary, Lang::French));
+  EXPECT_TRUE(onlinedict::providerServes(Provider::EnglishWiktionary, Lang::French));
+  for (int i = 0; i < onlinedict::kLangCount; ++i) {
+    const Lang each = static_cast<Lang>(i);
+    ASSERT_TRUE(onlinedict::langFromCode(onlinedict::code(each), lang));
+    EXPECT_EQ(lang, each);
+  }
+}

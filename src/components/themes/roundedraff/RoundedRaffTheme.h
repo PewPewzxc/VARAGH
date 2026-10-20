@@ -5,7 +5,7 @@
 class GfxRenderer;
 
 namespace RoundedRaffMetrics {
-constexpr ThemeMetrics values = {.batteryWidth = 15,
+constexpr ThemeMetrics values = {.batteryWidth = 24,
                                  .batteryHeight = 12,
                                  .topPadding = 0,
                                  .batteryBarHeight = 45,

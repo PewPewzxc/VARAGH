@@ -1,5 +1,7 @@
 #include "OnlineWifi.h"
 
+#include <SpeedLog.h>
+
 #include <Arduino.h>
 #include <HalPowerManager.h>
 #include <Logging.h>
@@ -22,7 +24,10 @@ constexpr uint32_t kRetryEveryMs = 45000;
 constexpr uint32_t kJoinAfterOpenMs = 4000;
 
 bool readerOpen = false;
+bool manual = false;  // switched on from the Control Center
 bool holding = false;  // Wi-Fi was switched on by this module
+uint32_t joinedMs = 0;     // when this module last switched Wi-Fi on
+bool loggedUp = false;     // "wifi.up" written for the current join
 bool attempted = false;
 uint32_t openedMs = 0;
 uint32_t lastAttemptMs = 0;
@@ -60,6 +65,10 @@ bool join() {
   // With Wi-Fi only idling, the processor may still drop to its low clock.
   powerManager.setWifiIdleLowPowerAllowed(true);
   LOG_INF("OWIFI", "Joining %s in the background (free heap %u)", ssid.c_str(), ESP.getFreeHeap());
+  joinedMs = millis();
+  loggedUp = false;
+  // Speed log: a = free heap in KB right after Wi-Fi came on.
+  SpeedLog::recordNamed("wifi.join", 0, static_cast<int32_t>(ESP.getFreeHeap() / 1024));
   return true;
 }
 
@@ -74,6 +83,8 @@ void release() {
     delay(50);
   }
   LOG_INF("OWIFI", "Wi-Fi off");
+  // ms = how long this module kept Wi-Fi on.
+  SpeedLog::recordNamed("wifi.off", millis() - joinedMs);
 }
 
 }  // namespace
@@ -83,7 +94,29 @@ namespace OnlineWifi {
 bool enabled() {
   // Only where the low clock still carries Wi-Fi and PSRAM leaves the heap free.
   if constexpr (HalPowerManager::LOW_POWER_FREQ < 80) return false;
-  return SETTINGS.onlineDictWifiAlwaysOn != 0;
+  return manual || SETTINGS.onlineDictWifiAlwaysOn != 0;
+}
+
+void setManual(const bool on) {
+  manual = on;
+  if (on) {
+    if (!hasActiveStationWifiConnection()) join();
+  } else if (!readerOpen || SETTINGS.onlineDictWifiAlwaysOn == 0) {
+    release();
+  }
+}
+
+bool manualOn() { return manual; }
+
+void adoptConnection() {
+  manual = true;
+  if (holding) return;
+  holding = true;
+  attempted = true;
+  lastAttemptMs = joinedMs = millis();
+  loggedUp = false;
+  WiFi.setSleep(true);
+  powerManager.setWifiIdleLowPowerAllowed(true);
 }
 
 void readerOpened() {
@@ -94,7 +127,7 @@ void readerOpened() {
 
 void readerClosed() {
   readerOpen = false;
-  release();
+  if (!manual) release();
 }
 
 void tick() {
@@ -104,11 +137,18 @@ void tick() {
   }
   // Once a second is plenty; the reader's loop runs far more often.
   static uint32_t lastTickMs = 0;
-  if (!readerOpen || millis() - lastTickMs < 1000) return;
+  if ((!readerOpen && !manual) || millis() - lastTickMs < 1000) return;
   lastTickMs = millis();
-  if (hasActiveStationWifiConnection()) return;
+  if (hasActiveStationWifiConnection()) {
+    if (holding && !loggedUp) {
+      loggedUp = true;
+      // ms = join to connected; a = free heap in KB once connected.
+      SpeedLog::recordNamed("wifi.up", millis() - joinedMs, static_cast<int32_t>(ESP.getFreeHeap() / 1024));
+    }
+    return;
+  }
   if (!attempted) {
-    if (millis() - openedMs >= kJoinAfterOpenMs) join();
+    if (manual || millis() - openedMs >= kJoinAfterOpenMs) join();
     return;
   }
   // Not connected yet, or dropped (out of range, another feature switched the

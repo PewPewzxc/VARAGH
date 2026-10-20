@@ -22,6 +22,12 @@ void readerClosed();
 // From the reader's loop: joins in the background, retries a lost connection
 // now and then, and lets go of Wi-Fi when the setting has been switched off.
 void tick();
+// Control Center Wi-Fi button: joins the last network now and keeps Wi-Fi on,
+// book or not, until switched off here or the device sleeps.
+void setManual(bool on);
+bool manualOn();
+// The Wi-Fi list connected by hand: keep that connection as the manual one.
+void adoptConnection();
 // For a lookup: waits until Wi-Fi is connected, joining first if need be.
 // givenUp is polled while waiting; true ends the wait at once (as not connected).
 bool waitConnected(uint32_t timeoutMs, const std::function<bool()>& givenUp = nullptr);

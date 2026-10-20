@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "InlineImageToken.h"
+#include "PersianFocus.h"
 #include "hyphenation/Hyphenator.h"
 
 constexpr int MAX_COST = std::numeric_limits<int>::max();
@@ -314,6 +315,11 @@ FocusTokenMetadata computeFocusMetadata(const std::string_view segment, const Ep
                                         const bool focusReadingEnabled) {
   if (!focusReadingEnabled || (baseStyle & EpdFontFamily::BOLD) != 0 || segment.empty()) {
     return {baseStyle, 0};
+  }
+  if (PersianFocus::startsArabic(segment)) {
+    // Joined script: end the bold part at a natural break, never mid-join.
+    const size_t cut = PersianFocus::boundary(segment, FOCUS_READING_PERCENT);
+    return {baseStyle, static_cast<uint8_t>(cut <= UINT8_MAX ? cut : 0)};
   }
 
   size_t charCount = 0;
@@ -1800,7 +1806,10 @@ bool ParsedText::extractLine(Arena& scratchArena, const size_t breakIndex, const
           continues = true;
         }
 
-        guideDotBefore = forwardAdjacent && lineGuideDotBefore[currSrc];
+        // The dot belongs to the gap before the later word in reading order.
+        // Right-to-left runs come out reversed, so look at the previous one there.
+        guideDotBefore = (forwardAdjacent && lineGuideDotBefore[currSrc]) ||
+                         (reverseAdjacent && lineGuideDotBefore[prevSrc]);
       }
       reorderedContinuesScratch.push_back(continues);
       reorderedNoSpaceBeforeScratch.push_back(!continues && noSpaceBeforeVec[lastBreakAt + src]);

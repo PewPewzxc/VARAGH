@@ -91,6 +91,7 @@ void ControlsOptionsActivity::rebuildSettingsList() {
   homeButtonSettings.clear();
   frontButtonSettings.clear();
   sideButtonSettings.clear();
+  controlCenterSettings.clear();
   tapsGesturesSettings.clear();
   twoFingerSwipeSettings.clear();
   edgeGestureSettings.clear();
@@ -102,6 +103,7 @@ void ControlsOptionsActivity::rebuildSettingsList() {
   tapsGesturesSettings = buildControlsTapsGesturesSettingsList(allSettings);
   twoFingerSwipeSettings = buildControlsTwoFingerSwipeSettingsList(allSettings);
   edgeGestureSettings = buildControlsEdgeGestureSettingsList(allSettings);
+  controlCenterSettings = buildControlsControlCenterSettingsList(allSettings);
 #if CROSSINK_APP_CAP_TOUCH
   if (!gpio.hasTouch()) {
     frontButtonSettings = buildControlsFrontButtonSettingsList(allSettings);
@@ -138,6 +140,9 @@ void ControlsOptionsActivity::setCurrentSettings() {
     case SettingAction::ControlsEdgeGestures:
       currentSettings = &edgeGestureSettings;
       break;
+    case SettingAction::ControlsControlCenter:
+      currentSettings = &controlCenterSettings;
+      break;
     default:
       currentSettings = &settings;
       break;
@@ -161,6 +166,8 @@ StrId ControlsOptionsActivity::activeSubmenuTitleId() const {
       return StrId::STR_TWO_FINGER_SWIPE;
     case SettingAction::ControlsEdgeGestures:
       return StrId::STR_EDGE_GESTURES;
+    case SettingAction::ControlsControlCenter:
+      return StrId::STR_CC_CONTROL_CENTER;
     default:
       return StrId::STR_NONE_OPT;
   }

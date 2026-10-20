@@ -1408,8 +1408,8 @@ void GfxRenderer::drawArc(const int maxRadius, const int cx, const int cy, const
     return;
   }
 
-  const int outerRadiusSq = outerRadius * outerRadius;
-  const int innerRadiusSq = innerRadius * innerRadius;
+  const int outerRadiusSq = outerRadius * outerRadius + (smoothRoundEnds ? outerRadius : 0);
+  const int innerRadiusSq = innerRadius * innerRadius + (smoothRoundEnds ? innerRadius + 1 : 0);
 
   int xOuter = outerRadius;
   int xInner = innerRadius;
@@ -1771,7 +1771,7 @@ void GfxRenderer::fillArc(const int maxRadius, const int cx, const int cy, const
     return;
   }
 
-  const int radiusSq = maxRadius * maxRadius;
+  const int radiusSq = maxRadius * maxRadius + (smoothRoundEnds ? maxRadius : 0);
 
   // Avoid sqrt by scanning from outer radius inward while y grows.
   int x = maxRadius;

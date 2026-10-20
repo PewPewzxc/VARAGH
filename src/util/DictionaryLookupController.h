@@ -37,7 +37,10 @@ class DictionaryLookupController {
     Cancelled,
     // "Add to..." on the not-found popup (word selection only): the caller
     // offers the Highlights categories for the looked-up text.
-    AddTo
+    AddTo,
+    // VARAGH: not on the card, and Wi-Fi is already on: the caller asks the
+    // online sources (only for screens that called setOnlineFallback).
+    TryOnline
   };
 
   // How the word was ultimately resolved when FoundDefinition fires.
@@ -104,6 +107,8 @@ class DictionaryLookupController {
   // Definition modals render lookup progress inside their existing frame so a
   // chained lookup does not dirty reader pixels outside the modal.
   void setLookupToastEnabled(bool enabled) { lookupToastEnabled_ = enabled; }
+  // A word not on the card goes to the online sources by itself while Wi-Fi is on.
+  void setOnlineFallback(bool enabled) { onlineFallback_ = enabled; }
   bool hasFailureFeedback() const { return state == LookupState::NotFound || state == LookupState::ReadError; }
   const char* getFailureMessage() const;
   bool dismissFailureForDictionarySwitch();
@@ -136,6 +141,7 @@ class DictionaryLookupController {
   bool canCreateClipping() const { return allowCreateClipping_; }
 
  private:
+  bool onlineFallback_ = false;
 #if CROSSINK_APP_CAP_TOUCH
   using AltFormUiApp = freeink::ui::FreeInkApp<3, 1>;
   static constexpr freeink::ui::ActionId ACTION_ALT_FORM_NO = 1;
@@ -171,6 +177,10 @@ class DictionaryLookupController {
   std::string preparedQuickIndexPath;
 
   std::string lookupWord;
+  // VARAGH: when lookupWord is a phrase of several selected words, the first of
+  // them, looked up when the dictionary has no entry for the whole phrase.
+  std::string phraseFallbackWord_;
+  std::string pendingPhraseFallback_;  // handed to the next startLookup()
   std::string foundWord;
   DictLocation foundLocation;
   std::string altFormWord;

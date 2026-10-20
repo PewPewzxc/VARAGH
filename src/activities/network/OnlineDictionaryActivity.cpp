@@ -50,7 +50,7 @@ constexpr uint32_t kMessageMs = 1800;
 
 struct InPlaceWorker {
   GameThinker thinker;
-  onlinedict::Lang lang = onlinedict::Lang::English;
+  OnlineDictionary::Request request;  // its provider is the source that answered
   std::string word;
   std::string html;
   OnlineDictionary::Outcome outcome = OnlineDictionary::Outcome::NoConnection;
@@ -68,7 +68,7 @@ void fetchInPlace(void* context) {
   OnlineDictionary::FetchOptions options;
   options.timeoutMs = kStepTimeoutMs;
   options.cancelled = [worker] { return worker->thinker.stopRequested(); };
-  worker->outcome = OnlineDictionary::fetch(worker->lang, worker->word, worker->html, options);
+  worker->outcome = OnlineDictionary::fetchWithFallback(worker->request, worker->word, worker->html, options);
 }
 
 // Back, or the Home key of the readers that have one, gives a lookup up. It is
@@ -92,7 +92,7 @@ enum class InPlace : uint8_t {
 };
 
 InPlace lookUpInPlace(const GfxRenderer& renderer, MappedInputManager& mappedInput,
-                      const OnlineDictionary::Request& request) {
+                      OnlineDictionary::Request& request) {
   GUI.drawPopup(renderer, tr(STR_ONLINE_LOOKING_UP));
   if (!inPlaceWorker) inPlaceWorker = new (std::nothrow) InPlaceWorker();
   if (!inPlaceWorker) return InPlace::Unavailable;
@@ -127,7 +127,7 @@ InPlace lookUpInPlace(const GfxRenderer& renderer, MappedInputManager& mappedInp
   // The secure connection needs more stack than the main task has to spare
   // with a book open, so the request runs on a task of its own. That also
   // leaves this task free to watch for Back.
-  worker.lang = request.lang;
+  worker.request = request;
   worker.word = request.word;
   worker.html.clear();
   worker.outcome = OnlineDictionary::Outcome::NoConnection;
@@ -164,9 +164,10 @@ InPlace lookUpInPlace(const GfxRenderer& renderer, MappedInputManager& mappedInp
       // find the same silence after a much longer wait.
       return unreachable();
   }
-  if (!OnlineDictionary::save(request.lang, worker.word, worker.html)) return InPlace::Unavailable;
+  request.provider = worker.request.provider;
+  if (!OnlineDictionary::save(request.lang, request.provider, worker.word, worker.html)) return InPlace::Unavailable;
   // The entry may have been found under another spelling; the reader searches for the one it asked for.
-  if (worker.word != request.word) OnlineDictionary::save(request.lang, request.word, worker.html);
+  if (worker.word != request.word) OnlineDictionary::save(request.lang, request.provider, request.word, worker.html);
   return InPlace::Found;
 }
 
@@ -177,7 +178,8 @@ OnlineDictionaryActivity::OnlineDictionaryActivity(GfxRenderer& renderer, Mapped
     : Activity("OnlineDictionary", renderer, mappedInput), mode(mode) {}
 
 std::string OnlineDictionaryActivity::begin(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                            const std::string& word, const std::string& bookCachePath) {
+                                            const std::string& word, const std::string& bookCachePath,
+                                            const onlinedict::Provider only, const bool allowRestart) {
   OnlineDictionary::Request request;
   request.word = onlinedict::normalizeWord(word);
   if (request.word.empty()) return {};
@@ -185,12 +187,24 @@ std::string OnlineDictionaryActivity::begin(GfxRenderer& renderer, MappedInputMa
   const std::string dictionaryPath = Dictionary::readConfiguredDictPath(bookCachePath.c_str());
   const DictInfo info = dictionaryPath.empty() ? DictInfo{} : Dictionary::readInfo(dictionaryPath.c_str());
   request.lang = onlinedict::languageFor(request.word, info.valid ? info.lang : nullptr);
-  if (OnlineDictionary::hasSaved(request.lang, request.word)) return OnlineDictionary::storePath(request.lang);
+  // The sources chosen in Settings, or the one "Try another source" asked for.
+  if (only != onlinedict::Provider::None) {
+    request.provider = only;
+    request.second = onlinedict::Provider::None;
+  } else {
+    request.provider = OnlineDictionary::preferredProvider(request.lang);
+    request.second = OnlineDictionary::secondProvider(request.lang);
+  }
+  for (const onlinedict::Provider provider : {request.provider, request.second}) {
+    if (provider != onlinedict::Provider::None && OnlineDictionary::hasSaved(request.lang, provider, request.word)) {
+      return OnlineDictionary::storePath(request.lang, provider);
+    }
+  }
 
   if (OnlineWifi::enabled()) {
     switch (lookUpInPlace(renderer, mappedInput, request)) {
       case InPlace::Found:
-        return OnlineDictionary::storePath(request.lang);
+        return OnlineDictionary::storePath(request.lang, request.provider);
       case InPlace::NoEntry:
       case InPlace::Unreachable:
       case InPlace::Cancelled:
@@ -201,6 +215,7 @@ std::string OnlineDictionaryActivity::begin(GfxRenderer& renderer, MappedInputMa
     }
   }
 
+  if (!allowRestart) return {};
   if (!OnlineDictionary::saveRequest(request)) {
     LOG_ERR("ODICT", "Could not write the lookup request");
     return {};
@@ -254,8 +269,9 @@ void OnlineDictionaryActivity::onWifiResult(const bool connected) {
 void OnlineDictionaryActivity::fetch() {
   std::string html;
   std::string word = request.word;
-  const OnlineDictionary::Outcome outcome = OnlineDictionary::fetch(request.lang, word, html);
-  if (outcome == OnlineDictionary::Outcome::Found && OnlineDictionary::save(request.lang, word, html)) {
+  const OnlineDictionary::Outcome outcome = OnlineDictionary::fetchWithFallback(request, word, html);
+  if (outcome == OnlineDictionary::Outcome::Found &&
+      OnlineDictionary::save(request.lang, request.provider, word, html)) {
     // The reader picks the answer up from here once the book is open again.
     request.word = word;
     request.answered = true;

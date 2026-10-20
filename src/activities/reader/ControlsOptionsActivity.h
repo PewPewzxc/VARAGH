@@ -22,6 +22,7 @@ class ControlsOptionsActivity final : public Activity {
   std::vector<SettingInfo> homeButtonSettings;
   std::vector<SettingInfo> frontButtonSettings;
   std::vector<SettingInfo> sideButtonSettings;
+  std::vector<SettingInfo> controlCenterSettings;
   std::vector<SettingInfo> tapsGesturesSettings;
   std::vector<SettingInfo> twoFingerSwipeSettings;
   std::vector<SettingInfo> edgeGestureSettings;

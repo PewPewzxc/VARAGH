@@ -553,10 +553,13 @@ void SleepActivity::onEnter() {
       renderer.setOrientation(sleepPopupOrientation);
       GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
     }
-    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   } else if (showSleepPopup) {
     GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
   }
+  // VARAGH: every sleep screen is laid out in portrait. Reset it whatever was
+  // open: a turned screen that was not the reader itself (a menu or popup over
+  // a rotated book) used to leave the sleep screen drawn sideways.
+  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   switch (sleepScreen) {
     case (CrossPointSettings::SLEEP_SCREEN_MODE::BLANK):

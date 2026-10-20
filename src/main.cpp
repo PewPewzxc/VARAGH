@@ -108,6 +108,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "components/UITheme.h"
 #include "components/icons/tablerFilledIcons.h"
 #include "fontIds.h"
+#include "network/OnlineWifi.h"
 #include "network/UsbSerialFileTransfer.h"
 #ifdef SIMULATOR
 #include <SimulatorLifecycle.h>
@@ -120,6 +121,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "util/ButtonShortcutController.h"
 #include "util/Dictionary.h"
 #include "util/DictionaryRegistry.h"
+#include "util/FrontlightNight.h"
 #include "util/FrontlightSchedule.h"
 #include "util/LocalClockOffset.h"
 #include "util/ScreenshotUtil.h"
@@ -1133,6 +1135,20 @@ constexpr unsigned long SPEED_LOG_BATTERY_SAMPLE_MS = 5UL * 60UL * 1000UL;
 void refreshSpeedLogContext() {
   SpeedLog::Context context;
   context.batteryPercent = powerManager.getBatteryPercentage();
+#ifndef SIMULATOR
+  const uint16_t millivolts = powerManager.getBatteryMillivolts();
+  context.batteryMillivolts = millivolts != 0 ? millivolts : -1;
+#endif
+  ReadingStatsDateTime now;
+  if (getCurrentLocalReadingStatsDateTime(now)) {
+    context.clockValid = true;
+    context.year = now.date.year;
+    context.month = now.date.month;
+    context.day = now.date.day;
+    context.hour = now.hour;
+    context.minute = now.minute;
+    context.clockAtMs = millis();
+  }
 #ifdef SIMULATOR
   context.charging = gpio.isUsbConnected();
 #else
@@ -1146,6 +1162,10 @@ void refreshSpeedLogContext() {
 
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout) {
+  // goToSleep() runs the current activity's loop once more; if that loop asked
+  // for sleep (a Sleep button), the same input would ask again and recurse
+  // until the stack overflows. The first request already owns the sleep.
+  if (deepSleepInProgress) return;
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
   APP_STATE.lastSleepApp = APP_STATE.lastSleepFromReader ? 0 : activityManager.sleepResumeApp();
@@ -1407,16 +1427,39 @@ void setup() {
   }
   logBootHeap("storage ready");
 
-  HalSystem::checkPanic();
-
   SETTINGS.loadFromFile();
   halClock.setDaylightSavingRuleSource(&SETTINGS.clockDstRule);
   Storage.installDateTimeCallback(&SETTINGS.clockUtcOffsetQ);
+  // After the clock settings, so the report and its file carry the real date.
+  {
+    char when[24] = "";
+    ReadingStatsDateTime now;
+    if (getCurrentLocalReadingStatsDateTime(now)) {
+      snprintf(when, sizeof(when), "%04u-%02u-%02u %02u:%02u", now.date.year, now.date.month, now.date.day, now.hour,
+               now.minute);
+    }
+#ifndef SIMULATOR
+    HalSystem::checkPanic(when);
+#else
+    HalSystem::checkPanic();
+#endif
+  }
   APP_STATE.loadFromFile();
   mirrorWakeShortPressToNvs();
   // Needs SETTINGS for the clock's UTC offset, so it cannot run any earlier.
   BatteryDiagnosticLog::record(BatteryDiagnosticLog::Event::Wake, BoardConfig::ACTIVE.name,
                                wakeupRouteName(wakeupReason));
+  // First speed-log line of the session, before Quick Resume can open a book:
+  // which build this is and why it started.
+  {
+    refreshSpeedLogContext();
+    char note[96];
+    snprintf(note, sizeof(note), "v=%s git=%s%s reset=%s wake=%s route=%s%s", CROSSINK_VERSION, CROSSINK_GIT_SHA,
+             strcmp(CROSSINK_GIT_DIRTY, "0") == 0 ? "" : "+", resetReasonName(rawResetReason),
+             wakeupCauseName(rawWakeupCause), wakeupRouteName(wakeupReason),
+             isSilentReboot ? " silent" : "");
+    SpeedLog::recordNote(SpeedLog::Event::Start, note, millis());
+  }
   const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   // Normal boot store deferral adapted from Sichroteph/YACP commit
@@ -1452,6 +1495,7 @@ void setup() {
       restoreLightOn = false;
     }
   }
+  if (!preserveLightAcrossRestart) FrontlightNight::applyAtBoot();
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
 
   if (recoveryFirmwareMode) {
@@ -1770,7 +1814,11 @@ void loop() {
   }
   if (userInputReceived) {
     activityManager.notifyUserInput();
-    SpeedLog::noteInput();
+    SpeedLog::noteInput((gpio.wasAnyPressed() || gpio.wasAnyReleased()) ? SpeedLog::Input::Button
+#if CROSSINK_APP_CAP_TOUCH
+                        : gpio.wasTouchActivity() ? SpeedLog::Input::Touch
+#endif
+                                                  : SpeedLog::Input::Tilt);
   }
 
   // Let wake continue as soon as its hold has been verified. The release can
@@ -1948,6 +1996,13 @@ void loop() {
 
   const unsigned long activityStartTime = millis();
   activityManager.loop();
+  // Wi-Fi switched on from the Control Center lives outside the reader too.
+  if (OnlineWifi::manualOn()) OnlineWifi::tick();
+  if (SETTINGS.frontlightNightEnabled != 0 || FrontlightNight::isNight()) {
+    if (FrontlightNight::tick()) {
+      activityManager.persistGlobalSettings();
+    }
+  }
 #if CROSSINK_APP_CAP_TOUCH
   // A delayed Home event is valid for this activity dispatch only. If an
   // unrelated gesture took priority, do not carry it into the next activity.

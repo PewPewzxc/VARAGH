@@ -2357,9 +2357,11 @@ void EpubReaderActivity::onEnter() {
     epub->ensureOptimizerImageIndex();
   }
   loadBookReaderSettings();
+  const unsigned long fontsStartedMs = millis();
   ensureScriptCapableFont();
   sdFontSystem.setSettingsPersistenceCallback(persistReaderSdFontSettingsForBook, this);
   ensureReaderSdFontLoaded(renderer);
+  SpeedLog::recordNamed("open.fonts", millis() - fontsStartedMs);
   ImageBlock::clearSessionRenderFailures();
   ImageBlock::setExtractor(
       epub.get(),
@@ -2376,6 +2378,8 @@ void EpubReaderActivity::onEnter() {
 
   // Activate reader-specific front button mapping (if configured).
   mappedInput.setReaderMode(true);
+  // The dictionary chosen for the book's language comes before the general one.
+  Dictionary::setBookLanguage(epub->getLanguage().c_str());
 
   BOOKMARKS.loadForBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), "epub");
   CLIPPINGS.loadForBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), "epub");
@@ -2487,6 +2491,9 @@ void EpubReaderActivity::onEnter() {
                                  coverState);
   }
 
+  // Book open: settings, fonts, progress and stats loaded (before the first render).
+  SpeedLog::recordNamed("open.setup", millis() - openStartedMs);
+
   // Trigger first update
   requestUpdate();
 }
@@ -2515,6 +2522,7 @@ void EpubReaderActivity::onExit() {
 
   // Deactivate reader-specific front button mapping.
   mappedInput.setReaderMode(false);
+  Dictionary::setBookLanguage("");
 
   if (footnoteDepth == 0 && !flushQueuedProgress()) {
     LOG_ERR("ERS", "Failed to flush debounced reader progress on exit");
@@ -4652,6 +4660,18 @@ bool EpubReaderActivity::handleFrontlightPanelResult(const FrontlightPanelResult
     handled = true;
   }
   if (result.action == FrontlightPanelAction::None) return handled;
+  if (result.action == FrontlightPanelAction::RotateRight) {
+    applyOrientation(ReaderUtils::rotatedOrientation(SETTINGS.orientation, true));
+    requestUpdate();
+    return true;
+  }
+  if (result.action == FrontlightPanelAction::ToggleGuideDots ||
+      result.action == FrontlightPanelAction::ToggleFocusReading) {
+    executeReaderQuickAction(result.action == FrontlightPanelAction::ToggleGuideDots
+                                 ? CrossPointSettings::LONG_MENU_TOGGLE_GUIDE_DOTS
+                                 : CrossPointSettings::LONG_MENU_TOGGLE_FOCUS);
+    return true;
+  }
   if (result.action != FrontlightPanelAction::SyncProgress &&
       result.action != FrontlightPanelAction::NearbyPositionSync &&
       result.action != FrontlightPanelAction::SendNearbyBook) {
@@ -4694,7 +4714,7 @@ bool EpubReaderActivity::showSavedOnlineDefinition() {
 
   // The saved answers are a small dictionary of their own. The definition
   // screen clears this override again when it closes.
-  Dictionary::setLookupDictPathOverride(OnlineDictionary::storePath(request.lang).c_str());
+  Dictionary::setLookupDictPathOverride(OnlineDictionary::storePath(request.lang, request.provider).c_str());
   const DictLocation location = Dictionary::locate(request.word);
   if (!location.found) {
     Dictionary::clearLookupDictPathOverride();
@@ -6150,7 +6170,12 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   const unsigned long renderStartedMs = millis();
 #ifndef SIMULATOR
   const uint32_t panelStartedUs = HalDisplay::panelTimeUs();
+  const uint32_t refreshesBefore = HalDisplay::refreshCounts();
 #endif
+  if (openStartedMs != 0UL) {
+    // Book open: from the reader's start to the first page render starting.
+    SpeedLog::recordNamed("open.wait", renderStartedMs - openStartedMs);
+  }
   // The render task now owns the mutex requested by the input action. Background
   // indexing may resume only after this render releases it.
   backgroundBuildYieldForInput.store(false, std::memory_order_relaxed);
@@ -6911,12 +6936,26 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       return;
     }
     lastRenderCompleteMs = millis();
+    char refreshes[48] = "";
 #ifndef SIMULATOR
     const auto panelMs = static_cast<int32_t>((HalDisplay::panelTimeUs() - panelStartedUs) / 1000U);
+    // Which refreshes this page used ("fast1 gray1"), to tell the 1.37 s and
+    // 1.50 s page turns apart.
+    {
+      const uint32_t now = HalDisplay::refreshCounts();
+      static constexpr const char* kKinds[] = {"fast", "half", "full", "gray"};
+      size_t used = 0;
+      for (int k = 0; k < 4; ++k) {
+        const unsigned count = ((now >> (8 * k)) - (refreshesBefore >> (8 * k))) & 0xFFu;
+        if (count == 0) continue;
+        const int n = snprintf(refreshes + used, sizeof(refreshes) - used, "%s%s%u", used ? " " : "", kKinds[k], count);
+        if (n > 0) used = std::min(sizeof(refreshes) - 1, used + static_cast<size_t>(n));
+      }
+    }
 #else
     const int32_t panelMs = -1;
 #endif
-    SpeedLog::record(SpeedLog::Event::Page, lastRenderCompleteMs - renderStartedMs, -1, panelMs);
+    SpeedLog::record(SpeedLog::Event::Page, lastRenderCompleteMs - renderStartedMs, -1, panelMs, refreshes);
     if (openStartedMs != 0UL) {
       SpeedLog::record(SpeedLog::Event::Open, lastRenderCompleteMs - openStartedMs);
       openStartedMs = 0UL;

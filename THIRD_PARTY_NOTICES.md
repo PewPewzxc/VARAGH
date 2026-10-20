@@ -27,7 +27,7 @@ Fetched by PlatformIO at the versions pinned in `platformio.ini`, or vendored in
 | SdFat (Bill Greiman) | MIT |
 | expat, miniz, MiniBidi (`lib/`) | MIT |
 | uzlib (`lib/`) | zlib licence |
-| Tabler Icons (converted icons in `src/components/icons`), Lucide icons (inside the SDK) | MIT, ISC |
+| Lucide icons (inside the SDK); Tabler Icons and Lucide as the models for several of VARAGH's own icon drawings in `src/components/icons` (since 1.3.0, drawn by `scripts/generate_varagh_icons.py`) | ISC, MIT |
 
 **Firmware binaries.** Because `firmware-*.bin` links wolfSSL (GPL-2.0-or-later),
 each released binary is distributed under the terms of the GNU GPL version 3 or
@@ -82,10 +82,16 @@ Function", which its author published for free use.
 
 ## Online dictionary
 
-Entries fetched by the online dictionary come from
-[Wiktionary](https://www.wiktionary.org) and [Wikipedia](https://www.wikipedia.org)
-(CC BY-SA 4.0). Each saved entry names its source. Nothing is fetched unless you
-choose Online in a lookup.
+Entries fetched by the online dictionary come from these sources; each saved
+entry names its source. Nothing is fetched unless you choose Online in a lookup,
+or Wi-Fi is already on and the word is not in the dictionary on the card.
+
+| Source | What it gives | Licence |
+|---|---|---|
+| [Wiktionary](https://www.wiktionary.org) (each language's own and the English one) | meanings | CC BY-SA 4.0 |
+| [Wikipedia](https://www.wikipedia.org) | article summaries | CC BY-SA 4.0 |
+| [Datamuse](https://www.datamuse.com/api/) | English meanings from [WordNet](https://wordnet.princeton.edu) (Princeton University) | Datamuse API: free, no key; WordNet licence |
+| [OpenThesaurus](https://www.openthesaurus.de) | German synonyms | CC BY-SA 4.0 |
 
 ## Fonts in the release SD-card pack
 

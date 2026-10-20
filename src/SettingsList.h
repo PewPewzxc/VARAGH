@@ -658,6 +658,41 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
     add(SettingInfo::Value16(StrId::STR_END, &CrossPointSettings::frontlightScheduleEnd,
                              {0, FrontlightSchedule::kUnsetTimeOfDay, 1}, "frontlightScheduleEnd",
                              StrId::STR_CAT_DISPLAY));
+    add(SettingInfo::Toggle(StrId::STR_NIGHT_LIGHT, &CrossPointSettings::frontlightNightEnabled,
+                            "frontlightNightEnabled", StrId::STR_CAT_DISPLAY));
+    add(SettingInfo::Value16(StrId::STR_NIGHT_FROM, &CrossPointSettings::frontlightNightStart,
+                             {0, FrontlightSchedule::kMinutesPerDay - 1, 1}, "frontlightNightStart",
+                             StrId::STR_CAT_DISPLAY));
+    add(SettingInfo::Value16(StrId::STR_NIGHT_UNTIL, &CrossPointSettings::frontlightNightEnd,
+                             {0, FrontlightSchedule::kMinutesPerDay - 1, 1}, "frontlightNightEnd",
+                             StrId::STR_CAT_DISPLAY));
+    {
+      // Control Center buttons: the same choices for every slot.
+      const std::vector<StrId> ccChoices = {
+          StrId::STR_CC_EMPTY,        StrId::STR_CC_TAP_TO_LOOK_UP, StrId::STR_CC_WIFI,
+          StrId::STR_CC_DARK,         StrId::STR_CC_TOUCH_LOCK,     StrId::STR_CC_LIGHT,
+          StrId::STR_CC_NIGHT_LIGHT,  StrId::STR_CC_GUIDE_DOTS,     StrId::STR_CC_FOCUS_READING,
+          StrId::STR_CC_REFRESH,      StrId::STR_CC_SYNC,           StrId::STR_CC_SLEEP,
+          StrId::STR_CC_SETTINGS,     StrId::STR_CC_READING_STATS,  StrId::STR_CC_LIBRARY,
+          StrId::STR_CC_APPS,         StrId::STR_CC_FILE_TRANSFER,  StrId::STR_CC_ROTATE};
+      static_assert(CrossPointSettings::CONTROL_CENTER_BUTTON_COUNT == 18, "keep ccChoices in enum order");
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_1, &CrossPointSettings::ccSlot1, ccChoices, "ccSlot1",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_2, &CrossPointSettings::ccSlot2, ccChoices, "ccSlot2",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_3, &CrossPointSettings::ccSlot3, ccChoices, "ccSlot3",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_4, &CrossPointSettings::ccSlot4, ccChoices, "ccSlot4",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_5, &CrossPointSettings::ccSlot5, ccChoices, "ccSlot5",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_6, &CrossPointSettings::ccSlot6, ccChoices, "ccSlot6",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_7, &CrossPointSettings::ccSlot7, ccChoices, "ccSlot7",
+                            StrId::STR_CAT_CONTROLS));
+      add(SettingInfo::Enum(StrId::STR_CC_SLOT_8, &CrossPointSettings::ccSlot8, ccChoices, "ccSlot8",
+                            StrId::STR_CAT_CONTROLS));
+    }
 
     // --- Reader ---
     // Built-in font-family entry. Replaced per-call with a registry-aware
@@ -724,6 +759,8 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
       add(SettingInfo::Toggle(StrId::STR_ONLINE_WIFI_ALWAYS, &CrossPointSettings::onlineDictWifiAlwaysOn,
                               "onlineDictWifiAlwaysOn", StrId::STR_CAT_READER));
     }
+    add(SettingInfo::Value16(StrId::STR_DICTIONARIES, &CrossPointSettings::readingLanguages, {0, 0x0FFF, 1},
+                             "readingLanguages"));
     add(SettingInfo::Toggle(StrId::STR_DISABLE_TOUCHSCREEN, &CrossPointSettings::disableReaderTouchscreen,
                             "disableReaderTouchscreen", StrId::STR_CAT_READER));
     add(SettingInfo::Toggle(StrId::STR_EXTRA_SPACING, &CrossPointSettings::extraParagraphSpacing,
@@ -786,8 +823,6 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           "rightEdgeDown", StrId::STR_CAT_CONTROLS)
             .withEnumRawValues(twoFingerSwipeActionValues));
 #endif
-    add(SettingInfo::Enum(StrId::STR_ORIENTATION_AWARE, &CrossPointSettings::sideButtonOrientationAware,
-                          {StrId::STR_NO, StrId::STR_YES}, "sideButtonOrientationAware", StrId::STR_CAT_CONTROLS));
     add(buildSideButtonActionSetting(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::sideButtonUpShort,
                                      "sideButtonUpShort"));
     add(buildSideButtonActionSetting(StrId::STR_LONG_PRESS_ACTION, &CrossPointSettings::sideButtonUpLong,
@@ -796,9 +831,6 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                                      "sideButtonDownShort"));
     add(buildSideButtonActionSetting(StrId::STR_LONG_PRESS_ACTION, &CrossPointSettings::sideButtonDownLong,
                                      "sideButtonDownLong"));
-    add(SettingInfo::Enum(StrId::STR_ORIENTATION_AWARE, &CrossPointSettings::frontButtonOrientationAware,
-                          {StrId::STR_NO, StrId::STR_NAV_BUTTONS, StrId::STR_ALL_BUTTONS},
-                          "frontButtonOrientationAware", StrId::STR_CAT_CONTROLS));
     add(SettingInfo::Enum(StrId::STR_LONG_PRESS_ACTION, &CrossPointSettings::longPressButtonBehavior,
                           {StrId::STR_LONG_PRESS_BEHAVIOR_OFF, StrId::STR_LONG_PRESS_BEHAVIOR_SKIP,
                            StrId::STR_CHANGE_FONT_SIZE, StrId::STR_LONG_PRESS_BEHAVIOR_ORIENTATION},
@@ -884,6 +916,12 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                            "frontlightBrightness"));
     add(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightWarmth, {0, 100, 5}, "frontlightWarmth"));
     add(SettingInfo::Toggle(StrId::STR_FRONTLIGHT, &CrossPointSettings::frontlightOn, "frontlightOn"));
+    add(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightOtherBrightness, {0, 100, 1},
+                           "frontlightOtherBrightness"));
+    add(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightOtherWarmth, {0, 100, 1},
+                           "frontlightOtherWarmth"));
+    add(SettingInfo::Toggle(StrId::STR_NIGHT_LIGHT, &CrossPointSettings::frontlightLiveIsNight,
+                            "frontlightLiveIsNight"));
 
     // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
     add(SettingInfo::DynamicString(
@@ -1198,8 +1236,9 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     }
     auto guideIt =
         std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_GUIDE_READING; });
-    const auto insertPos = guideIt == v.end() ? v.end() : guideIt + 1;
-    v.insert(insertPos, buildDictionarySetting(dictRegistry));
+    // An index, not an iterator: each insert may move the vector.
+    const size_t at = guideIt == v.end() ? v.size() : static_cast<size_t>(std::distance(v.begin(), guideIt) + 1);
+    v.insert(v.begin() + at, buildDictionarySetting(dictRegistry));
   }
   return v;
 }
@@ -1213,6 +1252,9 @@ inline void addSettingByName(std::vector<SettingInfo>& target, const std::vector
   }
 }
 
+inline void addSettingByKey(std::vector<SettingInfo>& target, const std::vector<SettingInfo>& allSettings,
+                            const char* key);
+
 inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> readerSettings;
   readerSettings.reserve(15);
@@ -1225,11 +1267,12 @@ inline std::vector<SettingInfo> buildReaderSettingsParentList(const std::vector<
   addSettingByName(readerSettings, allSettings, StrId::STR_IMAGES);
   addSettingByName(readerSettings, allSettings, StrId::STR_FOCUS_READING);
   addSettingByName(readerSettings, allSettings, StrId::STR_GUIDE_READING);
-  addSettingByName(readerSettings, allSettings, StrId::STR_DICTIONARY);
+  // One page for the offline and online dictionaries of each reading language.
+  readerSettings.push_back(SettingInfo::Action(StrId::STR_DICTIONARIES, SettingAction::Dictionaries));
   addSettingByName(readerSettings, allSettings, StrId::STR_WORD_SELECT_HOLD);
   addSettingByName(readerSettings, allSettings, StrId::STR_WORD_HOLD_ACTION);
   addSettingByName(readerSettings, allSettings, StrId::STR_TAP_TO_LOOK_UP);
-  addSettingByName(readerSettings, allSettings, StrId::STR_ONLINE_WIFI_ALWAYS);
+
   addSettingByName(readerSettings, allSettings, StrId::STR_INDEXING_METHOD);
   return readerSettings;
 }
@@ -1304,7 +1347,7 @@ inline std::vector<SettingInfo> buildControlsSettingsParentList(const std::vecto
   const bool hasHomeKey = gpio.hasHomeKey();
 
   std::vector<SettingInfo> settings;
-  settings.reserve(3 + (hasHomeKey ? 1u : 0u) + (hasFrontButtons ? 1u : 0u) + (hasTiltPageTurnSetting ? 1u : 0u) +
+  settings.reserve(4 + (hasHomeKey ? 1u : 0u) + (hasFrontButtons ? 1u : 0u) + (hasTiltPageTurnSetting ? 1u : 0u) +
                    (hasTiltPageTurnDirectionSetting ? 1u : 0u) + (hasTapsGestures ? 1u : 0u));
   if (hasHomeKey) {
     settings.push_back(SettingInfo::Submenu(StrId::STR_HOME_BUTTON, SettingAction::ControlsHomeButton));
@@ -1315,11 +1358,23 @@ inline std::vector<SettingInfo> buildControlsSettingsParentList(const std::vecto
   }
   settings.push_back(SettingInfo::Submenu(StrId::STR_SIDE_BUTTONS, SettingAction::ControlsSideButtons));
   settings.push_back(SettingInfo::Action(StrId::STR_QUICK_ACTIONS, SettingAction::QuickActions));
+  if (Frontlight.present() && gpio.hasTouch()) {
+    settings.push_back(SettingInfo::Submenu(StrId::STR_CC_CONTROL_CENTER, SettingAction::ControlsControlCenter));
+  }
   if (hasTapsGestures) {
     settings.push_back(SettingInfo::Submenu(StrId::STR_TAPS_AND_GESTURES, SettingAction::ControlsTapsGestures));
   }
   if (hasTiltPageTurnSetting) addSettingByName(settings, allSettings, StrId::STR_TILT_PAGE_TURN);
   if (hasTiltPageTurnDirectionSetting) addSettingByName(settings, allSettings, StrId::STR_TILT_PAGE_TURN_DIRECTION);
+  return settings;
+}
+
+inline std::vector<SettingInfo> buildControlsControlCenterSettingsList(const std::vector<SettingInfo>& allSettings) {
+  std::vector<SettingInfo> settings;
+  settings.reserve(CrossPointSettings::CONTROL_CENTER_SLOTS);
+  for (const char* key : {"ccSlot1", "ccSlot2", "ccSlot3", "ccSlot4", "ccSlot5", "ccSlot6", "ccSlot7", "ccSlot8"}) {
+    addSettingByKey(settings, allSettings, key);
+  }
   return settings;
 }
 
@@ -1400,7 +1455,6 @@ inline std::vector<SettingInfo> buildControlsFrontButtonSettingsList(const std::
   settings.push_back(SettingInfo::Action(StrId::STR_REMAP_FRONT_BUTTONS, SettingAction::RemapFrontButtons));
   settings.push_back(
       SettingInfo::Action(StrId::STR_REMAP_FRONT_BUTTONS_READER, SettingAction::RemapFrontButtonsReader));
-  addSettingByKey(settings, allSettings, "frontButtonOrientationAware");
   addSettingByKey(settings, allSettings, "longPressButtonBehavior");
   addSettingByName(settings, allSettings, StrId::STR_LONG_PRESS_BACK_ACTION);
   addSettingByName(settings, allSettings, StrId::STR_LONG_PRESS_MENU_ACTION);
@@ -1410,8 +1464,7 @@ inline std::vector<SettingInfo> buildControlsFrontButtonSettingsList(const std::
 inline std::vector<SettingInfo> buildControlsSideButtonSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
   const bool hasChord = hasSideButtonChordSetting(allSettings);
-  settings.reserve(8 + (hasChord ? 1u : 0u));
-  addSettingByKey(settings, allSettings, "sideButtonOrientationAware");
+  settings.reserve(7 + (hasChord ? 1u : 0u));
   if (hasChord) {
     addSettingByName(settings, allSettings, StrId::STR_SIDE_BUTTON_CHORD);
   }
@@ -1456,8 +1509,10 @@ inline std::vector<SettingInfo> buildGroupedDisplaySettingsList(const std::vecto
 
 inline std::vector<SettingInfo> buildDisplayFrontlightSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
-  settings.reserve(4);
+  settings.reserve(7);
 
+  // First match by name: the night light's category-less state entry shares
+  // STR_NIGHT_LIGHT but is added after the Display toggle.
   auto addDisplaySetting = [&](const StrId nameId) {
     const auto it = std::find_if(allSettings.begin(), allSettings.end(),
                                  [nameId](const auto& setting) { return setting.nameId == nameId; });
@@ -1469,6 +1524,9 @@ inline std::vector<SettingInfo> buildDisplayFrontlightSettingsList(const std::ve
     addDisplaySetting(StrId::STR_FRONTLIGHT_SCHEDULE);
     addDisplaySetting(StrId::STR_START);
     addDisplaySetting(StrId::STR_END);
+    addDisplaySetting(StrId::STR_NIGHT_LIGHT);
+    addDisplaySetting(StrId::STR_NIGHT_FROM);
+    addDisplaySetting(StrId::STR_NIGHT_UNTIL);
   }
   return settings;
 }

@@ -213,6 +213,11 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
   return _batteryCachedPercent / 10;
 }
 
+uint16_t HalPowerManager::getBatteryMillivolts() const {
+  static const BatteryMonitor battery;
+  return battery.readMillivolts();
+}
+
 #if CROSSINK_BATTERY_DIAG_LOG
 bool HalPowerManager::getBatteryDiagnostics(BatteryDiagnostics& out) const {
   // Function-local like getBatteryPercentage()'s: BoardConfig::ACTIVE is only

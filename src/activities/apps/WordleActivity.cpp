@@ -384,7 +384,7 @@ void WordleActivity::render(RenderLock&&) {
                           EpdFontFamily::BOLD);
     }
     drawKeyboard();
-    if (game.guessCount() > 0) giveUpHold.draw(renderer, tr(STR_WORDLE_GIVE_UP));
+    if (game.guessCount() > 0) giveUpHold.draw(renderer, tr(STR_WORDLE_GIVE_UP), tr(STR_HOLD_TO_GIVE_UP));
   } else {
     drawResult();
     if (notice == Notice::NoDictionary) {

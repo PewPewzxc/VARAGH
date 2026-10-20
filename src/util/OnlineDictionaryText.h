@@ -9,15 +9,33 @@
 // string work, no network and no storage, so it is tested on the host.
 namespace onlinedict {
 
-enum class Lang : uint8_t { English = 0, German = 1, Persian = 2 };
+// The reading languages VARAGH offers (Settings > Reader > Dictionaries).
+// Values are persisted (bit masks, request file): append only.
+enum class Lang : uint8_t {
+  English = 0,
+  German = 1,
+  Persian = 2,
+  French = 3,
+  Spanish = 4,
+  Italian = 5,
+  Dutch = 6,
+  Portuguese = 7,
+  Russian = 8,
+  Arabic = 9,
+  Turkish = 10,
+  Polish = 11,
+};
+constexpr uint8_t kLangCount = 12;
+// The language's name in itself ("Deutsch", "فارسی").
+const char* nativeName(Lang lang);
 
 // "en", "de", "fa": the Wikimedia language edition and the name of the saved-answers file.
 const char* code(Lang lang);
 bool langFromCode(const char* text, Lang& lang);
 
-// Persian when the word holds Arabic-script letters; otherwise the language of
-// the headwords of the dictionary in use (the lang= of its .ifo, "de-de" is
-// German), and English when that says nothing.
+// A word in Arabic letters is Arabic when the dictionary in use is Arabic,
+// Persian otherwise; any other word has the language of the dictionary in use
+// (the lang= of its .ifo, "de-de" is German), and English when that says nothing.
 Lang languageFor(const std::string& word, const char* dictionaryLang);
 
 // Trims the word, drops Arabic vowel marks and tatweel, and writes the Arabic
@@ -34,6 +52,32 @@ std::string percentEncode(const std::string& text);
 // request (see Extractor); the English address takes one word only.
 std::string definitionUrl(Lang lang, const std::string& word, const std::string& otherSpelling = {});
 std::string summaryUrl(Lang lang, const std::string& word);  // Wikipedia
+// English Wiktionary's REST answer covers every language; the Extractor keeps
+// the block of the word's own language, so German and Persian words get
+// English meanings from it.
+std::string englishWiktionaryUrl(const std::string& word);
+std::string datamuseUrl(const std::string& word);       // English, WordNet meanings
+std::string openThesaurusUrl(const std::string& word);  // German synonyms
+
+// VARAGH 1.3.0: the online sources the reader can choose per language
+// (Settings > Reader). Values are persisted: append only.
+enum class Provider : uint8_t {
+  Wiktionary = 0,         // the word's own Wiktionary (Wikipedia when it has none)
+  EnglishWiktionary = 1,  // English meanings of a German or Persian word
+  Datamuse = 2,           // English only
+  OpenThesaurus = 3,      // German only, synonyms
+  Wikipedia = 4,
+  None = 5,               // no second source
+};
+constexpr uint8_t kProviderCount = 5;  // real sources, None not counted
+
+const char* providerName(Provider provider);
+// Short name used in the file names of the saved answers ("" for Wiktionary,
+// whose answers keep the file names from before 1.3.0).
+const char* providerFileTag(Provider provider);
+bool providerServes(Provider provider, Lang lang);
+// The source after `current` that serves the language, wrapping around.
+Provider nextProvider(Provider current, Lang lang);
 
 enum class Source : uint8_t {
   // en.wiktionary REST "definition" answer: parts of speech with their senses.
@@ -42,6 +86,10 @@ enum class Source : uint8_t {
   WiktionaryExtract,
   // Wikipedia REST "summary" answer.
   WikipediaSummary,
+  // Datamuse "words" answer with md=d: WordNet meanings, "n\tmeaning".
+  DatamuseDefinitions,
+  // OpenThesaurus search answer: groups of synonyms.
+  OpenThesaurusSynonyms,
 };
 
 // Reads an answer as it arrives, keeping only the few strings an entry needs,
@@ -110,6 +158,12 @@ class Extractor {
   int examples_ = 0;
   bool sectionOpen_ = false;
   bool exampleForSense_ = false;
+  // Datamuse / OpenThesaurus.
+  bool wordMatches_ = false;
+  std::string lastPos_;
+  std::string group_;  // OpenThesaurus: the synonyms of the current group
+  int groups_ = 0;
+  void closeGroup();
 };
 
 }  // namespace onlinedict

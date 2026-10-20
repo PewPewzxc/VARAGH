@@ -42,6 +42,12 @@ static constexpr int kDictionarySwitchTouchHeight = 56;
 class DictionaryDefinitionActivity;
 
 static std::string dictionaryNameFromPath(const std::string& path) {
+  // Saved online answers: name the source, not the folder ("online-dict").
+  onlinedict::Lang onlineLang;
+  onlinedict::Provider provider;
+  if (OnlineDictionary::isStorePath(path, onlineLang, provider)) {
+    return std::string("Online: ") + onlinedict::providerName(provider);
+  }
   const size_t stemSlash = path.rfind('/');
   if (stemSlash == std::string::npos) return path;
 
@@ -405,6 +411,7 @@ static EpdFontFamily::Style styleForSpan(const StyledSpan& span) {
 
 void DictionaryDefinitionActivity::onEnter() {
   Activity::onEnter();
+  controller.setOnlineFallback(true);
   const DictionaryFontActivation activation =
       sdFontSystem.activateDictionaryFont(renderer, dictionaryFontFamilyName_, dictionaryFontPointSize_);
   definitionFontId_ = activation.fontId;
@@ -1088,6 +1095,18 @@ void DictionaryDefinitionActivity::wrapPlain() {
 // Word-select: extract words from the currently visible page
 // ---------------------------------------------------------------------------
 
+// VARAGH: a Persian line ("<b>1.</b> meaning", "<b>مترادف:</b> ...") is laid
+// out from the right: its pieces were placed left to right, which put the bold
+// number or label at the wrong end. The first piece with a strong letter decides.
+bool DictionaryDefinitionActivity::lineIsRtl(const PooledLine& line) const {
+  for (uint16_t i = 0; i < line.segmentCount; ++i) {
+    const char* text = pagePool_.data() + layoutSegments[line.firstSegment + i].offset;
+    const int asLtr = BidiUtils::detectParagraphLevel(text, 0);
+    if (asLtr == BidiUtils::detectParagraphLevel(text, 1)) return asLtr == 1;  // a strong letter answered
+  }
+  return false;
+}
+
 void DictionaryDefinitionActivity::extractWordsFromLayout() {
   const int bodyFontId = getDefinitionFontId();
   const int indentStep = renderer.getTextWidth(bodyFontId, "   ");
@@ -1103,17 +1122,26 @@ void DictionaryDefinitionActivity::extractWordsFromLayout() {
   for (int i = 0; i < linesPerPage && i < static_cast<int>(layoutLines.size()); i++) {
     const PooledLine& line = layoutLines[i];
     const int16_t lineY = static_cast<int16_t>(bodyStartY + i * lineHeight);
+    const bool rtl = lineIsRtl(line);
+    const int right = renderer.getScreenWidth() - rightPadding;
     int x = leftPadding + line.indentLevel * indentStep;
 
     if (line.isListItem) {
       x += renderer.getTextWidth(bodyFontId, kBullet);
     }
+    int rtlX = rtl ? right - line.indentLevel * indentStep -
+                         (line.isListItem ? renderer.getTextWidth(bodyFontId, kBullet) : 0)
+                   : 0;
 
     for (uint16_t segmentIdx = 0; segmentIdx < line.segmentCount; ++segmentIdx) {
       const PooledSegment& seg = layoutSegments[line.firstSegment + segmentIdx];
       const int segFontId = getDefinitionFontId(seg.isIpa);
       const int spaceWidth = renderer.getSpaceWidth(segFontId, seg.style);
       const char* p = pagePool_.data() + seg.offset;
+      if (rtl) {
+        rtlX -= renderer.getTextAdvanceX(segFontId, p, seg.style);
+        x = rtlX;
+      }
       while (*p) {
         while (*p == ' ') {
           x += spaceWidth;
@@ -1197,6 +1225,30 @@ void DictionaryDefinitionActivity::addToCategory(const uint16_t categoryId) {
 }
 
 void DictionaryDefinitionActivity::openDictionarySwitch() {
+  onlinedict::Lang onlineLang;
+  onlinedict::Provider current;
+  if (OnlineDictionary::isStorePath(foundLocation.folderPath, onlineLang, current)) {
+    // "Try another source": the second source when the preferred one is shown,
+    // otherwise the next source that knows this language.
+    const onlinedict::Provider second = OnlineDictionary::secondProvider(onlineLang);
+    const onlinedict::Provider next = current == OnlineDictionary::preferredProvider(onlineLang) &&
+                                              second != onlinedict::Provider::None
+                                          ? second
+                                          : onlinedict::nextProvider(current, onlineLang);
+    if (next == current) return;
+    const std::string saved = OnlineDictionaryActivity::begin(renderer, mappedInput, headword, cachePath, next);
+    modalBackgroundNeedsRedraw_ = true;
+    modalCleanRefreshNeeded_ = true;
+    if (saved.empty()) {
+      requestUpdate();
+      return;
+    }
+    Dictionary::setLookupDictPathOverride(saved.c_str());
+    dictionaryName_ = dictionaryNameFromPath(saved);
+    dictionarySwitchLookupInProgress = true;
+    controller.startLookup(onlinedict::normalizeWord(headword), false);
+    return;
+  }
   if (hasModalBackground()) {
     // Capture the exact frame currently on the panel before the picker covers
     // it. This is the hard lower bound for every replacement definition, even
@@ -1235,7 +1287,7 @@ void DictionaryDefinitionActivity::openDictionarySwitch() {
         return;
       }
       Dictionary::setLookupDictPathOverride(saved.c_str());
-      dictionaryName_ = tr(STR_DICT_ONLINE);
+      dictionaryName_ = dictionaryNameFromPath(saved);
       dictionarySwitchLookupInProgress = true;
       controller.startLookup(onlinedict::normalizeWord(headword), false);
       return;
@@ -1428,6 +1480,18 @@ void DictionaryDefinitionActivity::loop() {
         setResult(ActivityResult{});
         finish();
         break;
+      case DictionaryLookupController::LookupEvent::TryOnline: {
+        // Not on the card and Wi-Fi is on: the online sources, in place.
+        const std::string saved = OnlineDictionaryActivity::begin(renderer, mappedInput, controller.getLookupWord(), cachePath,
+                                                                  onlinedict::Provider::None, false);
+        if (saved.empty()) {
+          controller.setNotFound();
+          break;
+        }
+        Dictionary::setLookupDictPathOverride(saved.c_str());
+        controller.startLookup(onlinedict::normalizeWord(controller.getLookupWord()), false);
+        break;
+      }
       case DictionaryLookupController::LookupEvent::SwitchDictionary:
         openDictionarySwitch();
         break;
@@ -1709,9 +1773,16 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
     for (int i = 0; i < linesPerPage && i < static_cast<int>(layoutLines.size()); i++) {
       const PooledLine& line = layoutLines[i];
       const int y = bodyStartY + i * lineHeight;
+      const bool rtl = lineIsRtl(line);
       int x = leftPadding + line.indentLevel * indentStep;
-
-      if (line.isListItem) {
+      if (rtl) {
+        // From the right: the bullet first, then each piece to the left of the last.
+        x = renderer.getScreenWidth() - rightPadding - line.indentLevel * indentStep;
+        if (line.isListItem) {
+          x -= renderer.getTextWidth(bodyFontId, kBullet);
+          renderer.drawText(bodyFontId, x, y, kBullet);
+        }
+      } else if (line.isListItem) {
         renderer.drawText(bodyFontId, x, y, kBullet);
         x += renderer.getTextWidth(bodyFontId, kBullet);
       }
@@ -1720,13 +1791,14 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
         const PooledSegment& seg = layoutSegments[line.firstSegment + segmentIdx];
         const int segFontId = getDefinitionFontId(seg.isIpa);
         const char* segText = pagePool_.data() + seg.offset;
+        if (rtl) x -= renderer.getTextAdvanceX(segFontId, segText, seg.style);
         renderer.drawText(segFontId, x, y, segText, true, seg.style);
         if ((seg.style & EpdFontFamily::UNDERLINE) != 0) {
           const int segWidth = renderer.getTextWidth(segFontId, segText, seg.style);
           const int underlineY = y + renderer.getFontAscenderSize(segFontId) + 2;
           renderer.drawLine(x, underlineY, x + segWidth, underlineY, true);
         }
-        x += renderer.getTextAdvanceX(segFontId, segText, seg.style);
+        if (!rtl) x += renderer.getTextAdvanceX(segFontId, segText, seg.style);
       }
     }
   };
@@ -1819,7 +1891,11 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
                           modalY_ + modalHeight_ - kDictionarySwitchTouchHeight * 2,
                           modalWidth_, kDictionarySwitchTouchHeight};
     renderer.drawLine(buttonRect.x, buttonRect.y, buttonRect.x + buttonRect.width, buttonRect.y, true);
-    const char* label = tr(STR_SWITCH_DICTIONARY);
+    onlinedict::Lang onlineLang;
+    onlinedict::Provider onlineProvider;
+    const char* label = OnlineDictionary::isStorePath(foundLocation.folderPath, onlineLang, onlineProvider)
+                            ? tr(STR_TRY_ANOTHER_SOURCE)
+                            : tr(STR_SWITCH_DICTIONARY);
     const int labelX =
         buttonRect.x + (buttonRect.width - renderer.getTextWidth(UI_10_FONT_ID, label, EpdFontFamily::BOLD)) / 2;
     const int labelY = buttonRect.y + (buttonRect.height - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
