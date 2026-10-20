@@ -19,14 +19,34 @@ their features are kept.
   1 % − / + buttons, and eight buttons you choose (Settings → Controls).
 - **Night light:** a second brightness and warmth from evening to morning.
 - **Dictionaries per language:** one page with a tab per language, each with
-  its own card dictionary and two online sources; more sources (Datamuse,
-  OpenThesaurus, English Wiktionary), asked by themselves when Wi-Fi is on.
-- **Persian menus** and a Persian keyboard; **Caps Lock**.
-- **Better word lookup** (word forms such as went → go, می‌روم → رفتن) and
-  **resizing a selection** with handles or the buttons in Ask mode.
-- **Rotation that turns the buttons and touch** with the screen.
+  its own card dictionary and two online sources. New sources: Datamuse,
+  OpenThesaurus and English Wiktionary, asked by themselves when Wi-Fi is on.
+- **Persian menus**, a Persian keyboard and **Caps Lock**.
+- **Better word lookup** (went → go, می‌روم → رفتن) and **resizing a
+  selection** with handles or the buttons.
+- **Rotation that turns the buttons and touch** with the page.
 - **One bold icon style** across the whole firmware, made for e-ink.
 - **Go** and **Tic Tac Toe**, and **Next in series** at the end of a book.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/control-center.png" width="250" alt="The Control Center with light and warmth sliders and eight buttons"><br><b>Control Center</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/control-center-buttons.png" width="250" alt="Settings, Controls, Control Center: eight button slots"><br><b>Choose its buttons</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/dictionaries.png" width="250" alt="The Dictionaries page with a tab per language"><br><b>Dictionaries per language</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/online-sources.png" width="250" alt="Choosing the first online source: Wiktionary, Datamuse, Wikipedia"><br><b>Online sources</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/ask-resize.png" width="250" alt="Three words selected with handles and the Ask bubble"><br><b>Resize a selection</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/word-forms.png" width="250" alt="Looking up went opens go"><br><b>went → go</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/home-icons.png" width="250" alt="Home with the new bold icons and battery icon"><br><b>One icon style</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/apps.png" width="250" alt="Apps with Go and Tic Tac Toe"><br><b>Go and Tic Tac Toe</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.0/go.png" width="250" alt="A game of Go on the 9 by 9 board"><br><b>Go</b></td>
+  </tr>
+</table>
+
+<sub>Screens captured from the 1.3.0 firmware running in the PC simulator.</sub>
 
 See the [changelog](CHANGELOG.md) for everything.
 

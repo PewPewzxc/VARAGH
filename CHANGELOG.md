@@ -2,83 +2,115 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
-## [VARAGH v1.3.0 "Lion" 🦁] - not released yet
+## [VARAGH v1.3.0 "Lion" 🦁] - 2026-10-20
 
 Based on VARAGH 1.2.1. Updating keeps your settings, books, reading progress,
-highlights, flashcards and saved games. Built and tuned for the X4 Pro.
+highlights, flashcards and saved games. Books are laid out again once, the
+first time each is opened (a fix for Persian text). Built and tuned for the X4 Pro.
 
 ### Added
 
-- **Control Center.** Swipe down from the top edge: a card with the light
-  slider (the left half covers 0–20 % for fine low light), the warmth slider
-  (cold on the left, warm on the right), round − / + buttons on both that move
-  exactly 1 %, and eight buttons you choose in **Settings → Controls → Control
-  Center** from: Tap to Look Up, Wi-Fi, Dark, Touch lock, Light, Night light,
-  Guide Dots, Focus Reading, Refresh, Sync, Sleep, Settings, Reading stats,
-  Library, Apps, File transfer, Rotate, or Empty. Empty places are left out
-  and the card gets shorter. Wi-Fi: a tap connects to a saved network in
-  range; a hold opens the network list.
-- **Night light** (Settings → Display → Frontlight): from a time you pick
-  until a time you pick, the reader uses a second brightness and warmth, and
-  goes back to the day values in the morning.
-- **Dictionaries** (Settings → Reader): one page for every language you read,
-  with a tab for each (+ adds a language, hold a tab to remove it). Each
-  language has its own **offline dictionary** on the card and a **first and
-  second online source**. A language without a choice gets its dictionary
-  from the card (one in the same language first, such as German–German). A
-  book uses the dictionary of its language; Persian words use the Persian
-  one in any book. **Keep Wi-Fi on in books** is on the same page.
-- **More online sources:** Datamuse (English meanings, from WordNet),
-  OpenThesaurus (German synonyms) and English Wiktionary (meanings in English
-  of German, Persian and other words), next to Wiktionary and Wikipedia. The
-  popup names the source and offers **Try Another Source**. When the word is
-  not on the card and Wi-Fi is already on, the online sources are asked by
-  themselves.
-- **Persian menus.** Persian is now a menu language, written right to left,
-  with a Persian keyboard (System → Device → Keyboard layouts).
-- **Caps Lock** on the keyboard: tap Shift twice or hold it.
-- **Better word lookup:** "nodes" finds node, "cats" cat, "went" go,
-  "kamen" kommen, "می‌روم" رفتن, using the dictionary's own word forms first.
-  Looking up several words tries the whole phrase first ("good fortune").
-- **Resize a selection in Ask mode.** While the Ask bubble shows, drag the
-  handles at either end, or press Right / Down / page forward to add the next
-  word and Left / Up / page back to take one off. One press is one word as it
-  looks on the page. **Ask** is now the default for Long Press on a Word.
-- **Next in series** at the end of a book, from the Library.
-- **Go** (9×9, 13×13, 19×19; tap twice to place, or move with the buttons)
-  and **Tic Tac Toe** in Apps.
-- **A Lion face** and "1.3.0 Lion" on the boot screen and in Settings.
+- **Control Center.** Swipe down from the top edge of the screen.
+  - **Light:** a thin slider with the percentage in its knob. The left half
+    covers 0–20 %, so low light can be set finely. Round **−** and **+**
+    buttons beside it always move exactly 1 %.
+  - **Warmth:** a second slider, cold (snowflake) on the left and warm (flame)
+    on the right, with its own − and +.
+  - **Eight buttons you choose** in Settings → Controls → **Control Center**,
+    from: Tap to Look Up, Wi-Fi, Dark, Touch lock, Light, Night light, Guide
+    Dots, Focus Reading, Refresh, Sync, Sleep, Settings, Reading stats,
+    Library, Apps, File transfer, Rotate, or Empty. Empty places are left out
+    and the card gets shorter. A button is black while its setting is on.
+  - **Wi-Fi:** a tap connects to a saved network in range; a hold opens the
+    list of networks.
+  - Only a swipe opens the Control Center; a tap on the top bar does what it
+    did before.
+- **Night light** (Settings → Display → Frontlight → Night Light, Night From,
+  Night Until): from the evening time to the morning time the reader uses a
+  second brightness and warmth, then returns to the day values.
+- **Dictionaries** (Settings → Reader → Dictionaries): one page for every
+  language you read.
+  - A **tab per language**; **+** adds a language (English, Deutsch, فارسی,
+    Français, Español, Italiano, Nederlands, Português, Русский, العربية,
+    Türkçe, Polski) and holding a tab removes it.
+  - Each language has its own **offline dictionary** on the card and a
+    **first and second online source**. A language without a choice gets one
+    from the card by itself, a dictionary in the same language first (such as
+    German–German). If the card has none, the page says so and names the
+    folder to copy one into.
+  - A book looks words up in the dictionary of its language; Persian words use
+    the Persian dictionary in any book.
+  - **Keep Wi-Fi on in books** is on the same page.
+  - Works with touch and with the buttons (Left / Right switch the language,
+    Up / Down and Confirm pick a row).
+- **More online sources:** **Datamuse** (English meanings from WordNet),
+  **OpenThesaurus** (German synonyms) and **English Wiktionary** (meanings in
+  English of German, Persian and other words), next to Wiktionary and
+  Wikipedia.
+  - The lookup popup names the source ("Online: Datamuse") and offers **Try
+    Another Source**. Answers are saved per source.
+  - When a word is not in the card's dictionary and Wi-Fi is already on, the
+    online sources are asked by themselves. Without Wi-Fi nothing is fetched
+    unless you choose Online.
+- **Persian menus.** Persian is a menu language (System → Language), written
+  right to left. A **Persian keyboard** (standard letter rows with پ چ ژ گ ک ی
+  and a half-space key) is in System → Device → Keyboard layouts.
+- **Caps Lock** on the keyboard: tap Shift twice or hold it; the key shows a
+  bar under its arrow.
+- **Better word lookup.** The dictionary's own list of word forms is asked
+  first, then spellings with other capitals, then guessed forms: "nodes" finds
+  node, "cats" cat (not CATS), "went" go, "kamen" kommen, "می‌روم" رفتن,
+  "کتاب‌هایم" کتاب. Looking up several words tries the whole phrase first
+  ("good fortune"), then the first word.
+- **Resize a selection.** With Long Press on a Word set to **Ask** (now the
+  default), drag the handles at either end of the selection, or press Right /
+  Down / page forward to add the next word and Left / Up / page back to take
+  one off. One press is always one word as it looks on the page.
+- **Next in series** at the end of a book: the next book of its series comes
+  first, from any folder.
+- **Go** in Apps: 9×9, 13×13 or 19×19, against the computer (Easy, Medium) or
+  two players. Tap a point twice to place a stone (the first tap shows where),
+  or move with the buttons. Undo, Pass, Hint and a score at the end.
+- **Tic Tac Toe** in Apps: classic or infinite, against the computer or two
+  players.
+- **The Lion** on the boot screen and "1.3.0 Lion" in Settings.
 
 ### Changed
 
-- **One icon style everywhere.** Every icon in the firmware is redrawn in one
-  bold-line style made for e-ink (lines 2.8 px, whole pixels, no grey).
-- **Rotation turns the buttons and touch with the screen.** "Turn right 90°"
-  and "Turn left 90°" always turn exactly 90° that way; the front buttons and
-  the touch screen follow, so the forward button is still forward. The
-  separate "orientation aware" settings are gone. The sleep screen is always
-  drawn upright.
-- **Battery icon:** a new design in every theme, with a bolt while charging
-  and "!" at 15 % or less.
+- **One icon style everywhere.** Every icon in the firmware (Home, Library,
+  files, reader, keyboard, Control Center) is redrawn in one bold-line style
+  made for e-ink: lines 2.8 px wide on whole pixels, no grey. The Wi-Fi icon
+  now has the same size as the others.
+- **Rotation turns the buttons and the touch screen with the page.** "Turned
+  right 90°" and "Turned left 90°" (were Landscape CW / CCW) always turn
+  exactly 90° that way, and the front buttons and touch follow, so the forward
+  button is still forward. The separate "orientation aware" settings are gone.
+  The sleep screen is always drawn upright.
+- **Battery icon:** a new design in every theme, with the percentage beside
+  it, a bolt while charging and "!" at 15 % or less.
 - **Hold buttons in apps** (New game, Give up) show "Hold to …" for two
-  seconds when tapped.
+  seconds when tapped, so it is clear they need a hold.
+- **Long Press on a Word** is **Ask** by default for new settings.
 - **Logs for finding slow spots:** `speed-log.csv` gets battery voltage, the
-  clock, the kind of input and screen refresh for each page, book-opening
-  steps, Wi-Fi steps and Control Center frames; a crash report names the
-  firmware commit and keeps only the lines from before the crash.
+  time, which input and which screen refresh each page used, the steps of
+  opening a book, Wi-Fi steps and each Control Center frame. A crash report
+  names the firmware and its commit and keeps only the lines from before the
+  crash.
 
 ### Fixed
 
 - **Persian text:** Guide Dots sit in the right place in right-to-left lines,
-  and Persian lines in dictionary entries are laid out right to left. Books
-  laid out by an earlier version are laid out again once (new cache version).
-- **Wi-Fi:** the Wi-Fi event handler no longer writes logs from the Wi-Fi
-  task (a suspected cause of an old crash on a failed connection).
+  and Persian lines in dictionary entries are laid out right to left.
+- **Sleep from the Control Center** restarted the reader instead of sleeping.
+- **Wi-Fi:** the Wi-Fi event handler no longer writes logs from the Wi-Fi task
+  (a suspected cause of an old crash on a failed connection).
+- **Ask mode:** a word made of two pieces (a dash part, a quote mark, a style
+  change inside the word) no longer needs two presses to add or remove.
 
 ### Known issues
 
-- **Focus Reading for Persian** does not work yet; it is planned for a later
-  version.
+- **Focus Reading in Persian books** does not bold the word starts yet; it is
+  planned for a later version. English and German are not affected.
 
 ## [VARAGH v1.2.1 "Tiger"] - 2026-10-13
 
