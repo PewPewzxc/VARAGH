@@ -1015,3 +1015,5 @@ STR_DICT_LANG_HINT: "Sprache antippen für ihre Wörterbücher. + fügt eine hin
 STR_DICT_ADD_LANGUAGE: "Sprache hinzufügen"
 STR_KEEP_WIFI_IN_BOOKS: "WLAN in Büchern anlassen"
 STR_DICT_SECTION_ONLINE: "ONLINE"
+STR_LANGUAGE_PACK_HINT: "Oder den Ordner languages aus dem Release auf die SD-Karte kopieren."
+STR_LANGUAGE_PACK_TAG: "herunterladen"

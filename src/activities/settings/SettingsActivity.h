@@ -310,6 +310,7 @@ class SettingsActivity final : public Activity {
   void openScreenMarginPicker(const SettingInfo& setting);
   void openWordSpacingPicker();
   void openLanguagePicker();
+  void applyLanguage(uint8_t langIndex);
   void openIdleTimeThresholdPicker();
   void toggleCurrentSetting();
   // Faster Screen Link: turning it on applies the faster clock, then keeps it

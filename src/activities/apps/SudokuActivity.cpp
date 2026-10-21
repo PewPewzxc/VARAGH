@@ -56,6 +56,7 @@ void SudokuActivity::formatTime(const uint32_t seconds, char* out, const size_t 
 
 void SudokuActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   uint8_t bytes[sudoku::Game::kSaveBytes];
   if (!gameui::readSave(kSavePath, bytes, sizeof(bytes)) || !game.load(bytes, sizeof(bytes))) {
     LOG_DBG("SUDOKU", "No saved puzzle");
@@ -169,7 +170,7 @@ void SudokuActivity::loop() {
 
   // New is held, not tapped: it fills while the finger rests on it.
   bool repaint = false;
-  if (panel == Panel::Pad && newHold.update(mappedInput, repaint)) {
+  if (panel == Panel::Pad && newHold.update(mappedInput, repaint, &pointer)) {
     tickClock();
     panel = Panel::NewPuzzle;
     requestUpdate();
@@ -193,7 +194,14 @@ void SudokuActivity::loop() {
       return;
     }
   }
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
 
   if (panel == Panel::NewPuzzle) {
     for (int i = 0; i < 3; ++i) {
@@ -398,5 +406,20 @@ void SudokuActivity::render(RenderLock&&) {
       break;
   }
 
+  pointer.clear();
+  if (panel == Panel::NewPuzzle) {
+    for (const auto& b : levelBoxes) pointer.add(b);
+    if (game.started()) pointer.add(cancelBox);
+  } else if (panel == Panel::Solved) {
+    pointer.add(solvedNewBox);
+  } else {
+    for (int cell = 0; cell < 81; ++cell) {
+      pointer.add({grid.x + (cell % 9) * cellSize, grid.y + (cell / 9) * cellSize, cellSize, cellSize});
+    }
+    for (const auto& b : digitKeys) pointer.add(b);
+    for (const auto& b : tools) pointer.add(b);
+    if (game.started()) pointer.add(newHold.box);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

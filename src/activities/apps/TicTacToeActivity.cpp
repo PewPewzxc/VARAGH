@@ -88,6 +88,7 @@ void TicTacToeActivity::save() {
 
 void TicTacToeActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   if (!readFile(settings, tally, &game)) LOG_DBG("TTT", "No saved game");
   draft = settings;
   panel = game.started() ? Panel::Board : Panel::NewGame;
@@ -176,7 +177,7 @@ void TicTacToeActivity::loop() {
   }
 
   bool repaint = false;
-  if (panel == Panel::Board && game.started() && newHold.update(mappedInput, repaint)) {
+  if (panel == Panel::Board && game.started() && newHold.update(mappedInput, repaint, &pointer)) {
     draft = settings;
     panel = Panel::NewGame;
     requestUpdate();
@@ -186,7 +187,14 @@ void TicTacToeActivity::loop() {
 
   int tx = 0;
   int ty = 0;
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
 
   if (panel == Panel::NewGame) {
     const bool computer = draft.opponent == Computer;
@@ -365,5 +373,21 @@ void TicTacToeActivity::render(RenderLock&&) {
   drawTally();
 
   if (panel == Panel::NewGame) drawNewGamePanel();
+  pointer.clear();
+  if (panel == Panel::NewGame) {
+    const bool computer = draft.opponent == Computer;
+    for (const auto& b : kindBoxes) pointer.add(b);
+    for (const auto& b : opponentBoxes) pointer.add(b);
+    if (computer) {
+      for (const auto& b : levelBoxes) pointer.add(b);
+      for (const auto& b : sideBoxes) pointer.add(b);
+    }
+    if (game.started()) pointer.add(cancelBox);
+    pointer.add(startBox);
+  } else {
+    for (int cell = 0; cell < 9; ++cell) pointer.add({board.x + (cell % 3) * kCell, board.y + (cell / 3) * kCell, kCell, kCell});
+    if (game.started()) pointer.add(newHold.box);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

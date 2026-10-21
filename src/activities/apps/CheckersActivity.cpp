@@ -82,6 +82,7 @@ void CheckersActivity::save() {
 
 void CheckersActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   if (!load()) LOG_DBG("CHECKERS", "No saved game");
   draft = settings;
   panel = game->started() ? Panel::Board : Panel::NewGame;
@@ -320,7 +321,7 @@ void CheckersActivity::loop() {
   }
 
   bool repaint = false;
-  if (panel == Panel::Board && game->started() && newHold.update(mappedInput, repaint)) {
+  if (panel == Panel::Board && game->started() && newHold.update(mappedInput, repaint, &pointer)) {
     draft = settings;
     panel = Panel::NewGame;
     requestUpdate();
@@ -330,7 +331,14 @@ void CheckersActivity::loop() {
 
   int tx = 0;
   int ty = 0;
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
 
   if (panel == Panel::NewGame) {
     for (int i = 0; i < 2; ++i) {
@@ -503,5 +511,26 @@ void CheckersActivity::render(RenderLock&&) {
   }
 
   if (panel == Panel::NewGame) drawNewGamePanel();
+  pointer.clear();
+  if (panel == Panel::NewGame) {
+    for (const auto& b : opponentBoxes) pointer.add(b);
+    if (draft.opponent == Computer) {
+      for (const auto& b : sideBoxes) pointer.add(b);
+      for (const auto& b : levelBoxes) pointer.add(b);
+    }
+    if (game->started()) pointer.add(cancelBox);
+    pointer.add(startBox);
+  } else {
+    for (int square = 0; square < 64; ++square) {
+      if (checkers::playable(square)) pointer.add(squareBox(square));
+    }
+    if (game->started() && game->state() != checkers::Game::State::Playing) {
+      pointer.add(newGameBox);
+    } else {
+      for (const auto& b : tools) pointer.add(b);
+    }
+    if (game->started()) pointer.add(newHold.box);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

@@ -1153,3 +1153,5 @@ STR_DICT_LANG_HINT: "Tap a language to see its dictionaries. + adds a language; 
 STR_DICT_ADD_LANGUAGE: "Add a language"
 STR_KEEP_WIFI_IN_BOOKS: "Keep Wi-Fi on in books"
 STR_DICT_SECTION_ONLINE: "ONLINE"
+STR_LANGUAGE_PACK_HINT: "Or copy the languages folder from the release onto the SD card."
+STR_LANGUAGE_PACK_TAG: "download"

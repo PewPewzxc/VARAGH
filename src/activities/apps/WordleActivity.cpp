@@ -35,6 +35,7 @@ WordleActivity::WordleActivity(GfxRenderer& renderer, MappedInputManager& mapped
 
 void WordleActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   uint8_t bytes[wordle::Game::kSaveBytes];
   if (!gameui::readSave(kSavePath, bytes, sizeof(bytes)) || !game.load(bytes, sizeof(bytes))) {
     LOG_DBG("WORDLE", "No saved round");
@@ -184,7 +185,7 @@ void WordleActivity::loop() {
   // Give up is held, not tapped: it fills while the finger rests on it.
   bool repaint = false;
   if (game.state() == wordle::Game::State::Playing && game.guessCount() > 0 &&
-      giveUpHold.update(mappedInput, repaint)) {
+      giveUpHold.update(mappedInput, repaint, &pointer)) {
     game.giveUp();
     dirty = true;
     save();
@@ -195,7 +196,14 @@ void WordleActivity::loop() {
 
   int tx = 0;
   int ty = 0;
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
 
   if (game.state() != wordle::Game::State::Playing) {
     if (newGameBox.contains(tx, ty)) {
@@ -396,5 +404,14 @@ void WordleActivity::render(RenderLock&&) {
     }
   }
 
+  pointer.clear();
+  if (game.state() != wordle::Game::State::Playing) {
+    pointer.add(newGameBox);
+    pointer.add(lookUpBox);
+  } else {
+    for (const auto& b : keys) pointer.add(b);
+    if (game.guessCount() > 0) pointer.add(giveUpHold.box);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

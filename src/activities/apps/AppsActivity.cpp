@@ -196,6 +196,7 @@ uint8_t AppsActivity::resumeIdFor(const std::string& activityName) {
 
 void AppsActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   uint8_t bytes[4];
   if (gameui::readSave(kSavePath, bytes, sizeof(bytes)) && memcmp(bytes, kFileMagic, 3) == 0) hiddenMask = bytes[3];
   mode = Mode::Tiles;
@@ -376,7 +377,14 @@ void AppsActivity::loop() {
 
   int tx = 0;
   int ty = 0;
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
   if (mode == Mode::ClockSettings) {
     for (int row = 0; row < kClockRowCount; ++row) {
       if (!clockRows[row].contains(tx, ty)) continue;
@@ -533,5 +541,16 @@ void AppsActivity::render(RenderLock&&) {
     gameui::cornerButton(renderer, manageBox, tr(STR_APPS_MANAGE));
     drawTiles();
   }
+  pointer.clear();
+  if (mode == Mode::ClockSettings) {
+    for (const auto& row : clockRows) pointer.add(row);
+  } else if (mode == Mode::Manage) {
+    for (const auto& row : rows) pointer.add(row);
+    pointer.add(clockSettingsBox);
+  } else {
+    for (int i = 0; i < shownCount; ++i) pointer.add(tiles[i]);
+    pointer.add(manageBox);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

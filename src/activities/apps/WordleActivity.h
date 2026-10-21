@@ -50,4 +50,5 @@ class WordleActivity final : public Activity {
   gameui::Box panelBox;  // result area that replaces the keyboard
   gameui::Box lookUpBox;
   gameui::Box newGameBox;
+  gameui::ButtonPointer pointer;  // VARAGH: apps on button readers
 };

@@ -61,5 +61,6 @@ class AppsActivity final : public Activity {
   gameui::Box tiles[kAppCount];
   gameui::Box rows[kAppCount];
   gameui::Box manageBox;
+  gameui::ButtonPointer pointer;
   std::string status[kAppCount];
 };

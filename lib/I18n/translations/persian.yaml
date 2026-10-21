@@ -1150,3 +1150,5 @@ STR_DICT_LANG_HINT: "برای دیدن فرهنگ‌های هر زبان روی�
 STR_DICT_ADD_LANGUAGE: "افزودن زبان"
 STR_KEEP_WIFI_IN_BOOKS: "وای‌فای در کتاب روشن بماند"
 STR_DICT_SECTION_ONLINE: "آنلاین"
+STR_LANGUAGE_PACK_HINT: "یا پوشه languages را از نسخهٔ منتشرشده روی کارت حافظه کپی کنید."
+STR_LANGUAGE_PACK_TAG: "دانلود"

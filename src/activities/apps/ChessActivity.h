@@ -107,4 +107,5 @@ class ChessActivity final : public Activity {
   int topStripY = 0;
   int bottomStripY = 0;
   int statusY = 0;
+  gameui::ButtonPointer pointer;  // VARAGH: apps on button readers
 };

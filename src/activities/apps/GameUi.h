@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 
 #include "AppArt.h"
 #include "GameGlyphs.h"
@@ -311,6 +312,130 @@ inline void drawHeader(GfxRenderer& renderer, const MappedInputManager& input, c
   }
 }
 
+// VARAGH: the apps on readers without a touch screen (X4 Classic, X3). Each
+// screen lists what can be tapped while it draws; the direction buttons move a
+// frame to the nearest of those in that direction and Confirm taps it, so the
+// games keep their touch logic. On a touch screen it only passes taps through.
+struct ButtonPointer {
+  static constexpr uint16_t kMaxTargets = 400;  // a 19x19 Go board and its buttons
+  struct Target {
+    int16_t x, y, w, h;
+  };
+
+  bool enabled = false;
+  Target targets[kMaxTargets];
+  uint16_t count = 0;
+  // Centre of the framed target; kept across redraws, which rebuild the list.
+  int focusX = -1;
+  int focusY = -1;
+  unsigned long confirmDownMs = 0;
+
+  void begin(const MappedInputManager& input) { enabled = !input.hasTouchHardware(); }
+  // Call at the start of every render, then add() each tappable box.
+  void clear() { count = 0; }
+  void add(const Box& b) {
+    if (enabled && count < kMaxTargets && b.w > 0 && b.h > 0) {
+      targets[count++] = {static_cast<int16_t>(b.x), static_cast<int16_t>(b.y), static_cast<int16_t>(b.w),
+                          static_cast<int16_t>(b.h)};
+    }
+  }
+  // Puts the frame on the box (e.g. the cell a game wants to start from).
+  void focus(const Box& b) {
+    focusX = b.x + b.w / 2;
+    focusY = b.y + b.h / 2;
+  }
+  bool focusedOn(const Box& b) const { return enabled && count > 0 && b.contains(focusX, focusY); }
+
+  // Call at the end of render, before the display update.
+  void draw(const GfxRenderer& renderer) {
+    if (!enabled || count == 0) return;
+    if (focusX < 0) {
+      // A new screen starts from its middle, near the board.
+      focusX = renderer.getScreenWidth() / 2;
+      focusY = renderer.getScreenHeight() / 2;
+    }
+    const Target& t = targets[nearest(focusX, focusY)];
+    focusX = t.x + t.w / 2;
+    focusY = t.y + t.h / 2;
+    // Inverted lines show on white and on black alike.
+    constexpr int k = 4;
+    renderer.invertRect(t.x - k, t.y - k, t.w + 2 * k, k);
+    renderer.invertRect(t.x - k, t.y + t.h, t.w + 2 * k, k);
+    renderer.invertRect(t.x - k, t.y, k, t.h);
+    renderer.invertRect(t.x + t.w, t.y, k, t.h);
+  }
+
+  // Call once per loop instead of input.wasScreenTapped(x, y). Direction
+  // buttons move the frame (sets repaint); Confirm reports a tap at its centre.
+  bool tapped(MappedInputManager& input, int& x, int& y, bool& repaint) {
+    if (!enabled) return input.wasScreenTapped(x, y);
+    using B = MappedInputManager::Button;
+    if (input.wasPressed(B::Confirm)) confirmDownMs = millis();
+    int dx = 0;
+    int dy = 0;
+    if (input.wasReleased(B::Left)) dx = -1;
+    if (input.wasReleased(B::Right)) dx = 1;
+    if (input.wasReleased(B::Up) || input.wasReleased(B::PageBack)) dy = -1;
+    if (input.wasReleased(B::Down) || input.wasReleased(B::PageForward)) dy = 1;
+    if ((dx != 0 || dy != 0) && move(dx, dy)) repaint = true;
+    if (count == 0 || !input.wasReleased(B::Confirm) || confirmDownMs == 0) return false;
+    confirmDownMs = 0;
+    x = focusX;
+    y = focusY;
+    return true;
+  }
+
+  // Confirm held this long on the framed box (HoldButton on button readers).
+  unsigned long heldOn(const MappedInputManager& input, const Box& b) const {
+    if (!focusedOn(b) || confirmDownMs == 0 || !input.isPressed(MappedInputManager::Button::Confirm)) return 0;
+    return millis() - confirmDownMs;
+  }
+  // A completed hold must not also tap the box when Confirm comes up.
+  void consumeConfirm() { confirmDownMs = 0; }
+
+ private:
+  uint16_t nearest(const int px, const int py) const {
+    uint16_t best = 0;
+    long bestD = -1;
+    for (uint16_t i = 0; i < count; ++i) {
+      const long ddx = targets[i].x + targets[i].w / 2 - px;
+      const long ddy = targets[i].y + targets[i].h / 2 - py;
+      const long d = ddx * ddx + ddy * ddy;
+      if (bestD < 0 || d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  // The nearest target lying in the direction; one off to the side counts
+  // as further (twice, squared), so rows and columns are followed, yet the
+  // diagonal neighbour on a checkers board beats a square two rows on.
+  bool move(const int dx, const int dy) {
+    long bestScore = -1;
+    int bx = focusX;
+    int by = focusY;
+    for (uint16_t i = 0; i < count; ++i) {
+      const int cx = targets[i].x + targets[i].w / 2;
+      const int cy = targets[i].y + targets[i].h / 2;
+      const long along = dx != 0 ? static_cast<long>(cx - focusX) * dx : static_cast<long>(cy - focusY) * dy;
+      const long across = dx != 0 ? std::labs(cy - focusY) : std::labs(cx - focusX);
+      if (along <= 0) continue;
+      const long score = along * along + 2 * across * across;
+      if (bestScore < 0 || score < bestScore) {
+        bestScore = score;
+        bx = cx;
+        by = cy;
+      }
+    }
+    if (bestScore < 0) return false;
+    focusX = bx;
+    focusY = by;
+    return true;
+  }
+};
+
 // A button that acts only when it is held: it fills from the left while the
 // finger rests on it, in a few steps because the panel repaints slowly.
 struct HoldButton {
@@ -326,12 +451,22 @@ struct HoldButton {
 
   // Call on every loop. Returns true once, when the hold is complete; sets
   // `repaint` when the fill has to be drawn again.
-  bool update(MappedInputManager& input, bool& repaint) {
+  // With a ButtonPointer on a button reader, Confirm held on the framed box counts.
+  bool update(MappedInputManager& input, bool& repaint, ButtonPointer* pointer = nullptr) {
     int x = 0;
     int y = 0;
     unsigned long heldMs = 0;
     uint8_t now = 0;
-    if (box.w > 0 && input.isScreenTouchTapCandidate(x, y, heldMs) && box.grown(8).contains(x, y)) {
+    if (pointer && pointer->enabled) {
+      heldMs = pointer->heldOn(input, box);
+      if (heldMs >= kHoldMs) {
+        pointer->consumeConfirm();
+        step = 0;
+        repaint = true;
+        return true;
+      }
+      now = heldMs >= 100 ? static_cast<uint8_t>(1 + (heldMs - 100) * (kSteps - 1) / (kHoldMs - 100)) : 0;
+    } else if (box.w > 0 && input.isScreenTouchTapCandidate(x, y, heldMs) && box.grown(8).contains(x, y)) {
       if (heldMs >= kHoldMs) {
         // The rest of this touch is not a tap on whatever comes next.
         input.suppressCurrentTouchContact();

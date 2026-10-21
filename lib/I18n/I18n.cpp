@@ -7,15 +7,20 @@
 
 using namespace i18n_strings;
 
-namespace {
-bool isBuiltinLanguage(const Language language) {
+bool I18n::isBuiltin(const Language language) {
   const auto raw = static_cast<uint8_t>(language);
   for (const uint8_t builtin : SORTED_LANGUAGE_INDICES) {
     if (builtin == raw) return true;
   }
   return false;
 }
-}  // namespace
+
+void I18n::usePack(const Language lang, const char* data, const uint16_t* offsets) {
+  _packLanguage = lang;
+  _packData = data;
+  _packOffsets = offsets;
+  if (!data && !isBuiltin(_language)) _language = Language::EN;
+}
 
 I18n& I18n::getInstance() {
   static I18n instance;
@@ -29,7 +34,8 @@ const char* I18n::get(StrId id) const {
   }
 
   // Use generated helper function - no hardcoded switch needed!
-  const LangStrings lang = getLanguageStrings(_language);
+  LangStrings lang = getLanguageStrings(_language);
+  if (_packData && _language == _packLanguage) lang = {_packData, _packOffsets};
 
   // If bit 15 of the offset is set, apply the offset to the English lookup table
   const uint16_t off = lang.offsets[index];
@@ -43,7 +49,7 @@ void I18n::setLanguage(Language lang) {
   }
   // Keep persisted settings untouched, but make every runtime language-dependent
   // behavior agree with the English string fallback in reduced-language builds.
-  _language = isBuiltinLanguage(lang) ? lang : Language::EN;
+  _language = isBuiltin(lang) || (_packData && lang == _packLanguage) ? lang : Language::EN;
 }
 
 const char* I18n::getLanguageName(Language lang) const {

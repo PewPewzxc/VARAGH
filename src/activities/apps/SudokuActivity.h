@@ -59,4 +59,5 @@ class SudokuActivity final : public Activity {
   gameui::Box levelBoxes[3];
   gameui::Box cancelBox;
   gameui::Box solvedNewBox;
+  gameui::ButtonPointer pointer;  // VARAGH: apps on button readers
 };

@@ -87,6 +87,7 @@ void ChessActivity::save() {
 
 void ChessActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   if (!load()) LOG_DBG("CHESS", "No saved game");
   searchTable = makePsramByteBufferNoThrow(kSearchTableBytes);
   if (searchTable) memset(searchTable.get(), 0, kSearchTableBytes);
@@ -325,7 +326,7 @@ void ChessActivity::loop() {
   }
 
   bool repaint = false;
-  if (panel == Panel::Board && game->started() && newHold.update(mappedInput, repaint)) {
+  if (panel == Panel::Board && game->started() && newHold.update(mappedInput, repaint, &pointer)) {
     draft = settings;
     panel = Panel::NewGame;
     selected = -1;
@@ -337,7 +338,14 @@ void ChessActivity::loop() {
 
   int tx = 0;
   int ty = 0;
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
 
   if (panel == Panel::NewGame) {
     for (int i = 0; i < 2; ++i) {
@@ -565,5 +573,26 @@ void ChessActivity::render(RenderLock&&) {
 
   if (panel == Panel::NewGame) drawNewGamePanel();
   if (panel == Panel::Promotion) drawPromotionPanel();
+  pointer.clear();
+  if (panel == Panel::NewGame) {
+    for (const auto& b : opponentBoxes) pointer.add(b);
+    if (draft.opponent == Computer) {
+      for (const auto& b : colourBoxes) pointer.add(b);
+      for (const auto& b : levelBoxes) pointer.add(b);
+    }
+    if (game->started()) pointer.add(cancelBox);
+    pointer.add(startBox);
+  } else if (panel == Panel::Promotion) {
+    for (const auto& b : promotionBoxes) pointer.add(b);
+  } else {
+    for (int square = 0; square < 64; ++square) pointer.add(squareBox(square));
+    if (game->started() && game->state() != chess::Game::State::Playing) {
+      pointer.add(newGameBox);
+    } else {
+      for (const auto& b : tools) pointer.add(b);
+    }
+    if (game->started()) pointer.add(newHold.box);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

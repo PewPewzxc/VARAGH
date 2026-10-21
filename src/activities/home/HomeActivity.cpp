@@ -265,8 +265,8 @@ bool coverFailedBefore(const RecentBook& book) {
   return false;
 }
 
-// The built-in apps are worked by touch.
-bool homeShowsApps() { return gpio.hasTouch(); }
+// VARAGH: the apps work by touch, and on button readers with a button pointer.
+bool homeShowsApps() { return true; }
 
 void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasReadingStats, bool hasBookmarks,
                          bool hasClippings) {

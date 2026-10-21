@@ -944,7 +944,11 @@ void DictionaryWordSelectActivity::drawAskBubble() const {
   for (int choice = 0; choice < kAskChoices; ++choice) {
     const char* label = askLabel(choice);
     const int labelWidth = renderer.getTextWidth(b.fontId, label, EpdFontFamily::BOLD);
-    renderer.drawText(b.fontId, x + (b.segment[choice] - labelWidth) / 2, textY, label, false, EpdFontFamily::BOLD);
+    // Button readers pick a choice with the side buttons: the picked one is white.
+    const bool focused = !mappedInput.hasTouchHardware() && choice == askFocus_;
+    if (focused) renderer.fillRoundedRect(x + 5, b.y + 6, b.segment[choice] - 10, b.height - 12, 8, Color::White);
+    renderer.drawText(b.fontId, x + (b.segment[choice] - labelWidth) / 2, textY, label, focused,
+                      EpdFontFamily::BOLD);
     if (choice > 0) renderer.fillRect(x, b.y + 14, 1, b.height - 28, false);
     x += b.segment[choice];
   }
@@ -978,6 +982,24 @@ void DictionaryWordSelectActivity::handleAskInput() {
   const auto released = [this](const Button a, const Button b, const Button c) {
     return mappedInput.wasReleased(a) || mappedInput.wasReleased(b) || mappedInput.wasReleased(c);
   };
+  if (!mappedInput.hasTouchHardware()) {
+    // VARAGH, button readers: Left/Right still add or take off a word, the side
+    // buttons pick Look Up / Highlight / Add to, Confirm runs it.
+    const int step = released(Button::Down, Button::PageForward, Button::PageForward) ? 1
+                     : released(Button::Up, Button::PageBack, Button::PageBack)      ? kAskChoices - 1
+                                                                                     : 0;
+    if (step != 0) {
+      askFocus_ = static_cast<uint8_t>((askFocus_ + step) % kAskChoices);
+      forceFullRepaintOnNextRender();
+      requestUpdate();
+    } else if (mappedInput.wasReleased(Button::Confirm)) {
+      runAskChoice(askFocus_);
+    } else if (!hasCrossPageSelection_) {
+      const int resize = mappedInput.wasReleased(Button::Right) ? 1 : mappedInput.wasReleased(Button::Left) ? -1 : 0;
+      if (resize != 0 && navigator.resizeCompletedSelection(resize)) askSelectionChanged();
+    }
+    return;
+  }
   const int resize = released(Button::Right, Button::Down, Button::PageForward) ? 1
                      : released(Button::Left, Button::Up, Button::PageBack)     ? -1
                                                                                 : 0;
@@ -1014,6 +1036,10 @@ void DictionaryWordSelectActivity::handleAskInput() {
     DictUtils::cancelAndFinish(*this);
     return;
   }
+  runAskChoice(choice);
+}
+
+void DictionaryWordSelectActivity::runAskChoice(const int choice) {
   askOpen_ = false;
   forceFullRepaintOnNextRender();
   if (choice == 0) {
@@ -1419,12 +1445,11 @@ void DictionaryWordSelectActivity::loop() {
     return;
   }
 
-#if CROSSINK_APP_CAP_TOUCH
+  // VARAGH: also on button readers, where a button selection opens the choices.
   if (askOpen_) {
     handleAskInput();
     return;
   }
-#endif
 
   if (navigator.handleNavigation(mappedInput, renderer)) {
     requestUpdate();
@@ -1480,7 +1505,22 @@ void DictionaryWordSelectActivity::loop() {
     return;
   }
 
-  if (controller.handleMultiSelect(navigator)) {
+  if (!mappedInput.hasTouchHardware()) {
+    // VARAGH: several words picked with the buttons get the same choices as a
+    // touch selection on the X4 Pro (Look Up, Highlight, Add to), not only Look Up.
+    std::string phrase;
+    const auto action = navigator.handleMultiSelectInput(mappedInput, phrase);
+    if (action == WordSelectNavigator::MultiSelectAction::PhraseReady) {
+      releaseAction_ = CrossPointSettings::HOLD_ASK;
+      askFocus_ = 0;
+      finishTouchSelection(std::move(phrase), navigator.getLookupSelectionWordCount());
+      return;
+    }
+    if (action != WordSelectNavigator::MultiSelectAction::None) {
+      requestUpdate();
+      return;
+    }
+  } else if (controller.handleMultiSelect(navigator)) {
     if (controller.isLookingUp()) captureClippingRequest();
     return;
   }

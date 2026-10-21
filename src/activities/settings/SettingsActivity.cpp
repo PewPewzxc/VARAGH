@@ -22,6 +22,7 @@
 #include "ClearCacheActivity.h"
 #include "ClockOffsetActivity.h"
 #include "ClockSyncActivity.h"
+#include "LanguageDownloadActivity.h"
 #include "CrossPointSettings.h"
 #include "DeviceCapabilities.h"
 #include "FontSelectionActivity.h"
@@ -57,6 +58,7 @@
 #include "fontIds.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FrontlightSchedule.h"
+#include "util/LanguagePacks.h"
 
 namespace fui = freeink::ui;
 
@@ -645,38 +647,57 @@ void SettingsActivity::openWordSpacingPicker() {
 }
 
 void SettingsActivity::openLanguagePicker() {
-  const int languageCount = static_cast<int>(sizeof(SORTED_LANGUAGE_INDICES) / sizeof(SORTED_LANGUAGE_INDICES[0]));
-
+  // VARAGH: every language; one left out of this firmware is marked for
+  // download until its pack is on the SD card (util/LanguagePacks).
   std::vector<std::string> options;
-  options.reserve(languageCount);
-  for (int i = 0; i < languageCount; i++) {
-    options.push_back(I18N.getLanguageName(static_cast<Language>(SORTED_LANGUAGE_INDICES[i])));
+  options.reserve(std::size(ALL_SORTED_LANGUAGE_INDICES));
+  for (const uint8_t langIndex : ALL_SORTED_LANGUAGE_INDICES) {
+    const auto lang = static_cast<Language>(langIndex);
+    std::string name = I18N.getLanguageName(lang);
+    if (!I18n::isBuiltin(lang) && !LanguagePacks::installed(lang)) {
+      name += " (";
+      name += tr(STR_LANGUAGE_PACK_TAG);
+      name += ")";
+    }
+    options.push_back(std::move(name));
   }
 
   const auto currentLang = static_cast<uint8_t>(I18N.getLanguage());
-  const auto* begin = std::begin(SORTED_LANGUAGE_INDICES);
-  const auto* end = std::end(SORTED_LANGUAGE_INDICES);
+  const auto* begin = std::begin(ALL_SORTED_LANGUAGE_INDICES);
+  const auto* end = std::end(ALL_SORTED_LANGUAGE_INDICES);
   const auto* it = std::find(begin, end, currentLang);
   int currentIndex = (it != end) ? static_cast<int>(std::distance(begin, it)) : 0;
 
   optionPopup.show(StrId::STR_LANGUAGE, options, currentIndex, [this](int selectedIndex) {
-    const int languageCount = static_cast<int>(sizeof(SORTED_LANGUAGE_INDICES) / sizeof(SORTED_LANGUAGE_INDICES[0]));
-    if (selectedIndex < 0 || selectedIndex >= languageCount) {
+    if (selectedIndex < 0 || selectedIndex >= static_cast<int>(std::size(ALL_SORTED_LANGUAGE_INDICES))) {
       requestUpdate();
       return;
     }
-
-    const uint8_t langIndex = SORTED_LANGUAGE_INDICES[selectedIndex];
-    {
-      RenderLock lock(*this);
-      I18N.setLanguage(static_cast<Language>(langIndex));
+    const uint8_t langIndex = ALL_SORTED_LANGUAGE_INDICES[selectedIndex];
+    const auto lang = static_cast<Language>(langIndex);
+    if (!I18n::isBuiltin(lang) && !LanguagePacks::installed(lang)) {
+      startActivityForResult(std::make_unique<LanguageDownloadActivity>(renderer, mappedInput, lang),
+                             [this, langIndex](const ActivityResult&) {
+                               if (LanguagePacks::installed(static_cast<Language>(langIndex))) applyLanguage(langIndex);
+                               requestUpdate();
+                             });
+      return;
     }
-
-    SETTINGS.language = langIndex;
-    SETTINGS.saveToFile();
+    applyLanguage(langIndex);
     requestUpdate();
   });
   requestUpdate();
+}
+
+void SettingsActivity::applyLanguage(const uint8_t langIndex) {
+  bool applied;
+  {
+    RenderLock lock(*this);
+    applied = LanguagePacks::apply(langIndex);
+  }
+  // A pack that does not fit this firmware leaves the menus in English.
+  SETTINGS.language = applied ? langIndex : static_cast<uint8_t>(Language::EN);
+  SETTINGS.saveToFile();
 }
 
 void SettingsActivity::openStringEditor(const SettingInfo& setting) {

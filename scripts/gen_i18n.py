@@ -32,6 +32,7 @@ Examples:
 import hashlib
 import os
 import re
+import struct
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -443,6 +444,7 @@ def generate_keys_header(
     output_path: str,
     verbose: bool = False,
     builtin: Optional[Set[str]] = None,
+    translations: Optional[Dict[str, List[str]]] = None,
 ) -> None:
     """Generate I18nKeys.h.
 
@@ -551,6 +553,19 @@ def generate_keys_header(
         f"{', '.join(str(i) for i in sorted_indices)}"
         "};"
     )
+    lines.append("")
+    # VARAGH: every language in picker order, built in or not; the ones left out
+    # can come from a language pack on the SD card (see write_language_packs).
+    all_sorted = [english_idx] + sorted(
+        (i for i in range(len(languages)) if i != english_idx), key=lambda i: language_names[i]
+    )
+    lines.append(
+        "constexpr uint8_t ALL_SORTED_LANGUAGE_INDICES[] = {"
+        f"{', '.join(str(i) for i in all_sorted)}"
+        "};"
+    )
+    lines.append("// A language pack fits only the firmware whose string list has this id.")
+    lines.append(f"constexpr uint32_t I18N_LAYOUT_ID = 0x{layout_id(string_keys, translations):08X}u;")
     lines.append("")
     size_check = "==" if builtin is None else "<="
     lines.append(
@@ -822,6 +837,66 @@ def _append_string_entry(lines: List[str], text: str, comment: str = "") -> None
     lines.extend(formatted)
 
 
+def layout_id(string_keys: List[str], translations: Dict[str, List[str]]) -> int:
+    """32-bit id of the StrId order and the English text, which packs point into."""
+    text = "\n".join(f"{k}={translations[k][0]}" for k in string_keys)
+    return int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:4], "little")
+
+
+LANG_PACK_MAGIC = b"VLNG"
+LANG_PACK_VERSION = 1
+
+
+def build_language_pack(
+    lang_idx: int, string_keys: List[str], translations: Dict[str, List[str]]
+) -> bytes:
+    """One language as an SD-card pack, read by src/util/LanguagePacks.cpp.
+
+    Little-endian: "VLNG", u8 version, u8 0, u16 string count, u32 layout id,
+    u32 data size, u16 offsets[count], data. Like the built-in tables, an offset
+    with bit 15 set points into the English strings compiled into the firmware.
+    """
+    en_offsets: List[int] = []
+    pos = 0
+    for key in string_keys:
+        en_offsets.append(pos)
+        pos += len(translations[key][0].encode("utf-8")) + 1
+    offsets: List[int] = []
+    data = bytearray()
+    for i, key in enumerate(string_keys):
+        s = translations[key][lang_idx]
+        if s == translations[key][0]:
+            offsets.append(en_offsets[i] | 0x8000)
+        else:
+            offsets.append(len(data))
+            data += s.encode("utf-8") + b"\0"
+    if len(data) > 0x7FFF:
+        raise ValueError(f"language pack data ({len(data)} bytes) exceeds the 15-bit offset limit")
+    header = LANG_PACK_MAGIC + struct.pack(
+        "<BBHII", LANG_PACK_VERSION, 0, len(string_keys), layout_id(string_keys, translations), len(data)
+    )
+    return header + struct.pack(f"<{len(offsets)}H", *offsets) + bytes(data)
+
+
+def write_language_packs(
+    languages: List[str],
+    string_keys: List[str],
+    translations: Dict[str, List[str]],
+    builtin: Optional[Set[str]],
+    pack_dir: str,
+) -> None:
+    """Write a pack (<code>.lng, lower case) for every language left out of the build."""
+    if builtin is None:
+        return
+    os.makedirs(pack_dir, exist_ok=True)
+    for lang_idx, code in enumerate(languages):
+        if code in builtin:
+            continue
+        with open(os.path.join(pack_dir, f"{code.lower()}.lng"), "wb") as f:
+            f.write(build_language_pack(lang_idx, string_keys, translations))
+    print(f"  Language packs: {len(languages) - len(builtin)} written to {pack_dir}")
+
+
 def _write_file(path: str, lines: List[str], verbose: bool = False) -> None:
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
@@ -863,6 +938,7 @@ def main(
     strip_unused: bool = False,
     verbose: bool = False,
     builtin_langs: Optional[str] = None,
+    pack_dir: str = "build/lang-packs",
 ) -> None:
     # Default paths (relative to project root)
     default_translations_dir = "lib/I18n/translations"
@@ -969,6 +1045,7 @@ def main(
             str(out / "I18nKeys.h"),
             verbose,
             builtin,
+            translations,
         )
         generate_strings_header(
             languages, language_names, str(out / "I18nStrings.h"), verbose, builtin
@@ -982,6 +1059,7 @@ def main(
             verbose,
             builtin,
         )
+        write_language_packs(languages, string_keys, translations, builtin, pack_dir)
 
         print()
         print("Code generation complete!")
@@ -1058,6 +1136,7 @@ else:
         main(
             strip_unused=True,
             builtin_langs=env.GetProjectOption("custom_i18n_builtin_langs", "all"),
+            pack_dir=os.path.join(env.subst("$PROJECT_DIR"), ".pio", "lang-packs", env.subst("$PIOENV")),
         )
         keys_path = Path("lib/I18n/I18nKeys.h")
         layout_hash = hashlib.sha256(keys_path.read_bytes()).hexdigest()[:16]

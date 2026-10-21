@@ -89,6 +89,7 @@ void GoActivity::save() {
 
 void GoActivity::onEnter() {
   Activity::onEnter();
+  pointer.begin(mappedInput);
   if (!load()) LOG_DBG("GO", "No saved game");
   draft = settings;
   panel = game->started() ? Panel::Board : Panel::NewGame;
@@ -294,7 +295,7 @@ void GoActivity::loop() {
   }
 
   bool repaint = false;
-  if (panel == Panel::Board && game->started() && newHold.update(mappedInput, repaint)) {
+  if (panel == Panel::Board && game->started() && newHold.update(mappedInput, repaint, &pointer)) {
     draft = settings;
     panel = Panel::NewGame;
     requestUpdate();
@@ -302,7 +303,8 @@ void GoActivity::loop() {
   }
   if (repaint) requestUpdate();
 
-  if (panel == Panel::Board) {
+  // On button readers the pointer below moves over the points instead.
+  if (panel == Panel::Board && !pointer.enabled) {
     using B = MappedInputManager::Button;
     if (mappedInput.wasReleased(B::Up)) moveGhost(-1);
     if (mappedInput.wasReleased(B::Down)) moveGhost(1);
@@ -313,7 +315,14 @@ void GoActivity::loop() {
 
   int tx = 0;
   int ty = 0;
-  if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  bool moved = false;
+  bool hit;
+  {
+    RenderLock lock(*this);
+    hit = pointer.tapped(mappedInput, tx, ty, moved);
+  }
+  if (moved) requestUpdate();
+  if (!hit) return;
 
   if (panel == Panel::NewGame) {
     for (int i = 0; i < 2; ++i) {
@@ -528,5 +537,31 @@ void GoActivity::render(RenderLock&&) {
   }
 
   if (panel == Panel::NewGame) drawNewGamePanel();
+  pointer.clear();
+  if (panel == Panel::NewGame) {
+    for (const auto& b : opponentBoxes) pointer.add(b);
+    if (draft.opponent == Computer) {
+      for (const auto& b : levelBoxes) pointer.add(b);
+      for (const auto& b : sideBoxes) pointer.add(b);
+    }
+    for (const auto& b : sizeBoxes) pointer.add(b);
+    if (game->started()) pointer.add(cancelBox);
+    pointer.add(startBox);
+  } else {
+    const int sp = spacing();
+    for (int point = 0; point < game->size() * game->size(); ++point) {
+      pointer.add({board.x + (point % game->size()) * sp, board.y + (point / game->size()) * sp, sp, sp});
+    }
+    if (game->state() == State::Finished) {
+      pointer.add(newGameBox);
+    } else if (game->state() == State::MarkingDead) {
+      pointer.add(tools[Undo]);
+      pointer.add(tools[Hint]);
+    } else {
+      for (const auto& b : tools) pointer.add(b);
+    }
+    if (game->started()) pointer.add(newHold.box);
+  }
+  pointer.draw(renderer);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

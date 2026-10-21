@@ -70,6 +70,32 @@ void ClockActivity::loop() {
     return;
   }
 
+  // The clock itself: the next face. The one with Persian days is skipped
+  // while the Persian date is switched off.
+  const auto nextFace = [this] {
+    do {
+      options.face = static_cast<uint8_t>((options.face + 1) % clockface::kFaceCount);
+    } while (options.face == clockface::PersianDays && !options.persianDate);
+    clockface::saveOptions(options);
+    requestUpdate();
+  };
+
+  if (!mappedInput.hasTouchHardware()) {
+    // VARAGH, button readers: Left/Right page the months (both side buttons
+    // go back to this month), Confirm shows the next face.
+    using B = MappedInputManager::Button;
+    if (mappedInput.wasReleased(B::Confirm)) {
+      nextFace();
+    } else if (mappedInput.wasReleased(B::Left) || mappedInput.wasReleased(B::Right)) {
+      monthOffset += mappedInput.wasReleased(B::Right) ? 1 : -1;
+      requestUpdate();
+    } else if (monthOffset != 0 && (mappedInput.wasReleased(B::Up) || mappedInput.wasReleased(B::Down))) {
+      monthOffset = 0;
+      requestUpdate();
+    }
+    return;
+  }
+
   int tx = 0;
   int ty = 0;
   if (!mappedInput.wasScreenTapped(tx, ty)) return;
@@ -77,13 +103,7 @@ void ClockActivity::loop() {
       clockface::appLayout(options, gameui::headerBottom(renderer, mappedInput), shownMonth());
   const int width = renderer.getScreenWidth();
   if (ty < layout.monthY - 6) {
-    // The clock itself: the next face. The one with Persian days is skipped
-    // while the Persian date is switched off.
-    do {
-      options.face = static_cast<uint8_t>((options.face + 1) % clockface::kFaceCount);
-    } while (options.face == clockface::PersianDays && !options.persianDate);
-    clockface::saveOptions(options);
-    requestUpdate();
+    nextFace();
   } else if (ty < layout.weekdayY) {
     // The month's row: back, today, forward.
     if (tx < width / 4) {

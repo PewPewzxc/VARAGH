@@ -8,6 +8,24 @@ Based on VARAGH 1.2.1. Updating keeps your settings, books, reading progress,
 highlights, flashcards and saved games. Books are laid out again once, the
 first time each is opened (a fix for Persian text). Built and tuned for the X4 Pro.
 
+### Also for the X4 Classic and X3 / X4 (same version, rebuilt 2026-10-21)
+
+The readers without a touch screen now get Lion too:
+
+- **Apps with buttons.** Apps is on the Home screen. A frame shows what is
+  picked; the direction buttons move it and Confirm taps it. Hold Confirm on
+  New / Give up. Clock: Left/Right change the month, Confirm the clock face.
+- **Choices after a button selection.** In Menu → Look Up Word, hold Confirm
+  on a word, add words with Left/Right, press Confirm: Look Up, Highlight and Add to appear, as on the
+  X4 Pro. The side buttons pick one, Left/Right still change the selection.
+- **Menu languages as downloads (X3 / X4 only).** English and Deutsch are
+  built in, so the firmware fits. Every other menu language is offered in
+  Settings → Language with "(download)" and comes over Wi-Fi from this
+  release, or from the `languages` folder in the release zip copied to the
+  card. A language takes about 15–35 KB of memory while it is used.
+- Not on these readers: Control Center, front light, night light, warmth,
+  Tap to Look Up and selection handles (they need touch or a front light).
+
 ### Added
 
 - **Control Center.** Swipe down from the top edge of the screen.
