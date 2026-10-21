@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: 💡 Idea or feature request
+    url: https://github.com/PewPewzxc/VARAGH/discussions
+    about: Suggest something new in Discussions, so Issues stay for bugs.
+  - name: ❓ Question or help
+    url: https://github.com/PewPewzxc/VARAGH/discussions
+    about: Ask how something works or get help with installing.

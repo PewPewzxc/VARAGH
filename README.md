@@ -1,4 +1,28 @@
-# VARAGH
+<h1 align="center">VARAGH</h1>
+
+<p align="center">
+  <b>E-reader firmware for the Xteink X4 Pro, made for reading and learning in English, German and Persian.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/PewPewzxc/VARAGH/releases/latest"><img src="https://img.shields.io/github/v/release/PewPewzxc/VARAGH?label=release" alt="Latest release"></a>
+  <a href="https://github.com/PewPewzxc/VARAGH/releases"><img src="https://img.shields.io/github/downloads/PewPewzxc/VARAGH/total?label=downloads" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/PewPewzxc/VARAGH" alt="MIT licence"></a>
+  <a href="https://github.com/PewPewzxc/VARAGH/stargazers"><img src="https://img.shields.io/github/stars/PewPewzxc/VARAGH?style=flat" alt="Stars"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/PewPewzxc/VARAGH/releases/latest"><b>Download</b></a> ·
+  <a href="FEATURES.md"><b>Features</b></a> ·
+  <a href="#install"><b>Install</b></a> ·
+  <a href="CHANGELOG.md"><b>Changelog</b></a> ·
+  <a href="https://github.com/PewPewzxc/VARAGH/discussions"><b>Discussions</b></a> ·
+  <a href="https://buymeacoffee.com/PewPewzxc"><b>Support ☕</b></a>
+</p>
+
+<p align="center">
+  <a href="https://buymeacoffee.com/PewPewzxc"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="40" alt="Buy Me a Coffee"></a>
+</p>
 
 <p align="center">
   <img src="docs/images/varagh/cover.jpg" width="420" alt="VARAGH on the Xteink X4 Pro, with a Persian, a German and an English book on the Home screen">
@@ -12,6 +36,10 @@ their features are kept.
 
 > VARAGH is an independent community project, not affiliated with or endorsed by
 > Xteink, CrossInk or CrossPoint.
+
+**Contents:** [New in 1.3.0](#new-in-130-lion-) · [Earlier releases](#earlier-releases) ·
+[Features](#features) · [Install](#install) · [Build from source](#build-from-source) ·
+[Contributing](#contributing) · [Support](#support) · [Credits](#credits-and-licences)
 
 ## New in 1.3.0 "Lion" 🦁
 
@@ -50,7 +78,12 @@ their features are kept.
 
 See the [changelog](CHANGELOG.md) for everything.
 
-## New in 1.2.1 "Tiger"
+## Earlier releases
+
+<details>
+<summary>What came in 1.2.1, 1.2.0 and 1.1.0 "Tiger" (click to open)</summary>
+
+### New in 1.2.1 "Tiger"
 
 - **Tap to Look Up:** a tap on a word opens its meaning, with no holding
   (Settings → Reader, off by default; swipe to turn pages while it is on).
@@ -84,7 +117,7 @@ See the [changelog](CHANGELOG.md) for everything.
 
 <sub>Screens captured from the 1.2.1 firmware running in the PC simulator.</sub>
 
-## Since 1.2.0 "Tiger"
+### Since 1.2.0 "Tiger"
 
 - **Apps on the Home screen:** Wordle, Sudoku, Chess, Checkers and a Clock with
   a calendar, made for the touch screen. Hide the ones you do not use.
@@ -120,7 +153,7 @@ See the [changelog](CHANGELOG.md) for everything.
 
 <sub>Screens captured from the 1.2.0 firmware running in the PC simulator.</sub>
 
-## Since 1.1.0 "Tiger"
+### Since 1.1.0 "Tiger"
 
 - **Smoother, sharper pictures in books:** no more crosshatch pattern, clean white paper.
 - **Chapters open faster:** long chapters show their first page right away
@@ -133,6 +166,8 @@ See the [changelog](CHANGELOG.md) for everything.
 </p>
 
 All changes: [CHANGELOG.md](CHANGELOG.md).
+
+</details>
 
 ## Features
 
@@ -162,7 +197,7 @@ Every feature, with photos and how to use it: **[FEATURES.md](FEATURES.md)**.
 ## Install
 
 1. Download `firmware-x4-pro.bin` from the latest
-   [release](https://github.com/PewPewzxc/varagh/releases), copy it to the SD card and
+   [release](https://github.com/PewPewzxc/VARAGH/releases), copy it to the SD card and
    flash it from **Settings → System → SD Card Firmware Update**
    (coming from the original Xteink firmware, see the
    [installation guide](docs/installation.md) first).
@@ -187,6 +222,22 @@ pio run -e x4-pro
 The firmware is written to `.pio/build/x4-pro/firmware-x4-pro.bin`.
 Developer notes: [docs/development](docs/development),
 [keeping up with CrossInk](docs/varagh/UPSTREAM-SYNC.md).
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. Please read
+[CONTRIBUTING.md](CONTRIBUTING.md) first. Ideas and questions go to
+[Discussions](https://github.com/PewPewzxc/VARAGH/discussions); bugs go to
+[Issues](https://github.com/PewPewzxc/VARAGH/issues/new/choose).
+
+## Support
+
+VARAGH is free and made in spare time. If it makes your reading better, you can
+say thanks with a coffee:
+
+<a href="https://buymeacoffee.com/PewPewzxc"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me a Coffee"></a>
+
+A ⭐ on GitHub helps other readers find the project too.
 
 ## Credits and licences
 
