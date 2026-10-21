@@ -16,12 +16,7 @@
   <a href="FEATURES.md"><b>Features</b></a> ·
   <a href="#install"><b>Install</b></a> ·
   <a href="CHANGELOG.md"><b>Changelog</b></a> ·
-  <a href="https://github.com/PewPewzxc/VARAGH/discussions"><b>Discussions</b></a> ·
-  <a href="https://buymeacoffee.com/PewPewzxc"><b>Support ☕</b></a>
-</p>
-
-<p align="center">
-  <a href="https://buymeacoffee.com/PewPewzxc"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="40" alt="Buy Me a Coffee"></a>
+  <a href="https://github.com/PewPewzxc/VARAGH/discussions"><b>Discussions</b></a>
 </p>
 
 <p align="center">
