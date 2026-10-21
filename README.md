@@ -208,6 +208,10 @@ Every feature, with photos and how to use it: **[FEATURES.md](FEATURES.md)**.
 
 ### Readers without touch
 
+<p align="center">
+  <img src="docs/images/varagh/v1.3.0/all-devices.png" width="420" alt="VARAGH 1.3.0 on the X4 Pro (Control Center), X4 Classic (Apps) and X3 (Look Up, Highlight, Add to)">
+</p>
+
 On the X4 Classic and X3 the apps are played with a frame that the direction
 buttons move and Confirm taps. In Look Up Word, hold Confirm, add words with
 Left/Right and press Confirm for Look Up, Highlight or Add to. Not available there:
@@ -226,10 +230,14 @@ Download `varagh-*-full-source.zip` from a release (it includes the display
 library VARAGH uses), unpack it and run:
 
 ```bash
-pio run -e x4-pro
+pio run -e x4-pro       # X4 Pro
+pio run -e x4-classic   # X4 Classic
+pio run -e default      # X3 and the original X4
 ```
 
-The firmware is written to `.pio/build/x4-pro/firmware-x4-pro.bin`.
+The firmware is written to `.pio/build/<env>/` (`firmware-x4-pro.bin`,
+`firmware-x4-classic.bin`, `firmware-x3-x4.bin`). The `default` build also writes
+the menu-language packs to `.pio/lang-packs/default/`.
 Developer notes: [docs/development](docs/development),
 [keeping up with CrossInk](docs/varagh/UPSTREAM-SYNC.md).
 

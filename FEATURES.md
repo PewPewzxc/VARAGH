@@ -6,7 +6,9 @@ CrossPoint already do (EPUB/TXT/XTC reading, fonts from the SD card, KOReader
 sync, Calibre, OPDS, reading stats, Quick Actions, and so on) is still there;
 see [CrossInk's README](https://github.com/uxjulia/crossink#readme) for those.
 
-VARAGH is built for the **Xteink X4 Pro**.
+VARAGH is built for the **Xteink X4 Pro** and, since 1.3.0, also runs on the
+**X4 Classic** and **X3** (no touch screen or front light there: see
+[Readers without touch](README.md#readers-without-touch)).
 
 All photos on this page were taken on an X4 Pro running VARAGH 1.0.0, with the
 front light on. The picture comparisons in section 7 are computed, not photographed.
