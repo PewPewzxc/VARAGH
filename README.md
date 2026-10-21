@@ -1,7 +1,7 @@
 <h1 align="center">VARAGH</h1>
 
 <p align="center">
-  <b>E-reader firmware for the Xteink X4 Pro, made for reading and learning in English, German and Persian.</b>
+  <b>E-reader firmware for the Xteink X4 Pro, X4 Classic and X3, made for reading and learning in English, German and Persian.</b>
 </p>
 
 <p align="center">
@@ -24,7 +24,10 @@
 </p>
 
 **VARAGH** (ورق, Persian for "a sheet / a page") is e-reader firmware for the
-**Xteink X4 Pro**, built for reading and learning in **English, German and Persian**.
+**Xteink X4 Pro**, **X4 Classic** and **X3**, built for reading and learning in
+**English, German and Persian**. The X4 Pro gets everything; the X4 Classic and X3
+have no touch screen or front light, so they work everything with the buttons
+(see [Readers without touch](#readers-without-touch)).
 It is a fork of [CrossInk](https://github.com/uxjulia/crossink), itself a fork of
 [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader); all of
 their features are kept.
@@ -191,8 +194,10 @@ Every feature, with photos and how to use it: **[FEATURES.md](FEATURES.md)**.
 
 ## Install
 
-1. Download `firmware-x4-pro.bin` from the latest
-   [release](https://github.com/PewPewzxc/VARAGH/releases), copy it to the SD card and
+1. Download the file for your reader from the latest
+   [release](https://github.com/PewPewzxc/VARAGH/releases): `firmware-x4-pro.bin`,
+   `firmware-x4-classic.bin`, or `firmware-x3-x4.bin` (X3 and the original X4).
+   Copy it to the SD card and
    flash it from **Settings → System → SD Card Firmware Update**
    (coming from the original Xteink firmware, see the
    [installation guide](docs/installation.md) first).
@@ -200,6 +205,16 @@ Every feature, with photos and how to use it: **[FEATURES.md](FEATURES.md)**.
    `varagh-sd-card-*.zip` to `/.fonts/NotoVazir/` on the SD card.
 3. Select **Settings → Reader → Font Options → Font Family → NotoVazir**.
 4. Optional German → English dictionary: see [Dictionaries](docs/varagh/DICTIONARIES.md).
+
+### Readers without touch
+
+On the X4 Classic and X3 the apps are played with a frame that the direction
+buttons move and Confirm taps. In Look Up Word, hold Confirm, add words with
+Left/Right and press Confirm for Look Up, Highlight or Add to. Not available there:
+Control Center, front light, night light, Tap to Look Up and selection handles.
+The X3/X4 firmware has English and German menus built in; other menu languages
+are picked in Settings → Language and download over Wi-Fi, or copy the
+`languages` folder of `varagh-v1.3.0-x3-x4-languages.zip` to the SD card.
 
 **Updating:** Settings → System → Check for Updates installs the newest VARAGH
 release (from 1.0.0, update from the SD card once). Only install VARAGH firmware:
