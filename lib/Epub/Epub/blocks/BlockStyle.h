@@ -37,6 +37,10 @@ struct BlockStyle {
   // a full line-height gap when the <br> block stays empty (section-break use case).
   // NOT propagated through getCombinedBlockStyle so it can't leak into sibling blocks.
   bool fromBrElement = false;
+  // CSS font-size relative to the reader font (1 = body size); inherited by child blocks.
+  float fontScale = 1.0f;
+  bool fontScaleDefined = false;
+  int32_t fontId = 0;  // laid-out size variant of the reader font; 0 = the section's reader font
 
   // Combined insets (margin + padding)
   [[nodiscard]] int16_t leftInset() const { return marginLeft + paddingLeft; }
@@ -106,6 +110,10 @@ struct BlockStyle {
     if (!child.directionDefined && directionDefined) {
       result.isRtl = isRtl;
       result.directionDefined = true;
+    }
+    if (!child.fontScaleDefined && fontScaleDefined) {
+      result.fontScale = fontScale;
+      result.fontScaleDefined = true;
     }
     return result;
   }

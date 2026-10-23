@@ -1,5 +1,7 @@
 #include "FontSelectionActivity.h"
 
+#include "BuiltinBitter.h"
+
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
@@ -102,7 +104,14 @@ void FontSelectionActivity::onEnter() {
 
   constexpr auto builtinRange = BUILTIN_FONT_POINT_SIZE_RANGE;
   fonts_.push_back({fontFamilyLabel(I18N.get(StrId::STR_LEXEND_DECA), builtinRange), true, 0});
+#if CROSSINK_BUILTIN_BITTER
   fonts_.push_back({fontFamilyLabel(I18N.get(StrId::STR_BITTER), builtinRange), true, 1});
+#else
+  // Bitter is a download on this reader: once installed it is listed with the SD fonts below.
+  if (!registry_ || !registry_->findFamily(BITTER_SD_FAMILY)) {
+    fonts_.push_back({std::string(I18N.get(StrId::STR_BITTER)) + " (" + tr(STR_LANGUAGE_PACK_TAG) + ")", true, 1});
+  }
+#endif
 
   if (registry_) {
     const auto& families = registry_->getFamilies();
@@ -138,6 +147,15 @@ void FontSelectionActivity::activateSelected() {
   char previousSdFamily[sizeof(SETTINGS.sdFontFamilyName)];
   std::memcpy(previousSdFamily, SETTINGS.sdFontFamilyName, sizeof(previousSdFamily));
   const auto& font = fonts_[selectedIndex_];
+#if !CROSSINK_BUILTIN_BITTER
+  if (font.isBuiltin && font.settingIndex == CrossPointSettings::BITTER) {
+    // Not on the card yet: say where it comes from, change nothing.
+    GUI.drawPopup(renderer, tr(STR_BITTER_DOWNLOAD_HINT), true);
+    delay(2000);
+    requestUpdate();
+    return;
+  }
+#endif
   if (font.isBuiltin) {
     SETTINGS.fontFamily = font.settingIndex;
     SETTINGS.sdFontFamilyName[0] = '\0';

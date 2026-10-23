@@ -34,7 +34,8 @@ constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // VARAGH: v181 = CrossInk v80 + VARAGH script fallback (Persian/IPA words are
 // measured in the fallback font). VARAGH numbers start at 181 so its caches
 // never match a CrossInk cache of the same number (VARAGH 1.0/1.1.0 used v78).
-constexpr uint8_t SECTION_FILE_VERSION = 182;
+// 183: hyphen/dash line breaks; 184: boxes; 185: font sizes + drop caps (VARAGH 1.3.1).
+constexpr uint8_t SECTION_FILE_VERSION = 186;
 // Suspended incremental build: valid pages plus LUTs and a parse-watermark trailer.
 // Change this with layout or payload changes so stale partial pages cannot resume
 // under a different layout contract.
@@ -451,6 +452,10 @@ bool Section::clearCache() const {
 bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::function<void()>& popupFn,
                                 bool* imagesWereSuppressed, bool* layoutAbortedForLowMemory,
                                 const SectionBuildOptions buildOptions) {
+  if (buildGate_ && !buildGate_()) {
+    LOG_ERR("SCT", "Section build refused: Bluetooth radio still holds the heap");
+    return false;
+  }
   const uint32_t buildStartedMs = millis();
   const SpeedProfile::Snapshot profileStart = SpeedProfile::snapshot();
   const int fontId = spec.fontId;
@@ -831,6 +836,10 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
 
 bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions buildOptions,
                          const std::function<void()>& popupFn) {
+  if (buildGate_ && !buildGate_()) {
+    LOG_ERR("SCT", "Section build refused: Bluetooth radio still holds the heap");
+    return false;
+  }
   const int fontId = spec.fontId;
   const float lineCompression = spec.lineCompression;
   const bool extraParagraphSpacing = spec.extraParagraphSpacing;
@@ -1068,6 +1077,10 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
 bool Section::buildSomeMore(const int maxPages) {
   if (!build_ || !build_->parser) {
     LOG_ERR("SCT", "buildSomeMore called with no active build");
+    return false;
+  }
+  if (buildGate_ && !buildGate_()) {
+    LOG_ERR("SCT", "Section build step refused: Bluetooth radio still holds the heap");
     return false;
   }
   // Pace on pages laid out by THIS build, not pageCount: during a rebuild over a partial,

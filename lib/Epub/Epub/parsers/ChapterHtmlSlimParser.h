@@ -151,6 +151,39 @@ class ChapterHtmlSlimParser {
   StyleStackEntry* inlineStyleBuf_ = nullptr;
   size_t inlineStyleCount_ = 0;
   BlockStyle* blockStyleBuf_ = nullptr;
+
+  // Open elements with a CSS border or light background. Each emits a PageBorderBox
+  // around its content on every page it spans.
+  struct BoxScope {
+    int depth = 0;
+    int16_t left = 0;
+    int16_t right = 0;
+    int16_t padTop = 0;  // outer edge to content, border included
+    int16_t padBottom = 0;
+    CssBorderSide sides[4];  // top, right, bottom, left
+    bool shaded = false;
+    int16_t top = -1;  // content extent on the current page
+    int16_t bottom = -1;
+    bool continued = false;  // sliced onto an earlier page
+  };
+  static constexpr size_t MAX_BOX_SCOPES = 8;
+
+  // Drop cap: the initial letter captured from a ::first-letter rule or a floated/oversized
+  // span, waiting for its paragraph's layout.
+  static constexpr size_t MAX_DROP_CAP_BYTES = 12;
+  struct DropCapState {
+    char text[MAX_DROP_CAP_BYTES + 1] = {};
+    uint8_t length = 0;
+    uint8_t codepoints = 0;
+    uint8_t lines = 0;  // text lines the letter spans
+    bool bold = false;
+    bool firstLetterPending = false;  // capture the current block's first letter
+    int spanDepth = -1;               // capturing the text of the span at this depth
+    uint32_t visibleOffset = 0;       // source offsets of the first captured codepoint
+    uint32_t referenceOffset = 0;
+  } dropCap;
+  std::array<BoxScope, MAX_BOX_SCOPES> boxScopes_{};
+  size_t boxScopeCount_ = 0;
   size_t blockStyleCount_ = 0;
   CssStyle currentCssStyle;
   bool effectiveBold = false;
@@ -258,6 +291,18 @@ class ChapterHtmlSlimParser {
   void skipDescendantsOfCurrentElement();
   bool shouldAbortForLowMemory(const char* stage);
   bool startNewPage(const char* reason);
+  void openBoxScope(BlockStyle& ownStyle, const CssStyle& cssStyle);
+  void closeBoxScope();
+  void emitBoxSegment(const BoxScope& box, bool closing);
+  void noteContent(int top, int bottom);
+  void applyBlockFontScale(BlockStyle& blockStyle, const CssStyle& cssStyle, const char* tagName) const;
+  static uint8_t dropCapLines(const CssStyle& style);
+  void armFirstLetterDropCap(const char* tagName, std::string_view classAttr);
+  bool captureDropCapCodepoint(const char* bytes, int length);
+  void cancelDropCapToWord();
+  void layoutDropCapLines(int layoutFontId, uint16_t effectiveWidth, bool includeLastLine);
+  int prepareBlockFont();
+  int lineHeightFor(int layoutFontId) const;
   void startNewTextBlock(const BlockStyle& blockStyle);
   void flushPendingAnchor();
   void addPendingPublisherPageMarker(const char* label);

@@ -18,6 +18,7 @@
 
 #include "AppCapabilities.h"
 #include "BackupStatsActivity.h"
+#include "BleSettingsActivity.h"
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
 #include "ClockOffsetActivity.h"
@@ -55,6 +56,8 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "components/icons/frontlightHeaderIcons.h"
+#include "components/icons/listIcons.h"
+#include "components/icons/readingStatsIcons.h"
 #include "fontIds.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FrontlightSchedule.h"
@@ -64,12 +67,37 @@ namespace fui = freeink::ui;
 
 namespace {
 constexpr fui::ActionId ACTION_ROW = 1;
-constexpr fui::ActionId ACTION_TAB = 2;
-constexpr int16_t TOUCH_TAB_BAR_HEIGHT = 50;
-}  // namespace
+constexpr fui::ActionId ACTION_GROUP = 2;
 
-const StrId SettingsActivity::categoryNames[categoryCount] = {StrId::STR_CAT_DISPLAY, StrId::STR_CAT_READER,
-                                                              StrId::STR_CAT_CONTROLS, StrId::STR_CAT_SYSTEM};
+// Settings root: one row per group (CrossPoint 2.0 layout). The row index is
+// also selectedCategoryIndex once the group is open.
+enum SettingsGroup : int {
+  GroupGeneral,
+  GroupDisplay,
+  GroupReader,
+  GroupDictionaries,  // opens the Dictionaries screen directly
+  GroupControls,
+  GroupLibrary,
+  GroupReadingStats,
+  GroupNetwork,
+  GroupCount
+};
+struct SettingsGroupInfo {
+  StrId name;
+  StrId description;
+  const freeink::Icon* icon;
+};
+const SettingsGroupInfo SETTINGS_GROUPS[GroupCount] = {
+    {StrId::STR_SETTINGS_GENERAL, StrId::STR_SETTINGS_GENERAL_DESC, &icon_cog_32},
+    {StrId::STR_CAT_DISPLAY, StrId::STR_SETTINGS_DISPLAY_DESC, &icon_image_32},
+    {StrId::STR_CAT_READER, StrId::STR_SETTINGS_READER_DESC, &icon_book_open_32},
+    {StrId::STR_DICTIONARIES, StrId::STR_SETTINGS_DICTIONARIES_DESC, &icon_case_sensitive_32},
+    {StrId::STR_CAT_CONTROLS, StrId::STR_SETTINGS_CONTROLS_DESC, &icon_sliders_horizontal_32},
+    {StrId::STR_LIBRARY, StrId::STR_SETTINGS_LIBRARY_DESC, &icon_folder_32},
+    {StrId::STR_READING_STATS, StrId::STR_SETTINGS_STATS_DESC, &icon_reading_stats_32},
+    {StrId::STR_SETTINGS_NETWORK, StrId::STR_SETTINGS_NETWORK_DESC, &icon_wifi_32},
+};
+}  // namespace
 
 namespace {
 constexpr int systemVersionFooterBottomInset = 15;
@@ -90,17 +118,6 @@ void formatFrontlightScheduleTime(const uint16_t timeOfDay, char* const buf, con
 
 Rect settingsHeaderRect(const ThemeMetrics& metrics, const int pageWidth) {
   return Rect{0, metrics.topPadding, pageWidth, CompactHeader::headerBottomY(metrics) - metrics.topPadding};
-}
-
-bool useLandscapeTouchLayout(const GfxRenderer& renderer) {
-  // Layout is an app capability decision, not a live GT911 probe or SDK board
-  // profile result. The simulator supplies touch through its own device
-  // profile, while firmware can construct Settings during touch reinitialization.
-#if CROSSINK_APP_CAP_TOUCH
-  return renderer.getScreenWidth() > renderer.getScreenHeight();
-#else
-  return false;
-#endif
 }
 
 uint8_t enumDisplayIndexForRawValue(const SettingInfo& setting, uint8_t rawValue) {
@@ -275,8 +292,8 @@ void SettingsActivity::rebuildSettingsLists() {
   controlsTapsGesturesSettings.clear();
   controlsTwoFingerSwipeSettings.clear();
   controlsEdgeGestureSettings.clear();
-  systemSettings.clear();
-  systemDeviceSettings.clear();
+  generalSettings.clear();
+  networkSettings.clear();
   systemFilesCacheSettings.clear();
   fileBrowserSettings.clear();
   systemReadingStatsSettings.clear();
@@ -319,6 +336,10 @@ void SettingsActivity::rebuildSettingsLists() {
   displayFrontlightSettings = buildDisplayFrontlightSettingsList(allSettings);
   controlsControlCenterSettings = buildControlsControlCenterSettingsList(allSettings);
   readerSettings = buildReaderSettingsParentList(allSettings);
+  // Dictionaries has its own group here; the in-book menu keeps the row.
+  readerSettings.erase(std::remove_if(readerSettings.begin(), readerSettings.end(),
+                                      [](const SettingInfo& s) { return s.action == SettingAction::Dictionaries; }),
+                       readerSettings.end());
   readerFontSettings = buildReaderFontSettingsList(allSettings);
 #if CROSSINK_SCALABLE_FONTS
   if (needsFonts && sdFontSystem.isScalableFamily(SETTINGS.sdFontFamilyName)) {
@@ -331,8 +352,8 @@ void SettingsActivity::rebuildSettingsLists() {
 #endif
   readerPageLayoutSettings = buildReaderPageLayoutSettingsList(allSettings);
   readerScreenMarginSettings = buildReaderScreenMarginSettingsList(allSettings);
-  systemSettings = buildSystemSettingsParentList(allSettings);
-  systemDeviceSettings = buildSystemDeviceSettingsList(allSettings);
+  generalSettings = buildGeneralSettingsList(allSettings);
+  networkSettings = buildNetworkSettingsList();
   systemFilesCacheSettings = buildSystemFilesCacheSettingsList(allSettings);
   systemReadingStatsSettings = buildSystemReadingStatsSettingsList(allSettings);
   systemGlobalStatsSettings = buildSystemGlobalStatsSettingsList(allSettings);
@@ -393,7 +414,10 @@ void SettingsActivity::setCurrentSettingsForCategory() {
   }
 
   switch (selectedCategoryIndex) {
-    case 0:
+    case GroupGeneral:
+      currentSettings = &generalSettings;
+      break;
+    case GroupDisplay:
       if (activeSubmenu == SettingAction::DisplaySleepScreen) {
         currentSettings = &displaySleepSettings;
       } else if (activeSubmenu == SettingAction::DisplayFrontlight) {
@@ -402,7 +426,7 @@ void SettingsActivity::setCurrentSettingsForCategory() {
         currentSettings = &displaySettings;
       }
       break;
-    case 1:
+    case GroupReader:
       switch (activeSubmenu) {
         case SettingAction::ReaderFontOptions:
           currentSettings = &readerFontSettings;
@@ -418,7 +442,7 @@ void SettingsActivity::setCurrentSettingsForCategory() {
           break;
       }
       break;
-    case 2:
+    case GroupControls:
       switch (activeSubmenu) {
         case SettingAction::ControlsPowerButton:
           currentSettings = &controlsPowerSettings;
@@ -449,25 +473,20 @@ void SettingsActivity::setCurrentSettingsForCategory() {
           break;
       }
       break;
-    case 3:
-      switch (activeSubmenu) {
-        case SettingAction::SystemDevice:
-          currentSettings = &systemDeviceSettings;
-          break;
-        case SettingAction::SystemFilesCache:
-          currentSettings = &systemFilesCacheSettings;
-          break;
-        case SettingAction::SystemReadingStats:
-          currentSettings = &systemReadingStatsSettings;
-          break;
-        case SettingAction::SystemGlobalStats:
-          currentSettings = &systemGlobalStatsSettings;
-          break;
-        default:
-          currentSettings = &systemSettings;
-          break;
-      }
+    case GroupLibrary:
+      currentSettings = &systemFilesCacheSettings;
       break;
+    case GroupReadingStats:
+      currentSettings =
+          activeSubmenu == SettingAction::SystemGlobalStats ? &systemGlobalStatsSettings : &systemReadingStatsSettings;
+      break;
+    case GroupNetwork:
+      currentSettings = &networkSettings;
+      break;
+    default:  // group list: no rows
+      currentSettings = &networkSettings;
+      settingsCount = 0;
+      return;
   }
   settingsCount = static_cast<int>(currentSettings->size());
 }
@@ -508,12 +527,6 @@ StrId SettingsActivity::activeSubmenuTitleId() const {
       return StrId::STR_TWO_FINGER_SWIPE;
     case SettingAction::ControlsEdgeGestures:
       return StrId::STR_EDGE_GESTURES;
-    case SettingAction::SystemDevice:
-      return StrId::STR_SYSTEM_DEVICE;
-    case SettingAction::SystemFilesCache:
-      return StrId::STR_SYSTEM_FILES_CACHE;
-    case SettingAction::SystemReadingStats:
-      return StrId::STR_READING_STATS;
     case SettingAction::SystemGlobalStats:
       return StrId::STR_ALL_TIME_STATS;
     default:
@@ -762,8 +775,9 @@ void SettingsActivity::onEnter() {
     dictionaryRegistry.discover();
   }
 
-  selectedCategoryIndex = isFileBrowserView() ? 3 : 0;
-  selectedSettingIndex = 0;
+  selectedCategoryIndex = -1;
+  groupListIndex = 0;
+  selectedSettingIndex = isFileBrowserView() ? 0 : 1;
   activeSubmenu = SettingAction::None;
   parentSubmenu = SettingAction::None;
   if (!isFileBrowserView()) {
@@ -780,23 +794,40 @@ void SettingsActivity::onEnter() {
   topIndex = 0;
   applySharedUiTheme(app, uiTarget);
   app.on(ACTION_ROW, &SettingsActivity::onRowEvent, this);
-  app.on(ACTION_TAB, &SettingsActivity::onTabEvent, this);
+  app.on(ACTION_GROUP, &SettingsActivity::onGroupEvent, this);
   app.setScreen(&SettingsActivity::settingsScreen, this);
 
   // Trigger first update
   requestUpdate();
 }
 
-void SettingsActivity::onTabEvent(const fui::ActionEvent& event, void* user) {
+void SettingsActivity::onGroupEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<SettingsActivity*>(user);
-  if (self->optionPopup.isActive()) return;
-  if (event.value < 0 || event.value >= categoryCount) return;
-  self->selectedSettingIndex = 0;
-  self->enterCategory(event.value);
-  self->topIndex = 0;
-  // The switched-to tab repaints as the selected pill; a flash overlay on top
-  // of it just repaints the pill in the focused style.
+  if (self->optionPopup.isActive() || !self->inGroupList()) return;
+  if (event.value < 0 || event.value >= GroupCount) return;
+  // The group's page replaces this list; a lingering flash would gray it.
   self->app.clearTapFlash();
+  self->openGroup(event.value);
+}
+
+void SettingsActivity::openGroup(const int group) {
+  groupListIndex = group;
+  if (group == GroupDictionaries) {
+    startActivityForResult(std::make_unique<DictionariesActivity>(renderer, mappedInput),
+                           [this](const ActivityResult&) {
+                             SETTINGS.saveToFile();
+                             requestUpdate();
+                           });
+    return;
+  }
+  enterCategory(group);
+  topIndex = 0;
+  selectedSettingIndex = 1;
+  while (selectedSettingIndex < settingsCount &&
+         (*currentSettings)[selectedSettingIndex - 1].type == SettingType::SECTION_HEADER) {
+    ++selectedSettingIndex;
+  }
+  requestUpdate();
 }
 
 void SettingsActivity::onRowEvent(const fui::ActionEvent& event, void* user) {
@@ -879,52 +910,27 @@ void SettingsActivity::loop() {
 
   const auto& metrics = UITheme::getInstance().getMetrics();
   if (TouchHeaderBackButton::wasTapped(mappedInput, settingsHeaderRect(metrics, renderer.getScreenWidth()))) {
-    if (!isFileBrowserView() && activeSubmenu != SettingAction::None) {
-      closeSubmenu();
-      requestUpdate();
-    } else {
-      closeRootSettings();
-    }
+    goBack();
     return;
   }
 
-  bool hasChangedCategory = false;
-
-  // Handle actions with early return
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     showSettingSelection = true;
-    if (!isFileBrowserView() && selectedSettingIndex == 0) {
-      enterCategory((selectedCategoryIndex < categoryCount - 1) ? (selectedCategoryIndex + 1) : 0);
-      hasChangedCategory = true;
-      requestUpdate();
+    if (inGroupList()) {
+      openGroup(groupListIndex);
     } else {
       toggleCurrentSetting();
       requestUpdate();
-      return;
-    }
-  }
-
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    if (isFileBrowserView()) {
-      closeRootSettings();
-      return;
-    }
-    if (activeSubmenu != SettingAction::None) {
-      closeSubmenu();
-      requestUpdate();
-      return;
-    }
-    if (selectedSettingIndex > 0) {
-      selectedSettingIndex = 0;
-      showSettingSelection = true;
-      requestUpdate();
-    } else {
-      closeRootSettings();
     }
     return;
   }
 
-  // Touch goes through the FreeInkApp: render() registered the tab and row
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    goBack();
+    return;
+  }
+
+  // Touch goes through the FreeInkApp: render() registered the group or row
   // hit rects; route the snapshot and let the handlers dispatch.
   if (uiReady) {
     const fui::InputSnapshot snap = touchSnapshotFrom(mappedInput);
@@ -934,7 +940,7 @@ void SettingsActivity::loop() {
       // per tap and paint a transient double pill on tab switches whose
       // erased black leaves a partial-refresh ghost.
       if (app.invalidated()) requestUpdate();
-      if (event) return;  // dispatched to onTabEvent/onRowEvent
+      if (event) return;  // dispatched to onGroupEvent/onRowEvent
     }
   }
 
@@ -957,7 +963,7 @@ void SettingsActivity::loop() {
   }
   if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
     const int delta = swipe == MappedInputManager::SwipeDir::Up ? visibleRows : -visibleRows;
-    const int next = scrollListBy(topIndex, delta, visibleRows, settingsCount);
+    const int next = scrollListBy(topIndex, delta, visibleRows, inGroupList() ? GroupCount : settingsCount);
     if (next != topIndex) {
       topIndex = next;
       requestUpdate();
@@ -965,68 +971,50 @@ void SettingsActivity::loop() {
     return;
   }
 
-  // Buttons walk the tab band (index 0) plus the rows (1..settingsCount).
-  const auto moveSelection = [this](int index, const bool forward) {
-    while (index > 0 && index <= settingsCount && (*currentSettings)[index - 1].type == SettingType::SECTION_HEADER) {
-      index = forward ? ButtonNavigator::nextIndex(index, settingsCount + 1)
-                      : ButtonNavigator::previousIndex(index, settingsCount + 1);
+  // Buttons walk the group list, or the open group's rows (1..settingsCount).
+  const auto navigateRows = [this](const bool forward) {
+    if (inGroupList()) {
+      groupListIndex = forward ? ButtonNavigator::nextIndex(groupListIndex, GroupCount)
+                               : ButtonNavigator::previousIndex(groupListIndex, GroupCount);
+      topIndex = followListSelection(groupListIndex, topIndex, visibleRows, GroupCount);
+      requestUpdate();
+      return;
+    }
+    if (settingsCount <= 0) return;
+    int index = selectedSettingIndex;
+    for (int tries = 0; tries < settingsCount; ++tries) {  // skip section headers
+      index = forward ? (index >= settingsCount ? 1 : index + 1) : (index <= 1 ? settingsCount : index - 1);
+      if ((*currentSettings)[index - 1].type != SettingType::SECTION_HEADER) break;
     }
     selectedSettingIndex = index;
     showSettingSelection = true;
-    if (selectedSettingIndex == 0) {
-      topIndex = 0;
-    } else {
-      topIndex = followListSelection(selectedSettingIndex - 1, topIndex, visibleRows, settingsCount);
-    }
+    topIndex = followListSelection(selectedSettingIndex - 1, topIndex, visibleRows, settingsCount);
     requestUpdate();
   };
-  const auto up = mappedInput.menuButton(MappedInputManager::Button::Up);
-  const auto down = mappedInput.menuButton(MappedInputManager::Button::Down);
-  const auto navigateRows = [this, &moveSelection](const bool forward) {
-    const int index = isFileBrowserView()
-                          ? (forward ? (selectedSettingIndex >= settingsCount ? 1 : selectedSettingIndex + 1)
-                                     : (selectedSettingIndex <= 1 ? settingsCount : selectedSettingIndex - 1))
-                          : (forward ? ButtonNavigator::nextIndex(selectedSettingIndex, settingsCount + 1)
-                                     : ButtonNavigator::previousIndex(selectedSettingIndex, settingsCount + 1));
-    moveSelection(index, forward);
-  };
-  const auto previousButtons = isFileBrowserView() ? ButtonNavigator::getPreviousButtons() : std::array{up, up};
-  const auto nextButtons = isFileBrowserView() ? ButtonNavigator::getNextButtons() : std::array{down, down};
+  // Up/Down and Left/Right all walk the list (the X4 Pro's side keys arrive as Left/Right in menus).
+  const auto previousButtons = ButtonNavigator::getPreviousButtons();
+  const auto nextButtons = ButtonNavigator::getNextButtons();
   buttonNavigator.onRelease(nextButtons, [&] { navigateRows(true); });
   buttonNavigator.onRelease(previousButtons, [&] { navigateRows(false); });
-
   if (!isFileBrowserView()) {
     buttonNavigator.onContinuous(nextButtons, [&] { navigateRows(true); });
     buttonNavigator.onContinuous(previousButtons, [&] { navigateRows(false); });
-    const auto changeCategory = [this, &hasChangedCategory](const bool forward) {
-      hasChangedCategory = true;
-      showSettingSelection = true;
-      enterCategory(forward ? ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount)
-                            : ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount));
-      requestUpdate();
-    };
-    const auto left = mappedInput.menuButton(MappedInputManager::Button::Left);
-    const auto right = mappedInput.menuButton(MappedInputManager::Button::Right);
-    buttonNavigator.onRelease({right, right}, [&] { changeCategory(true); });
-    buttonNavigator.onRelease({left, left}, [&] { changeCategory(false); });
-    buttonNavigator.onContinuous({right, right}, [&] { changeCategory(true); });
-    buttonNavigator.onContinuous({left, left}, [&] { changeCategory(false); });
   }
+}
 
-  if (hasChangedCategory) {
-    topIndex = 0;
-    selectedSettingIndex = (selectedSettingIndex == 0) ? 0 : 1;
+// Back: leave a submenu, then the group, then Settings.
+void SettingsActivity::goBack() {
+  if (isFileBrowserView() || inGroupList()) {
+    closeRootSettings();
+  } else if (activeSubmenu != SettingAction::None) {
+    closeSubmenu();
+    requestUpdate();
+  } else {
+    selectedCategoryIndex = -1;
+    activeSubmenu = parentSubmenu = SettingAction::None;
     setCurrentSettingsForCategory();
-    // Advance past any leading section headers
-    while (selectedSettingIndex > 0 && selectedSettingIndex <= settingsCount &&
-           (*currentSettings)[selectedSettingIndex - 1].type == SettingType::SECTION_HEADER) {
-      const int nextIndex = ButtonNavigator::nextIndex(selectedSettingIndex, settingsCount + 1);
-      if (nextIndex <= selectedSettingIndex) {
-        selectedSettingIndex = settingsCount;
-        break;
-      }
-      selectedSettingIndex = nextIndex;
-    }
+    topIndex = followListSelection(groupListIndex, 0, visibleRows, GroupCount);
+    requestUpdate();
   }
 }
 
@@ -1089,15 +1077,8 @@ void SettingsActivity::toggleFastScreenLink() {
 bool SettingsActivity::handleHomeGesture() {
   if (optionPopup.isActive()) {
     optionPopup.dismiss(mappedInput, [this] { requestUpdate(); });
-  } else if (!isFileBrowserView() && activeSubmenu != SettingAction::None) {
-    closeSubmenu();
-    requestUpdate();
-  } else if (!isFileBrowserView() && selectedSettingIndex > 0) {
-    selectedSettingIndex = 0;
-    showSettingSelection = true;
-    requestUpdate();
   } else {
-    closeRootSettings();
+    goBack();
   }
   return true;
 }
@@ -1223,6 +1204,9 @@ void SettingsActivity::toggleCurrentSetting() {
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);
         break;
+      case SettingAction::BluetoothPageTurner:
+        startActivityForResult(std::make_unique<BleSettingsActivity>(renderer, mappedInput), resultHandler);
+        break;
       case SettingAction::Dictionaries:
         startActivityForResult(std::make_unique<DictionariesActivity>(renderer, mappedInput), resultHandler);
         break;
@@ -1301,9 +1285,6 @@ void SettingsActivity::toggleCurrentSetting() {
       case SettingAction::ControlsTwoFingerSwipe:
       case SettingAction::ControlsEdgeGestures:
       case SettingAction::ControlsControlCenter:
-      case SettingAction::SystemDevice:
-      case SettingAction::SystemFilesCache:
-      case SettingAction::SystemReadingStats:
       case SettingAction::SystemGlobalStats:
       case SettingAction::DisplaySleepScreen:
       case SettingAction::DisplayFrontlight:
@@ -1459,16 +1440,12 @@ void SettingsActivity::settingsScreen(UiApp::ScreenType& screen, void* user) {
 
 void SettingsActivity::buildSettingsScreen(UiApp::ScreenType& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-#if CROSSINK_APP_CAP_TOUCH
-  const bool landscapeTouch = useLandscapeTouchLayout(renderer);
-#endif
   const fui::Rect safe = screen.frame().safeRect();
   // setContentMargin() is relative to the bezel-safe rectangle, while the
-  // compact header geometry is in absolute screen coordinates. Overlap the
-  // tab's top rule with the header's final underline pixel.
-  const int tabTop = std::max<int>(safe.y, CompactHeader::headerBottomY(metrics) - 1);
+  // compact header geometry is in absolute screen coordinates.
+  const int contentTop = std::max<int>(safe.y, CompactHeader::headerBottomY(metrics) - 1);
   screen.setContentMargin(
-      fui::Insets{static_cast<int16_t>(tabTop - safe.y), 0, static_cast<int16_t>(metrics.buttonHintsHeight), 0});
+      fui::Insets{static_cast<int16_t>(contentTop - safe.y), 0, static_cast<int16_t>(metrics.buttonHintsHeight), 0});
 
   if (isFileBrowserView()) {
     const int16_t listInset = static_cast<int16_t>(metrics.listInset);
@@ -1502,106 +1479,11 @@ void SettingsActivity::buildSettingsScreen(UiApp::ScreenType& screen) {
     return;
   }
 
-  // Category tabs. The selected pill dims to a dither when the selection is
-  // down in the list (the legacy focused/unfocused tab distinction).
-  fui::TabItem tabs[categoryCount];
-  for (int i = 0; i < categoryCount; i++) {
-    tabs[i].label = I18N.get(categoryNames[i]);
-    tabs[i].value = static_cast<int16_t>(i);
-    tabs[i].selected = selectedCategoryIndex == i;
+  if (inGroupList()) {
+    buildGroupList(screen);
+    return;
   }
-  fui::TabBarProps tabProps;
-  tabProps.tabs = tabs;
-  tabProps.count = categoryCount;
-  tabProps.action = ACTION_TAB;
-  tabProps.inputMask = fui::InputTouch;
-  // Small text: four category labels share the band, the body font truncates.
-  tabProps.text = screen.theme().smallText;
-  // Pill wraps the label with real padding; the band grows with the scaled
-  // font when the theme's tabBarHeight is too short for it. Keep the horizontal
-  // padding tight: four equal slots share the band, so wide labels (e.g.
-  // "Controls") truncate to an ellipsis at large UI scales when the pill eats
-  // too much width. Vertical padding stays for the pill height.
-  tabProps.tabInset = fui::Insets{2, 2, 4, 2};
-  tabProps.contentInset = fui::Insets{2, 4, 2, 4};
-  const int16_t tabLineHeight = screen.target().lineHeight(screen.theme().smallText.font);
-  const int16_t preferredTabHeight =
-      mappedInput.hasTouch() ? TOUCH_TAB_BAR_HEIGHT : static_cast<int16_t>(metrics.tabBarHeight);
-  const int16_t tabBand = preferredTabHeight > tabLineHeight + 10 ? preferredTabHeight : tabLineHeight + 10;
-  // Legacy Lyra two-state treatment: with the selection on the tab band, the
-  // band fills gray and the active tab is a solid pill; with the selection
-  // down in the list, the band is plain and the active tab keeps a gray box
-  // with an underline. The 1px rule under the band is always there.
-  const bool tabsFocused = selectedSettingIndex == 0;
-  const bool borderedTabs = metrics.tabBarAppearance == ThemeTabBarAppearance::BorderedText;
-  const bool roundedRaffTabs = SETTINGS.uiTheme == CrossPointSettings::UI_THEME::ROUNDEDRAFF;
-  tabProps.divider = true;
-  fui::StyleSet tabStyles;
-  if (roundedRaffTabs) {
-    // RoundedRaff's tabs have always sat on white, with the selected pill
-    // turning dark gray after focus moves into the settings list.
-    tabStyles.explicitlySet = true;
-    tabStyles.normal.foreground = fui::Paint::solid(fui::Color::Black);
-    tabStyles.selected.background = fui::Paint::solid(tabsFocused ? fui::Color::Black : fui::Color::DarkGray);
-    tabStyles.selected.foreground = fui::Paint::solid(fui::Color::White);
-    tabStyles.selected.radius = 18;
-    tabStyles.focused = tabStyles.selected;
-    tabStyles.active = tabStyles.selected;
-    tabProps.tabStyles = tabStyles;
-  } else if (!borderedTabs) {
-    tabStyles.explicitlySet = true;
-    tabStyles.normal.foreground = fui::Paint::solid(fui::Color::Black);
-    if (tabsFocused) {
-      tabStyles.selected.background = fui::Paint::solid(fui::Color::Black);
-      tabStyles.selected.foreground = fui::Paint::solid(fui::Color::White);
-      tabStyles.selected.radius = screen.theme().listRowRadius;
-    } else {
-      tabStyles.selected.background = fui::Paint::dither(fui::Color::LightGray);
-      tabStyles.selected.foreground = fui::Paint::solid(fui::Color::Black);
-      // Let the selected underline meet the shared bottom divider, as in the
-      // original Lyra tab bar. The default bottom inset leaves a visible gap.
-      tabProps.tabInset.bottom = 0;
-      tabProps.selectedUnderline = 2;
-    }
-    // Focus/flash states keep the pill instead of falling back to an unset
-    // (blank) style.
-    tabStyles.focused = tabStyles.selected;
-    tabStyles.active = tabStyles.selected;
-    tabProps.tabStyles = tabStyles;
-  }
-#if CROSSINK_APP_CAP_TOUCH
-  if (landscapeTouch) {
-    // Landscape has width to spare but little vertical room. Keep categories
-    // in a left rail so the settings list can use the full remaining height.
-    const fui::Rect body = screen.body();
-    const int16_t railWidth = static_cast<int16_t>(body.width / 4);
-    int16_t tabY = body.y;
-    for (int i = 0; i < categoryCount; ++i) {
-      const int16_t tabHeight =
-          static_cast<int16_t>(i == categoryCount - 1 ? body.bottom() - tabY : body.height / categoryCount);
-      const fui::Rect tabRect{body.x, tabY, railWidth, tabHeight};
-      fui::TabBarProps railProps = tabProps;
-      railProps.tabs = &tabs[i];
-      railProps.count = 1;
-      if (!roundedRaffTabs && !borderedTabs && tabsFocused) {
-        screen.target().fill(tabRect, fui::Paint::dither(fui::Color::LightGray));
-      }
-      drawUiTabBar(screen, railProps, tabRect, metrics.tabBarAppearance);
-      tabY = static_cast<int16_t>(tabY + tabHeight);
-    }
-    screen.target().fill(fui::Rect{static_cast<int16_t>(body.x + railWidth - 1), body.y, 1, body.height},
-                         fui::Paint::solid(fui::Color::Black));
-    screen.insetContent(fui::Insets{0, 0, 0, static_cast<int16_t>(railWidth + metrics.verticalSpacing)});
-  } else
-#endif
-  {
-    const fui::Rect tabRect = screen.takeTop(tabBand);
-    if (!roundedRaffTabs && !borderedTabs && tabsFocused) {
-      screen.target().fill(tabRect, fui::Paint::dither(fui::Color::LightGray));
-    }
-    drawUiTabBar(screen, tabProps, tabRect, metrics.tabBarAppearance);
-    screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
-  }
+  screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
   const StrId submenuTitle = activeSubmenuTitleId();
   if (submenuTitle != StrId::STR_NONE_OPT) {
@@ -1651,7 +1533,7 @@ void SettingsActivity::buildSettingsScreen(UiApp::ScreenType& screen) {
   fui::ListProps props;
   props.items = items.data();
   props.count = static_cast<uint16_t>(items.size());
-  props.selectedIndex = static_cast<int16_t>(selectedSettingIndex - 1);  // -1 = tab band focused
+  props.selectedIndex = static_cast<int16_t>(selectedSettingIndex - 1);
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
   props.valueInset = 8;               // air between the value and the row edge
@@ -1671,6 +1553,36 @@ void SettingsActivity::buildSettingsScreen(UiApp::ScreenType& screen) {
   screen.list(props);
 }
 
+void SettingsActivity::buildGroupList(UiApp::ScreenType& screen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
+  // Room for the version footer under the list.
+  screen.insetContent(fui::Insets{0, 0,
+                                  static_cast<int16_t>(renderer.getLineHeight(SMALL_FONT_ID) + metrics.verticalSpacing +
+                                                       systemVersionFooterBottomInset),
+                                  0});
+  fui::ListItem items[GroupCount];
+  for (int i = 0; i < GroupCount; ++i) {
+    items[i].label = I18N.get(SETTINGS_GROUPS[i].name);
+    items[i].subtitle = I18N.get(SETTINGS_GROUPS[i].description);
+    items[i].icon = fui::bitmapFromIcon(*SETTINGS_GROUPS[i].icon);
+    items[i].actionValue = static_cast<int16_t>(i);
+  }
+  fui::ListProps props;
+  props.items = items;
+  props.count = GroupCount;
+  props.selectedIndex = static_cast<int16_t>(groupListIndex);
+  props.action = ACTION_GROUP;
+  props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  props.labelText = screen.theme().bodyText;
+  props.labelText.bold = true;
+  const auto rows = configureUiList(props, screen.theme(), screen.body(), UiListRowType::WithSubtitle);
+  visibleRows = rows > 0 ? rows : 1;
+  topIndex = scrollListBy(topIndex, 0, visibleRows, GroupCount);
+  props.topIndex = static_cast<uint16_t>(topIndex);
+  screen.list(props);
+}
+
 void SettingsActivity::render(RenderLock&&) {
   if (optionPopup.processRender(renderer, mappedInput)) return;
 
@@ -1678,7 +1590,9 @@ void SettingsActivity::render(RenderLock&&) {
 
   const auto pageWidth = renderer.getScreenWidth();
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const char* title = isFileBrowserView() ? tr(STR_FILE_BROWSER_SETTINGS) : tr(STR_SETTINGS_TITLE);
+  const char* title = isFileBrowserView() ? tr(STR_FILE_BROWSER_SETTINGS)
+                      : inGroupList()       ? tr(STR_SETTINGS_TITLE)
+                                            : I18N.get(SETTINGS_GROUPS[selectedCategoryIndex].name);
 
   if (mappedInput.hasTouchHardware()) {
     TouchHeaderBackButton::drawCompact(renderer, title, false, !isFileBrowserView());
@@ -1691,13 +1605,13 @@ void SettingsActivity::render(RenderLock&&) {
   uiReady = true;
 
   // Keep build information discoverable without crowding the common header.
-  if (!isFileBrowserView() && selectedCategoryIndex == 3) {
+  if (inGroupList()) {
     drawSystemVersionFooter(renderer, pageWidth, renderer.getScreenHeight(), metrics);
   }
 
   const auto confirmLabel =
-      (!isFileBrowserView() && selectedSettingIndex == 0)
-          ? I18N.get(categoryNames[(selectedCategoryIndex + 1) % categoryCount])
+      inGroupList()
+          ? tr(STR_SELECT)
           : (selectedSettingIndex > 0 &&
                      (currentSettingUsesOptionMenu((*currentSettings)[selectedSettingIndex - 1]) ||
                       (*currentSettings)[selectedSettingIndex - 1].type == SettingType::SUBMENU ||

@@ -2,6 +2,45 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.3.1 "Lion" 🦁] - not released yet
+
+Based on VARAGH 1.3.0, with ideas from CrossPoint 2.0. The same on the X4 Pro, X4 Classic
+and X3 / X4 (only the X4 Pro's touch and light features differ). Books are laid out again
+once, the first time each is opened.
+
+### Changed
+
+- **Settings is a list of groups** (as in CrossPoint 2.0): General, Display, Reader,
+  Dictionaries, Controls, Library, Reading Stats and Network, each with an icon and a short
+  line saying what is inside. All VARAGH settings are kept. The side buttons move through
+  the list.
+- **Menu languages:** every reader now builds in English and Deutsch; the other menu
+  languages are downloads (Settings → General → Language), as on the X3 / X4 in 1.3.0.
+  Keyboards and Persian reading are not affected.
+
+### Added
+
+- **Bluetooth page turner** (from CrossPoint 2.0): Settings → Network → Bluetooth Page
+  Turner. Scan, pair a remote, map its buttons (next/previous page, next/previous chapter,
+  Confirm, Back, reader menu). In a book the status bar says "Connecting Bluetooth…" until
+  the remote links. The radio only runs in a book (and while pairing), stops before sleep,
+  and pauses while a chapter is being laid out.
+- **Drop caps:** a book's big first letter (CSS `::first-letter`, `initial-letter` or a
+  floated letter) spans the first lines, with built-in and downloaded fonts. Persian,
+  Arabic and Hebrew letters are left as they are.
+- **Text sizes:** CSS `font-size` on paragraphs and headings, and browser heading sizes
+  (h1 twice the text size). With Embedded Style off or in Light mode text keeps one size.
+  Downloaded fonts (Bitter, NotoVazir and the others) do this too: the size is taken from
+  the font sizes installed on the SD card, so installing more sizes gives closer matches.
+- **Boxes:** CSS borders and light gray backgrounds around paragraphs. The gray is a light
+  dot screen so the text on it stays clear.
+- **Line breaks after hyphens and dashes** ("word—word" can break after the dash), also
+  with Hyphenation off.
+
+### Fixed
+
+- Books with thousands of chapters no longer run out of memory while opening.
+
 ## [VARAGH v1.3.0 "Lion" 🦁] - 2026-10-20
 
 Based on VARAGH 1.2.1. Updating keeps your settings, books, reading progress,

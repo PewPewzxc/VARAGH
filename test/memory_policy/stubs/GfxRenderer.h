@@ -12,6 +12,11 @@ enum class BidiBaseDir : signed char { AUTO = -1, LTR = 0, RTL = 1 };
 
 class GfxRenderer {
  public:
+  // VARAGH 1.3.1: CSS font sizes, drop caps (host stub: no sized variants or glyph metrics).
+  bool hasFont(int) const { return false; }
+  int resolveFontVariant(int fontId, float) const { return fontId; }
+  bool getCodepointMetrics(int, uint32_t, EpdFontFamily::Style, int32_t&, int&) const { return false; }
+  int drawScaledCodepoint(int, uint32_t, EpdFontFamily::Style, int, int, int, bool = true) const { return 0; }
   int getFontAscenderSize(int id) const { return 12 + id; }
   int getLineHeight(int id) const { return 16 + id; }
   static int characters(const char* text) {

@@ -61,6 +61,7 @@ class GfxRenderer {
   uint32_t frameBufferSize = HalDisplay::BUFFER_SIZE;
   std::vector<uint8_t*> bwBufferChunks;
   std::map<int, EpdFontFamily> fontMap;
+  int (*fontVariantResolver_)(int fontId, float scale) = nullptr;
   // Shared bitmap row buffers. Every read/write must be inside BitmapScratchLock;
   // ensureBitmapScratchBuffers() asserts that contract before exposing them.
   mutable SemaphoreHandle_t bitmapScratchMutex_ = nullptr;
@@ -186,6 +187,21 @@ class GfxRenderer {
   FontCacheManager* getFontCacheManager() const { return fontCacheManager_; }
   bool isFontCacheScanning() const;
   const std::map<int, EpdFontFamily>& getFontMap() const { return fontMap; }
+  bool hasFont(const int fontId) const { return fontMap.count(fontId) > 0; }
+  // Drop caps: one glyph's advance (12.4 fixed point) and top bearing, unscaled; false when
+  // the font cannot draw the codepoint.
+  bool getCodepointMetrics(int fontId, uint32_t cp, EpdFontFamily::Style style, int32_t& advanceFP, int& top) const;
+  // Draws one glyph at scale256/256 of its size with its baseline at baselineY; returns the advance.
+  int drawScaledCodepoint(int fontId, uint32_t cp, EpdFontFamily::Style style, int x, int baselineY, int scale256,
+                          bool state = true) const;
+  // Sized variants of the reader font for CSS font-size. The resolver returns a registered
+  // font id, or 0 when no such size exists; small adjustments keep the body font.
+  void setFontVariantResolver(int (*const resolver)(int fontId, float scale)) { fontVariantResolver_ = resolver; }
+  int resolveFontVariant(const int fontId, const float scale) const {
+    if (!fontVariantResolver_ || (scale > 0.95f && scale < 1.05f)) return fontId;
+    const int variant = fontVariantResolver_(fontId, scale);
+    return variant != 0 && hasFont(variant) ? variant : fontId;
+  }
   void registerSdCardFont(int fontId, SdCardFont* font) { sdCardFonts_[fontId] = font; }
   void unregisterSdCardFont(int fontId) { removeFont(fontId); }
   void clearSdCardFonts() { sdCardFonts_.clear(); }
@@ -203,6 +219,10 @@ class GfxRenderer {
     scriptFallbackFontMap_[primaryFontId] = fallbackFontId;
   }
   bool hasScriptFallback(int fontId) const { return scriptFallbackFontMap_.count(fontId) > 0; }
+  int scriptFallbackOf(int fontId) const {
+    const auto it = scriptFallbackFontMap_.find(fontId);
+    return it == scriptFallbackFontMap_.end() ? 0 : it->second;
+  }
   // True when `fontId` lacks `cp` but its script fallback will draw it.
   bool scriptFallbackCovers(int fontId, uint32_t cp, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   // Ensure SD card font glyph data is loaded for the given text. Called from layout code

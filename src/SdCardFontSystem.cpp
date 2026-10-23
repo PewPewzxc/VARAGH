@@ -9,16 +9,58 @@
 #include <Logging.h>
 #include <MemoryBudget.h>
 
+#include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <cstdio>
 #include <cstring>
 
 #include "CrossPointSettings.h"
+#include "ReaderFontSizeStep.h"
 #if CROSSINK_SCALABLE_FONTS
 #include "TtfRenderProfileStore.h"
 #endif
 #include "fontIds.h"
 
 namespace {
+// Built-in reader font id for a family (0 Lexend Deca, 1 Bitter) at a size it ships in.
+int builtinReaderFontId(const unsigned family, const uint8_t points) {
+#if CROSSINK_SCALABLE_FONTS
+  return scalableBuiltinReaderFontId(family, points);
+#else
+  static constexpr int IDS[2][4] = {
+      {LEXENDDECA_10_FONT_ID, LEXENDDECA_12_FONT_ID, LEXENDDECA_14_FONT_ID, LEXENDDECA_16_FONT_ID},
+      {BITTER_10_FONT_ID, BITTER_12_FONT_ID, BITTER_14_FONT_ID, BITTER_16_FONT_ID}};
+  return IDS[family][(points - 10) / 2];
+#endif
+}
+
+// CSS font-size for the built-in reader fonts: every size is already registered, so pick one.
+// Shrinking takes the largest size at or below the target so small print never rounds back
+// up to body size; growing takes the nearest.
+int resolveBuiltinFontVariant(const int fontId, const float scale) {
+  for (unsigned family = 0; family < 2; ++family) {
+    for (const uint8_t base : BUILTIN_READER_FONT_SIZES) {
+      if (builtinReaderFontId(family, base) != fontId) continue;
+      const float target = base * scale;
+      uint8_t chosen = base;
+      if (scale < 1.0f) {
+        uint8_t atOrBelow = 0;
+        for (const uint8_t size : BUILTIN_READER_FONT_SIZES) {
+          if (size <= target && size > atOrBelow) atOrBelow = size;
+        }
+        chosen = atOrBelow != 0 ? atOrBelow : BUILTIN_READER_FONT_SIZES[0];
+      } else {
+        for (const uint8_t size : BUILTIN_READER_FONT_SIZES) {
+          if (std::fabs(size - target) < std::fabs(chosen - target)) chosen = size;
+        }
+      }
+      return chosen == base ? fontId : builtinReaderFontId(family, chosen);
+    }
+  }
+  return 0;
+}
+
 struct UiFontSize {
   int fontId;
   uint8_t pointSize;
@@ -31,6 +73,39 @@ constexpr UiFontSize kUiFontSizes[] = {
 };
 
 enum class FontFileSelection : uint8_t { Closest, Exact };
+
+// Regular-style point sizes installed for a family, smallest first.
+uint8_t listInstalledSizes(const char* familyName, uint8_t* sizes, const uint8_t capacity) {
+  const char* root = SdCardFontRegistry::findFamilyRoot(familyName);
+  if (!root) return 0;
+  char path[160] = {};
+  const int length = std::snprintf(path, sizeof(path), "%s/%s", root, familyName);
+  if (length <= 0 || static_cast<size_t>(length) >= sizeof(path)) return 0;
+  HalFile dir = Storage.open(path);
+  if (!dir || !dir.isDirectory()) return 0;
+  uint8_t count = 0;
+  char filename[128] = {};
+  while (count < capacity) {
+    HalFile entry = dir.openNextFile();
+    if (!entry) break;
+    const bool isDirectory = entry.isDirectory();
+    if (!isDirectory) entry.getName(filename, sizeof(filename));
+    entry.close();
+    uint8_t pointSize = 0;
+    uint8_t style = 0;
+    if (isDirectory || !SdCardFontRegistry::parseFilename(filename, pointSize, style) || style != 0) continue;
+    if (std::find(sizes, sizes + count, pointSize) == sizes + count) sizes[count++] = pointSize;
+  }
+  dir.close();
+  std::sort(sizes, sizes + count);
+  return count;
+}
+
+// Built-in sizes first, then the SD reader font's installed sizes.
+int resolveFontVariant(const int fontId, const float scale) {
+  if (const int builtin = resolveBuiltinFontVariant(fontId, scale)) return builtin;
+  return sdFontSystem.resolveSdFontVariant(fontId, scale);
+}
 
 // This is a cold setup path, not a render loop. The 320-byte stack footprint
 // (path and filename) replace a heap-allocated whole-font catalog
@@ -152,6 +227,8 @@ bool cpfontCoversAll(const char* path, const uint32_t* probes, const size_t prob
 }  // namespace
 
 void SdCardFontSystem::begin(GfxRenderer& renderer) {
+  variantRenderer_ = &renderer;
+  renderer.setFontVariantResolver(resolveFontVariant);
   // Register this system as the SD font ID resolver in settings.
   // Uses a static trampoline since CrossPointSettings stores a plain function pointer.
   SETTINGS.sdFontIdResolver = [](void* ctx, const char* familyName, uint8_t pointSize) -> int {
@@ -250,6 +327,19 @@ void SdCardFontSystem::attachScriptFallback(GfxRenderer& renderer, const int pri
   }
   renderer.ensureSdCardFontReady(fallbackId, seed, seedCount, /*includeSpace=*/true, /*includeHyphen=*/false, 0x03);
   renderer.setScriptFallbackFont(primaryFontId, fallbackId);
+  // Headings and CSS-sized blocks use other sizes of the same built-in family: share the
+  // fallback so their Persian words still draw (at the body fallback's size).
+  for (unsigned family = 0; family < 2; ++family) {
+    const auto* const sizesEnd = std::end(BUILTIN_READER_FONT_SIZES);
+    if (std::none_of(std::begin(BUILTIN_READER_FONT_SIZES), sizesEnd,
+                     [&](const uint8_t size) { return builtinReaderFontId(family, size) == primaryFontId; })) {
+      continue;
+    }
+    for (const uint8_t size : BUILTIN_READER_FONT_SIZES) {
+      const int variant = builtinReaderFontId(family, size);
+      if (!renderer.hasScriptFallback(variant)) renderer.setScriptFallbackFont(variant, fallbackId);
+    }
+  }
   LOG_INF("SDFS", "Script fallback %s %u pt attached to font %d", scriptFallbackFamily_.c_str(), selectedPointSize,
           primaryFontId);
 #else
@@ -518,6 +608,74 @@ void SdCardFontSystem::setupUiFallbacksDirect(GfxRenderer& renderer, const char*
     const int sdFontId = manager_.loadFamilyExtraFile(path, familyName, pointSize, renderer);
     if (sdFontId != 0) renderer.setFallbackFont(ui.fontId, sdFontId);
   }
+}
+
+int SdCardFontSystem::resolveSdFontVariant(const int fontId, const float scale) {
+#if CROSSINK_SCALABLE_FONTS
+  ScalableFontAccess access;
+#endif
+  const std::string& family = manager_.currentFamilyName();
+  const uint8_t base = manager_.pointSizeOf(fontId);
+  if (!variantRenderer_ || family.empty() || base == 0) return 0;
+  const bool scalable = manager_.hasResidentScalableFamily(family.c_str());
+  if (fontId != variantBaseId_) {
+    variantBaseId_ = fontId;
+    variantCount_ = 0;
+    installedSizeCount_ =
+        scalable ? 0 : listInstalledSizes(family.c_str(), installedSizes_, sizeof(installedSizes_));
+  }
+
+  const float target = base * scale;
+  uint8_t chosen = base;
+  if (scalable) {
+    chosen = static_cast<uint8_t>(std::clamp(scale < 1.0f ? std::floor(target) : std::round(target), 6.0f, 60.0f));
+  } else if (installedSizeCount_ > 0) {
+    if (scale < 1.0f) {
+      // Small print never rounds back up to body size.
+      chosen = installedSizes_[0];
+      for (uint8_t i = 0; i < installedSizeCount_; ++i) {
+        if (installedSizes_[i] <= target) chosen = installedSizes_[i];
+      }
+    } else {
+      for (uint8_t i = 0; i < installedSizeCount_; ++i) {
+        if (std::fabs(installedSizes_[i] - target) < std::fabs(chosen - target)) chosen = installedSizes_[i];
+      }
+    }
+  }
+  if (chosen == base || (scale < 1.0f && chosen > base)) return fontId;
+
+  SizeVariant* slot = nullptr;
+  for (uint8_t i = 0; i < variantCount_; ++i) {
+    if (variants_[i].pointSize != chosen) continue;
+    if (variantRenderer_->hasFont(variants_[i].fontId)) return variants_[i].fontId;
+    slot = &variants_[i];  // unloaded since: load it again
+  }
+  // shortcut: no eviction; past MAX_SIZE_VARIANTS sizes a block keeps the body size. Add LRU if books need more.
+  if (!slot && variantCount_ >= MAX_SIZE_VARIANTS) return fontId;
+  if (!MemoryBudget::hasHeap(MemoryBudget::snapshot(), 0, 48 * 1024)) {
+    LOG_DBG("SDFS", "Skipping %u pt size variant: low heap", chosen);
+    return fontId;
+  }
+
+  int variantId = 0;
+  if (scalable) {
+    variantId = manager_.loadScalableExtraSize(*variantRenderer_, chosen);
+  } else {
+    char path[160] = {};
+    uint8_t selected = 0;
+    if (findInstalledFontFile(family.c_str(), chosen, FontFileSelection::Exact, path, sizeof(path), selected)) {
+      variantId = manager_.loadFamilyExtraFile(path, family.c_str(), chosen, *variantRenderer_);
+    }
+  }
+  if (variantId == 0) return fontId;
+  if (!slot) slot = &variants_[variantCount_++];
+  *slot = {chosen, variantId};
+  // Persian words in a heading draw with the body's script fallback.
+  if (const int fallback = variantRenderer_->scriptFallbackOf(fontId)) {
+    variantRenderer_->setScriptFallbackFont(variantId, fallback);
+  }
+  LOG_DBG("SDFS", "Size variant %s %u pt -> font %d", family.c_str(), chosen, variantId);
+  return variantId;
 }
 
 int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t /*pointSize*/) const {

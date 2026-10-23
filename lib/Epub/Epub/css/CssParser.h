@@ -56,7 +56,7 @@ class CssParser {
 
   // Bump when CSS cache format or rules change; section caches are invalidated when this changes
   static constexpr uint32_t CSS_CACHE_MAGIC = 0x435843FF;  // bytes: 0xFF, "CXC"
-  static constexpr uint8_t CSS_CACHE_VERSION = 19;
+  static constexpr uint8_t CSS_CACHE_VERSION = 21;  // 21: borders, shade, font-size, ::first-letter
 
   // Source text is streamed, never loaded as one allocation. PSRAM readers
   // can admit larger publisher stylesheets; rule-count and internal-heap
@@ -99,6 +99,14 @@ class CssParser {
    * @return Parsed style properties
    */
   [[nodiscard]] static CssStyle parseInlineStyle(std::string_view styleValue);
+
+  /**
+   * Style of an element's ::first-letter (drop caps): its tag, .class and tag.class rules.
+   */
+  [[nodiscard]] CssStyle resolveFirstLetterStyle(std::string_view tagName, std::string_view classAttr) const;
+
+  // ::first-letter rules are stored under the plain selector with this prefix.
+  static constexpr char FIRST_LETTER_PREFIX = '!';
 
   /**
    * Check if any rules have been loaded

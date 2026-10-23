@@ -4,6 +4,8 @@
 
 #if !CROSSINK_SCALABLE_FONTS
 // Built-in reading fonts retain the PHM fallback ranges but exclude emoticons.
+// X3 / X4 (VARAGH 1.3.1): Bitter is a download there (src/BuiltinBitter.h).
+#if !defined(CROSSINK_BUILTIN_BITTER) || CROSSINK_BUILTIN_BITTER
 #include <builtinFonts/bitter_10_bold.h>
 #include <builtinFonts/bitter_10_bolditalic.h>
 #include <builtinFonts/bitter_10_italic.h>
@@ -20,6 +22,7 @@
 #include <builtinFonts/bitter_16_bolditalic.h>
 #include <builtinFonts/bitter_16_italic.h>
 #include <builtinFonts/bitter_16_regular.h>
+#endif
 #include <builtinFonts/lexenddeca_10_bold.h>
 #include <builtinFonts/lexenddeca_10_bolditalic.h>
 #include <builtinFonts/lexenddeca_10_italic.h>

@@ -87,7 +87,9 @@ class TextBlock final : public Block {
   int getRubyShift(int ascender) const { return hasRuby() ? (ascender / 2) : 0; }
   const std::vector<std::string>& getRubyTexts() const { return rubyTexts; }
 
-  void render(const GfxRenderer& renderer, int fontId, int x, int y, bool foregroundBlack = true) const;
+  void render(const GfxRenderer& renderer, int sectionFontId, int x, int y, bool foregroundBlack = true) const;
+  // The font this line was laid out with: its CSS font-size variant, else the section font.
+  int fontIdOr(const GfxRenderer& renderer, int sectionFontId) const;
   BlockType getType() override { return TEXT_BLOCK; }
   bool serialize(HalFile& file) const;
   static std::unique_ptr<TextBlock> deserialize(HalFile& file);

@@ -34,6 +34,7 @@ TextBlock::TextBlock(const std::vector<std::string>& words, const std::vector<in
   xposArr = positions;
 }
 bool TextBlock::hasRuby() const { return false; }
+int TextBlock::fontIdOr(const GfxRenderer&, const int sectionFontId) const { return sectionFontId; }
 
 bool ImageDecoderFactory::isFormatSupported(const std::string& path) { return path.ends_with(".jpg"); }
 ImageToFramebufferDecoder* ImageDecoderFactory::getDecoder(const std::string&) { return nullptr; }
@@ -68,5 +69,13 @@ void PageLine::render(GfxRenderer&, int, int, int, bool) {}
 bool PageLine::serialize(FsFile&) { return false; }
 void PageHorizontalRule::render(GfxRenderer&, int, int, int, bool) {}
 bool PageHorizontalRule::serialize(FsFile&) { return false; }
+PageDropCap::PageDropCap(int32_t fontId, uint16_t scale256, EpdFontFamily::Style style, const char*, int16_t xPos,
+                         int16_t yPos)
+    : PageElement(xPos, yPos), fontId(fontId), scale256(scale256), style(style) {}
+void PageDropCap::render(GfxRenderer&, int, int, int, bool) {}
+bool PageDropCap::serialize(FsFile&) { return false; }
+void PageBorderBox::render(GfxRenderer&, int, int, int, bool) {}
+void PageBorderBox::renderBackground(GfxRenderer&, int, int, bool) const {}
+bool PageBorderBox::serialize(FsFile&) { return false; }
 void PageTableFragment::render(GfxRenderer&, int, int, int, bool) {}
 bool PageTableFragment::serialize(FsFile&) { return false; }

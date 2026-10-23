@@ -78,6 +78,16 @@ enum class CssVerticalAlign : uint8_t { Baseline = 0, Super = 1, Sub = 2 };
 // List markers supported by the EPUB renderer.
 enum class CssListStyleType : uint8_t { Disc = 0, None = 1 };
 
+enum class CssBorderStyle : uint8_t { None = 0, Solid = 1, Double = 2, Dotted = 3, Dashed = 4 };
+
+// One box edge. Width is in CSS pixels; a side draws only when both width and style are set.
+struct CssBorderSide {
+  uint8_t width = 0;
+  CssBorderStyle style = CssBorderStyle::None;
+
+  [[nodiscard]] bool visible() const { return width > 0 && style != CssBorderStyle::None; }
+};
+
 // Bitmask for tracking which properties have been explicitly set
 struct CssPropertyFlags {
   uint32_t textAlign : 1;
@@ -103,6 +113,14 @@ struct CssPropertyFlags {
   uint32_t pageBreakAfter : 1;
   uint32_t fontVariantCaps : 1;
   uint32_t listStyleType : 1;
+  uint32_t fontSize : 1;
+  uint32_t borderTop : 1;
+  uint32_t borderRight : 1;
+  uint32_t borderBottom : 1;
+  uint32_t borderLeft : 1;
+  uint32_t shaded : 1;
+  uint32_t floatLeft : 1;
+  uint32_t initialLetter : 1;
 
   CssPropertyFlags()
       : textAlign(0),
@@ -127,13 +145,22 @@ struct CssPropertyFlags {
         pageBreakBefore(0),
         pageBreakAfter(0),
         fontVariantCaps(0),
-        listStyleType(0) {}
+        listStyleType(0),
+        fontSize(0),
+        borderTop(0),
+        borderRight(0),
+        borderBottom(0),
+        borderLeft(0),
+        shaded(0),
+        floatLeft(0),
+        initialLetter(0) {}
 
   [[nodiscard]] bool anySet() const {
     return textAlign || fontStyle || fontWeight || textDecoration || textIndent || marginTop || marginBottom ||
            marginLeft || marginRight || paddingTop || paddingBottom || paddingLeft || paddingRight || imageHeight ||
            imageWidth || display || backgroundBlack || verticalAlign || direction || pageBreakBefore ||
-           pageBreakAfter || fontVariantCaps || listStyleType;
+           pageBreakAfter || fontVariantCaps || listStyleType || fontSize || borderTop || borderRight ||
+           borderBottom || borderLeft || shaded || floatLeft || initialLetter;
   }
 
   void clearAll() {
@@ -142,6 +169,7 @@ struct CssPropertyFlags {
     paddingTop = paddingBottom = paddingLeft = paddingRight = 0;
     imageHeight = imageWidth = display = backgroundBlack = verticalAlign = direction = 0;
     pageBreakBefore = pageBreakAfter = fontVariantCaps = listStyleType = 0;
+    fontSize = borderTop = borderRight = borderBottom = borderLeft = shaded = floatLeft = initialLetter = 0;
   }
 };
 
@@ -176,6 +204,13 @@ struct CssStyle {
   bool pageBreakBefore = false;
   bool pageBreakAfter = false;
   CssListStyleType listStyleType = CssListStyleType::Disc;
+  CssLength fontSize;  // Multiplier: Em is relative to the parent size, Rem to the reader's body size
+  CssBorderSide borderTop, borderRight, borderBottom, borderLeft;
+  uint8_t borderWidthsDefined = 0;  // one bit per side, top/right/bottom/left
+  uint8_t borderStylesDefined = 0;
+  bool shaded = false;        // light background-color, drawn as a gray fill
+  bool floatLeft = false;     // float: left (marks drop-cap spans and ::first-letter rules)
+  uint8_t initialLetter = 0;  // initial-letter: lines a drop cap spans, 0 = normal
 
   CssPropertyFlags defined;  // Tracks which properties were explicitly set
 
@@ -274,6 +309,45 @@ struct CssStyle {
       listStyleType = base.listStyleType;
       defined.listStyleType = 1;
     }
+    if (base.hasFontSize()) {
+      fontSize = base.fontSize;
+      defined.fontSize = 1;
+    }
+    // Width and style cascade separately: "border-style: solid" keeps an earlier width.
+    const auto applyBorder = [&](CssBorderSide& side, const CssBorderSide& incoming, const uint8_t bit) {
+      if (base.borderWidthsDefined & bit) side.width = incoming.width;
+      if (base.borderStylesDefined & bit) side.style = incoming.style;
+    };
+    borderWidthsDefined |= base.borderWidthsDefined;
+    borderStylesDefined |= base.borderStylesDefined;
+    if (base.defined.borderTop) {
+      applyBorder(borderTop, base.borderTop, 1);
+      defined.borderTop = 1;
+    }
+    if (base.defined.borderRight) {
+      applyBorder(borderRight, base.borderRight, 2);
+      defined.borderRight = 1;
+    }
+    if (base.defined.borderBottom) {
+      applyBorder(borderBottom, base.borderBottom, 4);
+      defined.borderBottom = 1;
+    }
+    if (base.defined.borderLeft) {
+      applyBorder(borderLeft, base.borderLeft, 8);
+      defined.borderLeft = 1;
+    }
+    if (base.defined.shaded) {
+      shaded = base.shaded;
+      defined.shaded = 1;
+    }
+    if (base.defined.floatLeft) {
+      floatLeft = base.floatLeft;
+      defined.floatLeft = 1;
+    }
+    if (base.defined.initialLetter) {
+      initialLetter = base.initialLetter;
+      defined.initialLetter = 1;
+    }
   }
 
   [[nodiscard]] bool hasTextAlign() const { return defined.textAlign; }
@@ -299,6 +373,10 @@ struct CssStyle {
   [[nodiscard]] bool hasPageBreakAfter() const { return defined.pageBreakAfter; }
   [[nodiscard]] bool hasFontVariantCaps() const { return defined.fontVariantCaps; }
   [[nodiscard]] bool hasListStyleType() const { return defined.listStyleType; }
+  [[nodiscard]] bool hasFontSize() const { return defined.fontSize; }
+  [[nodiscard]] bool hasVisibleBorder() const {
+    return borderTop.visible() || borderRight.visible() || borderBottom.visible() || borderLeft.visible();
+  }
 
   void reset() {
     textAlign = CssTextAlign::Left;
@@ -317,6 +395,11 @@ struct CssStyle {
     pageBreakBefore = false;
     pageBreakAfter = false;
     listStyleType = CssListStyleType::Disc;
+    fontSize = CssLength{};
+    borderTop = borderRight = borderBottom = borderLeft = CssBorderSide{};
+    borderWidthsDefined = borderStylesDefined = 0;
+    shaded = floatLeft = false;
+    initialLetter = 0;
     defined.clearAll();
   }
 };

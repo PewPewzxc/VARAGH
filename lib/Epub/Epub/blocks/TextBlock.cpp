@@ -230,8 +230,16 @@ bool TextBlock::hasRuby() const {
   return false;
 }
 
-void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int x, const int y,
+int TextBlock::fontIdOr(const GfxRenderer& renderer, const int sectionFontId) const {
+  if (blockStyle.fontId == 0) return sectionFontId;
+  if (renderer.hasFont(blockStyle.fontId)) return blockStyle.fontId;
+  // An SD size variant is loaded on demand: after a restart the same size loads again here.
+  return renderer.resolveFontVariant(sectionFontId, blockStyle.fontScale);
+}
+
+void TextBlock::render(const GfxRenderer& renderer, const int sectionFontId, const int x, const int y,
                        const bool foregroundBlack) const {
+  const int fontId = fontIdOr(renderer, sectionFontId);
   if (!isValid) {
     LOG_ERR("TXB", "Render skipped: invalid block");
     return;
@@ -414,7 +422,8 @@ bool TextBlock::serialize(HalFile& file) const {
          serialization::tryWritePod(file, blockStyle.textIndent) &&
          serialization::tryWritePod(file, blockStyle.textIndentDefined) &&
          serialization::tryWritePod(file, blockStyle.isRtl) &&
-         serialization::tryWritePod(file, blockStyle.directionDefined);
+         serialization::tryWritePod(file, blockStyle.directionDefined) &&
+         serialization::tryWritePod(file, blockStyle.fontId) && serialization::tryWritePod(file, blockStyle.fontScale);
 }
 
 std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
@@ -520,7 +529,8 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
       !serialization::tryReadPod(file, blockStyle.textIndent) ||
       !serialization::tryReadPod(file, blockStyle.textIndentDefined) ||
       !serialization::tryReadPod(file, blockStyle.isRtl) ||
-      !serialization::tryReadPod(file, blockStyle.directionDefined)) {
+      !serialization::tryReadPod(file, blockStyle.directionDefined) ||
+      !serialization::tryReadPod(file, blockStyle.fontId) || !serialization::tryReadPod(file, blockStyle.fontScale)) {
     LOG_ERR("TXB", "Deserialization failed: truncated block style metadata");
     return nullptr;
   }

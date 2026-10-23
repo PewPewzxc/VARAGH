@@ -104,6 +104,8 @@ class Activity {
   virtual bool handleTwoFingerRotation(bool clockwise) { return false; }
   virtual bool openReaderSettingsMenu() { return false; }
   virtual bool handleShortcutAction(uint8_t) { return false; }
+  // A Bluetooth remote asked for the next (or previous) chapter.
+  virtual bool remoteChapter(bool /*forward*/) { return false; }
   virtual bool handleShortcutAction(CrossPointSettings::SHORT_PWRBTN) { return false; }
   virtual std::string getCurrentBookPath() const { return {}; }
   virtual std::string getCurrentBookTitle() const { return {}; }

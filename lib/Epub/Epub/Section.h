@@ -38,6 +38,13 @@ struct SectionBuildOptions {
 };
 
 class Section {
+ public:
+  // Asked before every chapter build step (Bluetooth page turner: its radio gives back the heap).
+  // False refuses the build. Set once by the firmware.
+  static void setBuildGate(bool (*gate)()) { buildGate_ = gate; }
+
+ private:
+  static inline bool (*buildGate_)() = nullptr;
   std::shared_ptr<Epub> epubOwner;
   Epub* epub;
   const int spineIndex;

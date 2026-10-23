@@ -7,6 +7,7 @@
 #include <Utf8.h>
 #include <ZipFile.h>
 
+#include <algorithm>
 #include <limits>
 
 #include "FsHelpers.h"
@@ -297,8 +298,11 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   bool useBatchSizes = false;
 
   if (spineCount >= LARGE_SPINE_THRESHOLD) {
+    // Targets take 16 B per spine item: look sizes up 2,048 items at a time so
+    // books with thousands of chapters do not run out of memory (CrossPoint #3733).
+    constexpr int SIZE_LOOKUP_CHUNK = 2048;
     ArenaVector<ZipFile::SizeTarget> targets(metadataArena);
-    if (!targets.resize(spineCount) || !spineSizes.resize(spineCount)) {
+    if (!targets.resize(std::min<int>(spineCount, SIZE_LOOKUP_CHUNK)) || !spineSizes.resize(spineCount)) {
       LOG_ERR("BMC", "Failed to allocate batch size lookup scratch for %u spine items", spineCount);
       lowMemoryFailure = true;
       zip.close();
@@ -307,6 +311,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     }
 
     spineIn.seek(0);
+    size_t pending = 0;
     for (int i = 0; i < spineCount; i++) {
       auto entry = readSpineEntryFrom(spineIn);
       std::string path = FsHelpers::normalisePath(entry.href);
@@ -315,14 +320,16 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
       t.hash = ZipFile::fnvHash64(path.c_str(), path.size());
       t.len = static_cast<uint16_t>(path.size());
       t.index = static_cast<uint16_t>(i);
-      targets[i] = t;
+      targets[pending++] = t;
+      if (pending < targets.size() && i + 1 < spineCount) continue;
+
+      std::sort(targets.begin(), targets.begin() + pending,
+                [](const ZipFile::SizeTarget& a, const ZipFile::SizeTarget& b) {
+                  return a.hash < b.hash || (a.hash == b.hash && a.len < b.len);
+                });
+      zip.fillUncompressedSizes(targets.data(), pending, spineSizes.data(), spineSizes.size());
+      pending = 0;
     }
-
-    std::sort(targets.begin(), targets.end(), [](const ZipFile::SizeTarget& a, const ZipFile::SizeTarget& b) {
-      return a.hash < b.hash || (a.hash == b.hash && a.len < b.len);
-    });
-
-    int matched = zip.fillUncompressedSizes(targets.data(), targets.size(), spineSizes.data(), spineSizes.size());
 
     useBatchSizes = true;
   }

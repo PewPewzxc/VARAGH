@@ -1,5 +1,8 @@
 #include "CrossPointSettings.h"
 
+#include "BuiltinBitter.h"
+
+#include <BlePageTurnerJson.h>
 #include <BoardConfig.h>
 #include <CrossInkHalFrontlight.h>
 #include <HalClock.h>
@@ -129,8 +132,10 @@ CrossPointSettings::FONT_SIZE firstAvailableReaderFontSize() {
 #if !CROSSINK_SCALABLE_FONTS
 int getFallbackReaderFontIdForFamily(const CrossPointSettings::FONT_FAMILY family) {
   switch (family) {
+#if CROSSINK_BUILTIN_BITTER
     case CrossPointSettings::BITTER:
       return BITTER_10_FONT_ID;
+#endif
     case CrossPointSettings::LEXENDDECA:
     default:
       return LEXENDDECA_10_FONT_ID;
@@ -507,6 +512,7 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   doc["indexingMethodSchema"] = INDEXING_METHOD_SCHEMA_CURRENT;
   doc["clockDateHasBeenSynced"] = clockDateHasBeenSynced;
   doc["screenInverted"] = screenInverted;
+  bleturner::writeJson(ble, doc);
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc, bool importingCrossPoint) {
@@ -904,6 +910,16 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc, bool importingCrossPoint
     keyboardLayouts = doc["keyboardLayouts"].as<uint16_t>();
   }
   clockDateHasBeenSynced = clamp(doc["clockDateHasBeenSynced"] | static_cast<uint8_t>(0), 2, 0);
+  if (!bleturner::readJson(ble, doc)) needsResave = true;
+#if !CROSSINK_BUILTIN_BITTER
+  // Bitter is a download on this reader: a saved built-in Bitter becomes the SD family "Bitter".
+  // SdCardFontSystem drops it again (Lexend shows) until the family is on the card.
+  if (fontFamily == BITTER && sdFontFamilyName[0] == ' ') {
+    strncpy(sdFontFamilyName, BITTER_SD_FAMILY, sizeof(sdFontFamilyName) - 1);
+    fontFamily = LEXENDDECA;
+    needsResave = true;
+  }
+#endif
 
   if (needsResave) requestResave();
   LOG_DBG("CPS", "Settings loaded from file");
@@ -1360,6 +1376,7 @@ int CrossPointSettings::getBuiltInReaderFontId() const {
           return LEXENDDECA_16_FONT_ID;
       }
       return getFallbackReaderFontIdForFamily(LEXENDDECA);
+#if CROSSINK_BUILTIN_BITTER
     case BITTER:
       switch (effectiveSize) {
         case TINY:
@@ -1373,6 +1390,7 @@ int CrossPointSettings::getBuiltInReaderFontId() const {
           return BITTER_16_FONT_ID;
       }
       return getFallbackReaderFontIdForFamily(BITTER);
+#endif
   }
   return getFallbackReaderFontIdForFamily(static_cast<FONT_FAMILY>(fontFamily));
 #endif

@@ -236,7 +236,7 @@ class SimulatorSmokeTest {
     } else if (!gestures.empty()) {
       fail("Touch gestures exposed on a button-only device");
     }
-    const auto device = buildSystemDeviceSettingsList(all);
+    const auto device = buildGeneralSettingsList(all);
     if (device.size() < 3 || device[1].nameId != StrId::STR_TIME_TO_SLEEP ||
         device[2].nameId != StrId::STR_CUSTOM_BOOTSCREEN) {
       fail("Custom bootscreen setting order mismatch");
@@ -1184,25 +1184,24 @@ class SimulatorSmokeTest {
           inputCompletionStep = SmokeStep::SideButtons;
           const auto down = mappedInputManager.menuButton(MappedInputManager::Button::Down);
           const auto up = mappedInputManager.menuButton(MappedInputManager::Button::Up);
-          const auto left = mappedInputManager.menuButton(MappedInputManager::Button::Left);
-          const auto right = mappedInputManager.menuButton(MappedInputManager::Button::Right);
-          addTap(right);
-          inputScript.push_back(render("Settings Right selects Reader tab", 3));
-          inputScript.push_back(assertSettingsNavigation(1, 0));
           addTap(down);
-          inputScript.push_back(render("Settings Down selects first row", 3));
+          inputScript.push_back(render("Settings Down selects Display group", 3));
+          inputScript.push_back(assertSettingsNavigation(-1, 1));
+          addTap(MappedInputManager::Button::Confirm);
+          inputScript.push_back(render("Settings Confirm opens Display", 3));
           inputScript.push_back(assertSettingsNavigation(1, 1));
-          addTap(left);
-          inputScript.push_back(render("Settings Left switches tabs while a row is focused", 3));
-          inputScript.push_back(assertSettingsNavigation(0, 1));
           addTap(up);
-          inputScript.push_back(render("Settings Up returns to tab band", 3));
-          inputScript.push_back(assertSettingsNavigation(0, 0));
-          addTap(right);  // Reader tab
-          addTap(right);  // Controls tab
-          addTap(down);   // Power Button
-          addTap(down);   // Front Buttons
-          addTap(down);   // Side Buttons
+          inputScript.push_back(render("Settings Up wraps to the last row", 3));
+          addTap(MappedInputManager::Button::Back);
+          inputScript.push_back(render("Settings Back returns to the group list", 3));
+          inputScript.push_back(assertSettingsNavigation(-1, 1));
+          addTap(down);  // Reader
+          addTap(down);  // Dictionaries
+          addTap(down);  // Controls
+          addTap(MappedInputManager::Button::Confirm);
+          inputScript.push_back(assertSettingsNavigation(4, 1));  // Power Button
+          addTap(down);  // Front Buttons
+          addTap(down);  // Side Buttons
           addTap(MappedInputManager::Button::Confirm);
           inputScript.push_back(render("Side Button Settings", 250));
           step = SmokeStep::ReaderInput;

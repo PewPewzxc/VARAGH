@@ -61,6 +61,24 @@ class SdCardFontManager {
   // by getFontId() or reused as an extra size of the primary family.
   int loadOtherFamilyFile(const char* path, const char* familyName, uint8_t pointSize, GfxRenderer& renderer);
 
+  // VARAGH 1.3.1: point size of a loaded primary-family font, 0 when `fontId` is not one.
+  uint8_t pointSizeOf(int fontId) const {
+    for (const auto& lf : loaded_)
+      if (lf.fontId == fontId && !lf.otherFamily) return lf.size;
+    return 0;
+  }
+
+  // VARAGH 1.3.1: another size of the resident TTF family (CSS font sizes); 0 without one.
+  int loadScalableExtraSize(GfxRenderer& renderer, uint8_t pointSize) {
+#if CROSSINK_SCALABLE_FONTS
+    return scalable_[0] ? registerScalableSize(renderer, pointSize) : 0;
+#else
+    (void)renderer;
+    (void)pointSize;
+    return 0;
+#endif
+  }
+
   // Unload everything, unregister from renderer.
   void unloadAll(GfxRenderer& renderer);
 

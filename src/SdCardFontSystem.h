@@ -144,7 +144,24 @@ class SdCardFontSystem {
   /// without waiting for the reader activity to run ensureLoaded().
   void refreshIfDirty() { ensureRegistry(); }
 
+  // VARAGH 1.3.1: CSS font-size for an SD reader font. Loads the family's installed size nearest
+  // `scale` (shrinking takes one at or below) and returns its id, `fontId` when none fits, or 0
+  // when `fontId` is not the SD reader font.
+  int resolveSdFontVariant(int fontId, float scale);
+
  private:
+  static constexpr uint8_t MAX_SIZE_VARIANTS = 4;
+  struct SizeVariant {
+    uint8_t pointSize;
+    int fontId;
+  };
+  GfxRenderer* variantRenderer_ = nullptr;
+  int variantBaseId_ = 0;
+  uint8_t installedSizes_[16] = {};
+  uint8_t installedSizeCount_ = 0;
+  SizeVariant variants_[MAX_SIZE_VARIANTS] = {};
+  uint8_t variantCount_ = 0;
+
   void persistSettingsChange() const;
 
   // Load the active SD family at the built-in UI point sizes and register each

@@ -1,5 +1,7 @@
 #include "ActivityManager.h"
 
+#include <BlePageTurner.h>
+
 #if CROSSINK_SCALABLE_FONTS
 #include <HalScalableFont.h>
 #endif
@@ -504,7 +506,9 @@ void ActivityManager::renderTaskLoop() {
       // Apply Night Mode to each activity's normal-polarity frame. SleepActivity
       // preserves it only for Quick Resume and clears it for other sleep screens.
       display.setInverted(SETTINGS.screenInverted != 0);
+      const uint32_t visitBeingPainted = screenVisit.load();
       currentActivity->render(std::move(lock));
+      paintedVisit.store(visitBeingPainted);
       restoredActivityNeedsRender = false;
     }
     TouchRegistry::getInstance().publish();
@@ -600,6 +604,10 @@ void ActivityManager::loop() {
   }
 
   while (pendingAction != PendingAction::None) {
+    // The page turner's radio gives its heap back before the next screen allocates. Its teardown
+    // can span loop passes and runs outside the render lock.
+    if (!bleturner::beforeScreenChange(0, pendingActivity && pendingActivity->isReaderActivity())) return;
+    screenVisit.fetch_add(1);
     if (pendingAction == PendingAction::Pop) {
       RenderLock lock;
 
@@ -1129,6 +1137,26 @@ bool ActivityManager::isReaderActivity() const {
 
   return std::any_of(stackActivities.begin(), stackActivities.end(),
                      [](const auto& activity) { return activity && activity->isReaderActivity(); });
+}
+
+bool ActivityManager::isForegroundReaderShown() const {
+  return pendingAction == PendingAction::None && currentActivity && currentActivity->isReaderActivity() &&
+         paintedVisit.load() == screenVisit.load();
+}
+
+bool ActivityManager::isForegroundHomeShown() const {
+  return pendingAction == PendingAction::None && currentActivity && currentActivity->isHomeActivity() &&
+         paintedVisit.load() == screenVisit.load();
+}
+
+bool ActivityManager::isForegroundBleSettings() const {
+  return pendingAction == PendingAction::None && currentActivity && currentActivity->name == "BleSettings";
+}
+
+bool ActivityManager::remoteChapter(const bool forward) {
+  if (!isForegroundReaderShown() || !currentActivity->remoteChapter(forward)) return false;
+  requestUpdate();
+  return true;
 }
 
 bool ActivityManager::openReaderSettingsForTouchscreenEscapeHatch() {

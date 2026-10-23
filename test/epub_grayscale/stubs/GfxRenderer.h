@@ -12,6 +12,11 @@
 // DirectPixelWriter; this adapter only supplies geometry and owned buffers.
 class GfxRenderer {
  public:
+  // VARAGH 1.3.1: CSS font sizes, drop caps (host stub: no sized variants or glyph metrics).
+  bool hasFont(int) const { return false; }
+  int resolveFontVariant(int fontId, float) const { return fontId; }
+  bool getCodepointMetrics(int, uint32_t, int, int32_t&, int&) const { return false; }
+  int drawScaledCodepoint(int, uint32_t, int, int, int, int, bool = true) const { return 0; }
   enum Orientation { Portrait, LandscapeClockwise, PortraitInverted, LandscapeCounterClockwise };
   enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB };
   int width, height, stride;

@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 
+#include "BlePageTurnerGlue.h"
 #include "BookReadingStats.h"
 #include "BookmarkStore.h"
 #include "EndOfBookOptions.h"
@@ -535,8 +536,9 @@ class EpubReaderActivity final : public Activity {
   }
   bool backgroundSectionBuildHasHeap();
   void idlePrewarmNextPage();
+  mutable std::atomic<uint8_t> shownLinkNote{0};  // the Bluetooth note the status bar last drew
   bool skipLoopDelay() override {
-    return sectionBuildWantsTick() && !backgroundBuildPausedForLowMemory &&
+    return sectionBuildWantsTick() && !backgroundBuildPausedForLowMemory && !blepager::holdsHeap() &&
            !backgroundBuildYieldForInput.load(std::memory_order_relaxed);
   }
   bool isReaderActivity() const override { return true; }
@@ -556,6 +558,10 @@ class EpubReaderActivity final : public Activity {
     return true;
   }
   bool handleShortcutAction(uint8_t action) override;
+  bool remoteChapter(bool forward) override {
+    return handleTwoFingerSwipeAction(forward ? CrossPointSettings::TWO_FINGER_SWIPE_NEXT_CHAPTER
+                                              : CrossPointSettings::TWO_FINGER_SWIPE_PREVIOUS_CHAPTER);
+  }
   std::string getCurrentBookPath() const override { return epub ? epub->getPath() : std::string{}; }
   std::string getCurrentBookTitle() const override { return epub ? epub->getTitle() : std::string{}; }
   bool getFrontlightPanelBookDetails(FrontlightPanelBookDetails& details) override;

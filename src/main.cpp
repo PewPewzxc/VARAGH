@@ -81,6 +81,8 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #endif
 
 #include "AppVersion.h"
+#include "BlePageTurnerGlue.h"
+#include "BuiltinBitter.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "GlobalActions.h"
@@ -209,6 +211,7 @@ EpdFont lexenddeca16ItalicFont(&lexenddeca_16_italic);
 EpdFont lexenddeca16BoldItalicFont(&lexenddeca_16_bolditalic);
 EpdFontFamily lexenddeca16FontFamily(&lexenddeca16RegularFont, &lexenddeca16BoldFont, &lexenddeca16ItalicFont,
                                      &lexenddeca16BoldItalicFont);
+#if CROSSINK_BUILTIN_BITTER
 EpdFont bitter10RegularFont(&bitter_10_regular);
 EpdFont bitter10BoldFont(&bitter_10_bold);
 EpdFont bitter10ItalicFont(&bitter_10_italic);
@@ -229,6 +232,7 @@ EpdFont bitter16BoldFont(&bitter_16_bold);
 EpdFont bitter16ItalicFont(&bitter_16_italic);
 EpdFont bitter16BoldItalicFont(&bitter_16_bolditalic);
 EpdFontFamily bitter16FontFamily(&bitter16RegularFont, &bitter16BoldFont, &bitter16ItalicFont, &bitter16BoldItalicFont);
+#endif
 
 #endif
 // IPA pronunciation letters (U+0250-U+02FF) for the UI fonts, so dictionary
@@ -1168,6 +1172,7 @@ void enterDeepSleep(bool fromTimeout) {
   // until the stack overflows. The first request already owns the sleep.
   if (deepSleepInProgress) return;
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  if (!blepager::beforeSleep(2000)) LOG_ERR("SLP", "Bluetooth did not stop before sleep");
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
   APP_STATE.lastSleepApp = APP_STATE.lastSleepFromReader ? 0 : activityManager.sleepResumeApp();
 
@@ -1270,10 +1275,12 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
   renderer.insertFont(LEXENDDECA_12_FONT_ID, lexenddeca12FontFamily);
   renderer.insertFont(LEXENDDECA_14_FONT_ID, lexenddeca14FontFamily);
   renderer.insertFont(LEXENDDECA_16_FONT_ID, lexenddeca16FontFamily);
+#if CROSSINK_BUILTIN_BITTER
   renderer.insertFont(BITTER_10_FONT_ID, bitter10FontFamily);
   renderer.insertFont(BITTER_12_FONT_ID, bitter12FontFamily);
   renderer.insertFont(BITTER_14_FONT_ID, bitter14FontFamily);
   renderer.insertFont(BITTER_16_FONT_ID, bitter16FontFamily);
+#endif
 #endif
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
@@ -1429,6 +1436,7 @@ void setup() {
   logBootHeap("storage ready");
 
   SETTINGS.loadFromFile();
+  blepager::begin();
   halClock.setDaylightSavingRuleSource(&SETTINGS.clockDstRule);
   Storage.installDateTimeCallback(&SETTINGS.clockUtcOffsetQ);
   // After the clock settings, so the report and its file carry the real date.
@@ -1760,6 +1768,8 @@ void loop() {
 #ifdef SIMULATOR
   simulatorHomeKeyInput.update();
 #endif
+  // Bluetooth page turner, before the USB drive's early return: a card handed to USB stops the radio.
+  const bool remoteActed = blepager::tick();
   if (activityManager.requiresExclusiveStorageLoop()) {
     // Keep the serial endpoint responsive so Inky receives ERR:not_on_home,
     // while every filesystem/UI/global path remains suspended by the activity.
@@ -1809,7 +1819,7 @@ void loop() {
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
-  if (userInputReceived || activityManager.preventAutoSleep()) {
+  if (userInputReceived || remoteActed || activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
@@ -1996,7 +2006,9 @@ void loop() {
   }
 
   const unsigned long activityStartTime = millis();
+  blepager::applyRemoteInput();
   activityManager.loop();
+  mappedInputManager.clearInjectedReleases();
   // Wi-Fi switched on from the Control Center lives outside the reader too.
   if (OnlineWifi::manualOn()) OnlineWifi::tick();
   if (SETTINGS.frontlightNightEnabled != 0 || FrontlightNight::isNight()) {
@@ -2062,7 +2074,7 @@ void loop() {
     // Race to idle: work runs at full speed (renders hold a power lock and
     // background builds set skipLoopDelay), and a button or touch edge ends
     // either wait at once, so the low-power tick no longer delays input.
-    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
+    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS && !blepager::holdsCpu()) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       idleWait(50);

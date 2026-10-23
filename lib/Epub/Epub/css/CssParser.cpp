@@ -66,11 +66,12 @@ constexpr size_t CSS_RULE_ARENA_EXTRA_BYTES = 1024;
 // Maximum length for a single selector string
 // Prevents parsing of extremely long or malformed selectors
 constexpr size_t MAX_SELECTOR_LENGTH = 256;
-constexpr size_t CSS_LENGTH_FIELD_COUNT = 11;
+constexpr size_t CSS_LENGTH_FIELD_COUNT = 12;
 constexpr size_t CSS_LENGTH_BYTES = sizeof(float) + sizeof(uint8_t);
 constexpr size_t CSS_FIXED_STYLE_BYTES = 5 * sizeof(uint8_t) + (CSS_LENGTH_FIELD_COUNT * CSS_LENGTH_BYTES) +
-                                         4 * sizeof(uint8_t) + 3 * sizeof(uint8_t) + sizeof(uint32_t);
-static_assert(CSS_FIXED_STYLE_BYTES == 71,
+                                         4 * sizeof(uint8_t) + 3 * sizeof(uint8_t) + sizeof(uint32_t) +
+                                         4 * 2 * sizeof(uint8_t) + 4 * sizeof(uint8_t);  // borders, shade, drop cap
+static_assert(CSS_FIXED_STYLE_BYTES == 88,
               "CssStyle cache payload changed; update read/writeCssStylePayload and bump CSS_CACHE_VERSION");
 
 // Check if character is CSS whitespace
@@ -235,6 +236,250 @@ bool tryInterpretBackgroundBlack(std::string_view value, bool& out) {
 
   return false;
 }
+
+
+// CSS pixels for a border width token (thin/medium/thick or a length); false if not a width.
+bool interpretBorderWidth(const std::string_view token, uint8_t& out) {
+  static constexpr std::string_view KEYWORDS[] = {"thin", "medium", "thick"};
+  for (uint8_t i = 0; i < std::size(KEYWORDS); ++i) {
+    if (iequalsAscii(token, KEYWORDS[i])) {
+      out = i + 1;
+      return true;
+    }
+  }
+  size_t unitStart = token.size();
+  for (size_t i = 0; i < token.size(); ++i) {
+    if (!std::isdigit(static_cast<unsigned char>(token[i])) && token[i] != '.') {
+      unitStart = i;
+      break;
+    }
+  }
+  float number = 0;
+  if (unitStart == 0 || !tryParseNumber(token.substr(0, unitStart), number)) return false;
+  const std::string_view unit = token.substr(unitStart);
+  if (iequalsAscii(unit, "pt")) {
+    number = number * 4.0f / 3.0f;
+  } else if (iequalsAscii(unit, "em") || iequalsAscii(unit, "rem")) {
+    number *= 16.0f;
+  } else if (!unit.empty() && !iequalsAscii(unit, "px")) {
+    return false;
+  }
+  // Hairlines stay visible; very thick borders are capped.
+  out = number <= 0 ? 0 : static_cast<uint8_t>(std::clamp(number + 0.5f, 1.0f, 16.0f));
+  return true;
+}
+
+bool interpretBorderStyle(const std::string_view token, CssBorderStyle& out) {
+  if (iequalsAscii(token, "none") || iequalsAscii(token, "hidden")) {
+    out = CssBorderStyle::None;
+  } else if (iequalsAscii(token, "solid") || iequalsAscii(token, "groove") || iequalsAscii(token, "ridge") ||
+             iequalsAscii(token, "inset") || iequalsAscii(token, "outset")) {
+    out = CssBorderStyle::Solid;
+  } else if (iequalsAscii(token, "double")) {
+    out = CssBorderStyle::Double;
+  } else if (iequalsAscii(token, "dotted")) {
+    out = CssBorderStyle::Dotted;
+  } else if (iequalsAscii(token, "dashed")) {
+    out = CssBorderStyle::Dashed;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// "1px solid #000" -> width and style; colors are ignored (borders draw black).
+CssBorderSide interpretBorderShorthand(const std::string_view value) {
+  CssBorderSide side;
+  bool hasWidth = false;
+  forEachDelimitedToken(value, isCssWhitespace, [&](const std::string_view token) {
+    uint8_t width = 0;
+    CssBorderStyle style = CssBorderStyle::None;
+    if (interpretBorderWidth(token, width)) {
+      side.width = width;
+      hasWidth = true;
+    } else if (interpretBorderStyle(token, style)) {
+      side.style = style;
+    }
+  });
+  if (!hasWidth) side.width = 2;  // medium
+  return side;
+}
+
+int hexNibble(const char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  const char lower = asciiToLower(c);
+  return lower >= 'a' && lower <= 'f' ? lower - 'a' + 10 : -1;
+}
+
+// Perceived brightness (0-255) of the first color in a background value, or -1.
+int colorLuminance(const std::string_view value) {
+  const auto luminance = [](const int r, const int g, const int b) { return (r * 299 + g * 587 + b * 114) / 1000; };
+  const size_t rgb = value.find("rgb");
+  if (rgb != std::string_view::npos) {
+    int channels[3] = {};
+    int count = 0;
+    int current = -1;
+    for (size_t i = value.find('(', rgb); i != std::string_view::npos && i < value.size() && count < 3; ++i) {
+      if (std::isdigit(static_cast<unsigned char>(value[i]))) {
+        current = (current < 0 ? 0 : current * 10) + (value[i] - '0');
+      } else if (current >= 0) {
+        channels[count++] = value[i] == '%' ? current * 255 / 100 : std::min(current, 255);
+        current = -1;
+      }
+    }
+    return count == 3 ? luminance(channels[0], channels[1], channels[2]) : -1;
+  }
+
+  int result = -1;
+  forEachDelimitedToken(value, isCssWhitespace, [&](const std::string_view token) {
+    if (result >= 0) return;
+    if (token.size() > 1 && token[0] == '#') {
+      const std::string_view hex = token.substr(1);
+      int c[3] = {-1, -1, -1};
+      if (hex.size() == 3 || hex.size() == 4) {
+        for (int i = 0; i < 3; ++i) c[i] = hexNibble(hex[i]) * 17;
+      } else if (hex.size() == 6 || hex.size() == 8) {
+        for (int i = 0; i < 3; ++i) c[i] = hexNibble(hex[2 * i]) * 16 + hexNibble(hex[2 * i + 1]);
+      }
+      if (c[0] >= 0 && c[1] >= 0 && c[2] >= 0) result = luminance(c[0], c[1], c[2]);
+      return;
+    }
+    struct Named {
+      std::string_view name;
+      int luminance;
+    };
+    static constexpr Named NAMED[] = {
+        {"white", 255},   {"whitesmoke", 245}, {"gainsboro", 220},   {"lightgray", 211}, {"lightgrey", 211},
+        {"silver", 192},  {"darkgray", 169},   {"darkgrey", 169},    {"gray", 128},      {"grey", 128},
+        {"dimgray", 105}, {"dimgrey", 105},    {"black", 0},         {"ivory", 254},     {"beige", 243},
+        {"linen", 244},   {"lavender", 235},   {"transparent", 255},
+    };
+    for (const Named& named : NAMED) {
+      if (iequalsAscii(token, named.name)) {
+        result = named.luminance;
+        return;
+      }
+    }
+  });
+  return result;
+}
+
+// Light backgrounds shade the box; white is invisible on paper, and dark ones
+// are skipped because the text inside would stay black.
+bool interpretShade(const std::string_view value) {
+  const int luminance = colorLuminance(value);
+  return luminance >= 128 && luminance < 240;
+}
+
+void parseBorderDeclaration(const std::string_view name, const std::string_view value, CssStyle& style) {
+  CssBorderSide* sides[4] = {&style.borderTop, &style.borderRight, &style.borderBottom, &style.borderLeft};
+  const auto markDefined = [&style](const size_t side, const bool width, const bool borderStyle) {
+    if (width) style.borderWidthsDefined |= 1u << side;
+    if (borderStyle) style.borderStylesDefined |= 1u << side;
+    if (side == 0) style.defined.borderTop = 1;
+    if (side == 1) style.defined.borderRight = 1;
+    if (side == 2) style.defined.borderBottom = 1;
+    if (side == 3) style.defined.borderLeft = 1;
+  };
+  static constexpr std::string_view SIDE_NAMES[] = {"top", "right", "bottom", "left"};
+
+  if (iequalsAscii(name, "border")) {
+    const CssBorderSide side = interpretBorderShorthand(value);
+    for (size_t i = 0; i < 4; ++i) {
+      *sides[i] = side;
+      markDefined(i, true, true);
+    }
+    return;
+  }
+
+  // border-width / border-style take 1-4 edge values (top, right, bottom, left).
+  const bool edgeWidths = iequalsAscii(name, "border-width");
+  if (edgeWidths || iequalsAscii(name, "border-style")) {
+    std::string_view tokens[4];
+    const size_t count = collectEdgeValueTokens(value, tokens);
+    if (count == 0) return;
+    const size_t source[4] = {0, count >= 2 ? 1u : 0u, count >= 3 ? 2u : 0u, count >= 4 ? 3u : (count >= 2 ? 1u : 0u)};
+    for (size_t i = 0; i < 4; ++i) {
+      const std::string_view token = tokens[source[i]];
+      if (edgeWidths ? interpretBorderWidth(token, sides[i]->width) : interpretBorderStyle(token, sides[i]->style)) {
+        markDefined(i, edgeWidths, !edgeWidths);
+      }
+    }
+    return;
+  }
+
+  // border-<side>, border-<side>-width, border-<side>-style
+  if (name.size() <= 7 || name[6] != '-') return;
+  const std::string_view prefix = name.substr(7);  // after "border-"
+  for (size_t i = 0; i < 4; ++i) {
+    if (prefix.size() < SIDE_NAMES[i].size() || !iequalsAscii(prefix.substr(0, SIDE_NAMES[i].size()), SIDE_NAMES[i])) {
+      continue;
+    }
+    const std::string_view suffix = prefix.substr(SIDE_NAMES[i].size());
+    if (suffix.empty()) {
+      *sides[i] = interpretBorderShorthand(value);
+      markDefined(i, true, true);
+    } else if (iequalsAscii(suffix, "-width")) {
+      if (interpretBorderWidth(trimCssWhitespace(value), sides[i]->width)) markDefined(i, true, false);
+    } else if (iequalsAscii(suffix, "-style")) {
+      if (interpretBorderStyle(trimCssWhitespace(value), sides[i]->style)) markDefined(i, false, true);
+    }
+    return;
+  }
+}
+
+bool tryInterpretFontSize(std::string_view val, CssLength& out) {
+  val = trimCssWhitespace(stripTrailingImportant(val));
+
+  struct Keyword {
+    std::string_view name;
+    float scale;
+    CssUnit unit;
+  };
+  static constexpr Keyword KEYWORDS[] = {
+      {"xx-small", 0.6f, CssUnit::Rem}, {"x-small", 0.75f, CssUnit::Rem},  {"small", 0.89f, CssUnit::Rem},
+      {"medium", 1.0f, CssUnit::Rem},   {"large", 1.2f, CssUnit::Rem},     {"x-large", 1.5f, CssUnit::Rem},
+      {"xx-large", 2.0f, CssUnit::Rem}, {"xxx-large", 3.0f, CssUnit::Rem}, {"smaller", 0.83f, CssUnit::Em},
+      {"larger", 1.2f, CssUnit::Em},
+  };
+  for (const Keyword& keyword : KEYWORDS) {
+    if (iequalsAscii(val, keyword.name)) {
+      out = CssLength{keyword.scale, keyword.unit};
+      return true;
+    }
+  }
+
+  size_t unitStart = val.size();
+  for (size_t i = 0; i < val.size(); ++i) {
+    if (!std::isdigit(static_cast<unsigned char>(val[i])) && val[i] != '.' && val[i] != '+' && val[i] != '-') {
+      unitStart = i;
+      break;
+    }
+  }
+  float number = 0;
+  if (!tryParseNumber(val.substr(0, unitStart), number) || !(number > 0)) return false;
+
+  // Absolute sizes resolve against the CSS default body size: 16px = 12pt = 1rem.
+  const std::string_view unit = val.substr(unitStart);
+  if (unit.empty() || iequalsAscii(unit, "px")) {
+    out = CssLength{number / 16.0f, CssUnit::Rem};
+  } else if (iequalsAscii(unit, "pt")) {
+    out = CssLength{number / 12.0f, CssUnit::Rem};
+  } else if (iequalsAscii(unit, "rem")) {
+    out = CssLength{number, CssUnit::Rem};
+  } else if (iequalsAscii(unit, "em")) {
+    out = CssLength{number, CssUnit::Em};
+  } else if (unit == "%") {
+    out = CssLength{number / 100.0f, CssUnit::Em};
+  } else if (iequalsAscii(unit, "ex") || iequalsAscii(unit, "ch")) {
+    out = CssLength{number / 2.0f, CssUnit::Em};
+  } else {
+    return false;
+  }
+  return true;
+}
+
+constexpr uint8_t MAX_INITIAL_LETTER = 6;
 
 }  // anonymous namespace
 
@@ -505,6 +750,27 @@ void CssParser::parseDeclarationIntoStyle(std::string_view decl, CssStyle& style
       style.backgroundBlack = backgroundBlack;
       style.defined.backgroundBlack = 1;
     }
+    style.shaded = interpretShade(value);
+    style.defined.shaded = 1;
+  } else if (name.size() >= 6 && iequalsAscii(name.substr(0, 6), "border")) {
+    parseBorderDeclaration(name, stripTrailingImportant(value), style);
+  } else if (iequalsAscii(name, "font-size")) {
+    CssLength size;
+    if (tryInterpretFontSize(value, size)) {
+      style.fontSize = size;
+      style.defined.fontSize = 1;
+    }
+  } else if (iequalsAscii(name, "float")) {
+    style.floatLeft = iequalsAscii(stripTrailingImportant(value), "left");
+    style.defined.floatLeft = 1;
+  } else if (iequalsAscii(name, "initial-letter")) {
+    uint32_t lines = 0;
+    forEachDelimitedToken(value, isCssWhitespace, [&](const std::string_view token) {
+      float number = 0;
+      if (lines == 0 && tryParseNumber(token, number) && number >= 1) lines = static_cast<uint32_t>(number + 0.5f);
+    });
+    style.initialLetter = static_cast<uint8_t>(std::min<uint32_t>(lines, MAX_INITIAL_LETTER));
+    style.defined.initialLetter = 1;
   } else if (iequalsAscii(name, "direction")) {
     const std::string_view directionValue = stripTrailingImportant(value);
     if (iequalsAscii(directionValue, "rtl")) {
@@ -655,6 +921,21 @@ bool CssParser::processRuleBlockWithStyle(std::string_view selectorGroup, const 
         if (sel.size() > MAX_SELECTOR_LENGTH) {
           LOG_DBG("CSS", "Selector too long (%zu > %zu), skipping", sel.size(), MAX_SELECTOR_LENGTH);
           return;
+        }
+
+        // "p::first-letter" / ".dc:first-letter" (drop caps) store as "!p" / "!.dc".
+        std::array<char, MAX_SELECTOR_LENGTH + 1> firstLetterKey{};
+        for (const std::string_view pseudo : {std::string_view("::first-letter"), std::string_view(":first-letter")}) {
+          if (sel.size() <= pseudo.size() || !iequalsAscii(sel.substr(sel.size() - pseudo.size()), pseudo)) continue;
+          const std::string_view base = trimCssWhitespace(sel.substr(0, sel.size() - pseudo.size()));
+          if (base.empty() || base.size() + 1 > MAX_SELECTOR_LENGTH ||
+              base.find_first_of(" \t\n\r\f") != std::string_view::npos) {
+            return;
+          }
+          firstLetterKey[0] = FIRST_LETTER_PREFIX;
+          memcpy(firstLetterKey.data() + 1, base.data(), base.size());
+          sel = std::string_view(firstLetterKey.data(), base.size() + 1);
+          break;
         }
 
         constexpr std::string_view kUnsupportedSelectorChars = "+>[:#~*";
@@ -944,6 +1225,35 @@ CssStyle CssParser::resolveStyle(std::string_view tagName, std::string_view clas
   return result;
 }
 
+CssStyle CssParser::resolveFirstLetterStyle(const std::string_view tagName, const std::string_view classAttr) const {
+  CssStyle result;
+  if (ESP.getFreeHeap() < MIN_FREE_HEAP_FOR_CSS) return result;
+  std::array<char, MAX_SELECTOR_LENGTH + 1> selector{};
+  selector[0] = FIRST_LETTER_PREFIX;
+  CssStyle matched;
+  const auto lookup = [&](const size_t len) {
+    if (lookupRule(std::string_view(selector.data(), len), matched)) result.applyOver(matched);
+  };
+  if (tagName.size() + 1 <= MAX_SELECTOR_LENGTH) {
+    memcpy(selector.data() + 1, tagName.data(), tagName.size());
+    lookup(tagName.size() + 1);
+  }
+  forEachDelimitedToken(classAttr, isCssWhitespace, [&](const std::string_view cls) {
+    if (cls.size() + 2 > MAX_SELECTOR_LENGTH) return;
+    selector[1] = '.';
+    memcpy(selector.data() + 2, cls.data(), cls.size());
+    lookup(cls.size() + 2);
+  });
+  forEachDelimitedToken(classAttr, isCssWhitespace, [&](const std::string_view cls) {
+    if (tagName.size() + cls.size() + 2 > MAX_SELECTOR_LENGTH) return;
+    memcpy(selector.data() + 1, tagName.data(), tagName.size());
+    selector[tagName.size() + 1] = '.';
+    memcpy(selector.data() + tagName.size() + 2, cls.data(), cls.size());
+    lookup(tagName.size() + cls.size() + 2);
+  });
+  return result;
+}
+
 // Inline style parsing (static - doesn't need rule database)
 
 CssStyle CssParser::parseInlineStyle(std::string_view styleValue) { return parseDeclarations(styleValue); }
@@ -992,7 +1302,14 @@ bool CssParser::writeCssStylePayload(FsFile& file, const CssStyle& style) {
       !writeByte(static_cast<uint8_t>(style.verticalAlign)) || !writeByte(static_cast<uint8_t>(style.direction)) ||
       !writeByte(static_cast<uint8_t>(style.pageBreakBefore ? 1 : 0)) ||
       !writeByte(static_cast<uint8_t>(style.pageBreakAfter ? 1 : 0)) ||
-      !writeByte(static_cast<uint8_t>(style.listStyleType))) {
+      !writeByte(static_cast<uint8_t>(style.listStyleType)) || !writeLength(style.fontSize)) {
+    return false;
+  }
+  for (const CssBorderSide* side : {&style.borderTop, &style.borderRight, &style.borderBottom, &style.borderLeft}) {
+    if (!writeByte(side->width) || !writeByte(static_cast<uint8_t>(side->style))) return false;
+  }
+  if (!writeByte(static_cast<uint8_t>(style.borderWidthsDefined | (style.borderStylesDefined << 4))) ||
+      !writeByte(style.shaded ? 1 : 0) || !writeByte(style.floatLeft ? 1 : 0) || !writeByte(style.initialLetter)) {
     return false;
   }
 
@@ -1020,6 +1337,14 @@ bool CssParser::writeCssStylePayload(FsFile& file, const CssStyle& style) {
   if (style.defined.pageBreakBefore) definedBits |= 1 << 20;
   if (style.defined.pageBreakAfter) definedBits |= 1 << 21;
   if (style.defined.fontVariantCaps) definedBits |= 1 << 22;
+  if (style.defined.fontSize) definedBits |= 1 << 23;
+  if (style.defined.borderTop) definedBits |= 1 << 24;
+  if (style.defined.borderRight) definedBits |= 1 << 25;
+  if (style.defined.borderBottom) definedBits |= 1 << 26;
+  if (style.defined.borderLeft) definedBits |= 1 << 27;
+  if (style.defined.shaded) definedBits |= 1 << 28;
+  if (style.defined.floatLeft) definedBits |= 1 << 29;
+  if (style.defined.initialLetter) definedBits |= 1 << 30;
   return writeBytes(&definedBits, sizeof(definedBits));
 }
 
@@ -1071,6 +1396,21 @@ bool CssParser::readCssStylePayload(FsFile& file, CssStyle& style) {
     return false;
   }
   style.listStyleType = static_cast<CssListStyleType>(listStyleTypeVal);
+  if (!readLength(style.fontSize)) return false;
+  for (CssBorderSide* side : {&style.borderTop, &style.borderRight, &style.borderBottom, &style.borderLeft}) {
+    uint8_t borderStyle = 0;
+    if (file.read(&side->width, 1) != 1 || file.read(&borderStyle, 1) != 1) return false;
+    if (borderStyle > static_cast<uint8_t>(CssBorderStyle::Dashed)) return false;
+    side->style = static_cast<CssBorderStyle>(borderStyle);
+  }
+  uint8_t extras[4] = {};
+  if (file.read(extras, sizeof(extras)) != sizeof(extras)) return false;
+  if (extras[1] > 1 || extras[2] > 1 || extras[3] > MAX_INITIAL_LETTER) return false;
+  style.borderWidthsDefined = extras[0] & 0x0f;
+  style.borderStylesDefined = extras[0] >> 4;
+  style.shaded = extras[1] != 0;
+  style.floatLeft = extras[2] != 0;
+  style.initialLetter = extras[3];
 
   uint32_t definedBits = 0;
   if (file.read(&definedBits, sizeof(definedBits)) != sizeof(definedBits)) return false;
@@ -1097,6 +1437,14 @@ bool CssParser::readCssStylePayload(FsFile& file, CssStyle& style) {
   style.defined.pageBreakBefore = (definedBits & 1 << 20) != 0;
   style.defined.pageBreakAfter = (definedBits & 1 << 21) != 0;
   style.defined.fontVariantCaps = (definedBits & 1 << 22) != 0;
+  style.defined.fontSize = (definedBits & 1 << 23) != 0;
+  style.defined.borderTop = (definedBits & 1 << 24) != 0;
+  style.defined.borderRight = (definedBits & 1 << 25) != 0;
+  style.defined.borderBottom = (definedBits & 1 << 26) != 0;
+  style.defined.borderLeft = (definedBits & 1 << 27) != 0;
+  style.defined.shaded = (definedBits & 1 << 28) != 0;
+  style.defined.floatLeft = (definedBits & 1 << 29) != 0;
+  style.defined.initialLetter = (definedBits & 1 << 30) != 0;
   return true;
 }
 

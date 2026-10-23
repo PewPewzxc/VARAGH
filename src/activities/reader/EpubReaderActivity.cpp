@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <BidiUtils.h>
+#include <BlePageTurner.h>
 #include <Epub/Page.h>
 #include <Epub/PageCountEstimator.h>
 #include <Epub/blocks/TextBlock.h>
@@ -2500,6 +2501,7 @@ void EpubReaderActivity::onEnter() {
 
 void EpubReaderActivity::onExit() {
   OnlineWifi::readerClosed();
+  blepager::afterPagePaint();  // a radio still stopped for this book's build may start again
   sdFontSystem.setSettingsPersistenceCallback(nullptr, nullptr);
   // Drop the scalable-family catalog retained during reading. The active font
   // and its PSRAM face lifetime remain managed by SdCardFontSystem.
@@ -2887,6 +2889,13 @@ bool EpubReaderActivity::transientFeedbackDismissed(const unsigned long showTime
 
 void EpubReaderActivity::loop() {
   OnlineWifi::tick();
+  // The page is on screen and no chapter build runs: a radio stopped for the build may start again.
+  {
+    RenderLock lock(*this, RenderLock::Mode::Try);
+    if (lock.ownsLock() && !(section && section->isBuilding())) blepager::afterPagePaint();
+  }
+  // The remote linked, or failed to, after the status bar showed its note: paint the page again.
+  if (static_cast<uint8_t>(bleturner::linkNote()) != shownLinkNote.load()) requestUpdate();
   syncStatsTrackingState();
   bool rawTouchInput = false;
 #if CROSSINK_APP_CAP_TOUCH
@@ -3011,7 +3020,8 @@ void EpubReaderActivity::loop() {
     if (lock.ownsLock() && !backgroundBuildYieldForInput.load(std::memory_order_relaxed) && sectionBuildWantsTick() &&
         (section->isPartial() || section->activeBuildHasCaughtReadablePages())) {
       releaseGrayscaleStripScratch();
-      if (backgroundSectionBuildHasHeap()) {
+      // The look-ahead never builds next to the Bluetooth radio.
+      if (backgroundSectionBuildHasHeap() && !blepager::holdsHeap()) {
         if (!section->buildSomeMore(BACKGROUND_BUILD_PAGES_PER_TICK)) {
           LOG_ERR("ERS", "Background section build failed");
           if (section->lastBuildLayoutAbortedForLowMemory() && section->pageCount > 0) {
@@ -6167,6 +6177,9 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn, const char* source) {
 
 // TODO: Failure handling
 void EpubReaderActivity::render(RenderLock&& lock) {
+  // A Bluetooth radio start in flight takes ~50 KB while the stack comes up: the page waits for it
+  // rather than take the heap beside it (CrossPoint measured an abort on the X3 otherwise).
+  bleturner::settleStart();
   const unsigned long renderStartedMs = millis();
 #ifndef SIMULATOR
   const uint32_t panelStartedUs = HalDisplay::panelTimeUs();
@@ -7883,24 +7896,25 @@ void EpubReaderActivity::drawClippingHighlights(const Page& page, const int font
     }
 
     const auto wordIndex = static_cast<uint16_t>(i);
+    const int lineFontId = block.fontIdOr(renderer, fontId);
     const char* wordText = block.wordText(wordIndex);
     const bool hasEmSpace = hasEmSpacePrefix(wordText);
     const char* visibleText = wordText + (hasEmSpace ? 3 : 0);
     const auto textStyle = static_cast<EpdFontFamily::Style>(block.wordStyle(wordIndex) & ~EpdFontFamily::UNDERLINE);
-    const int skipX = hasEmSpace ? renderer.getTextAdvanceX(fontId, "\xe2\x80\x83", textStyle) : 0;
-    const PageWordGeometry geometry = pageWordGeometry(renderer, fontId, line, block, wordIndex);
+    const int skipX = hasEmSpace ? renderer.getTextAdvanceX(lineFontId, "\xe2\x80\x83", textStyle) : 0;
+    const PageWordGeometry geometry = pageWordGeometry(renderer, lineFontId, line, block, wordIndex);
     const int wordX = orientedMarginLeft + line.xPos + geometry.xOffset + skipX;
     const int wordY = orientedMarginTop + line.yPos;
     int wordW = geometry.width - skipX;
-    const int wordH = line.lineHeight > 0 ? line.lineHeight : renderer.getLineHeight(fontId);
+    const int wordH = line.lineHeight > 0 ? line.lineHeight : renderer.getLineHeight(lineFontId);
     if (wordIndex + 1 < block.wordCount()) {
       const uint16_t nextIndex = static_cast<uint16_t>(wordIndex + 1);
       const char* nextWordText = block.wordText(nextIndex);
       const bool nextHasEmSpace = hasEmSpacePrefix(nextWordText);
       const auto nextTextStyle =
           static_cast<EpdFontFamily::Style>(block.wordStyle(nextIndex) & ~EpdFontFamily::UNDERLINE);
-      const int nextSkipX = nextHasEmSpace ? renderer.getTextAdvanceX(fontId, "\xe2\x80\x83", nextTextStyle) : 0;
-      const PageWordGeometry nextGeometry = pageWordGeometry(renderer, fontId, line, block, nextIndex);
+      const int nextSkipX = nextHasEmSpace ? renderer.getTextAdvanceX(lineFontId, "\xe2\x80\x83", nextTextStyle) : 0;
+      const PageWordGeometry nextGeometry = pageWordGeometry(renderer, lineFontId, line, block, nextIndex);
       const int nextWordX = orientedMarginLeft + line.xPos + nextGeometry.xOffset + nextSkipX;
       if (isHighlightedWord(pageWordIndex + 1, line) && nextWordX > wordX + wordW) {
         wordW = nextWordX - wordX;
@@ -7938,9 +7952,9 @@ void EpubReaderActivity::drawClippingHighlights(const Page& page, const int font
               wordText, wordLength, focusBoundary, fullWordX, block.focusRunOffset(wordIndex), textStyle,
               baseDir == BidiUtils::BidiBaseDir::RTL,
               [&](const int runX, const char* runText, const EpdFontFamily::Style runStyle) {
-                renderer.drawText(fontId, runX, wordY, runText, true, runStyle, baseDir);
+                renderer.drawText(lineFontId, runX, wordY, runText, true, runStyle, baseDir);
               })) {
-        renderer.drawText(fontId, wordX, wordY, visibleText, true, textStyle);
+        renderer.drawText(lineFontId, wordX, wordY, visibleText, true, textStyle);
       }
       if (line.clipWidth > 0 && line.clipHeight > 0) {
         renderer.endTextClip();
@@ -8044,6 +8058,17 @@ void EpubReaderActivity::renderStatusBar() const {
   }
   content.bookTitle = automaticPageTurnActive ? autoTurnLabel : bookTitle;
   content.chapterTitle = chapterTitle.c_str();
+  // Bluetooth page turner: its note takes the title until the remote links (or failed to).
+  const auto linkNote = bleturner::linkNote();
+  shownLinkNote.store(static_cast<uint8_t>(linkNote));
+  if (linkNote != bleturner::LinkNote::None && !automaticPageTurnActive) {
+    const char* note = linkNote == bleturner::LinkNote::Connecting  ? tr(STR_BT_CONNECTING)
+                       : linkNote == bleturner::LinkNote::Connected ? tr(STR_BT_CONNECTED)
+                       : linkNote == bleturner::LinkNote::LowMemory ? tr(STR_BT_LOW_MEMORY)
+                                                                    : tr(STR_BT_FAILED);
+    content.bookTitle = note;
+    content.chapterTitle = note;
+  }
   content.timeLeftBook = !activeFootnotePreview && uses(ReaderStatusBarItem::TimeLeftBook) &&
                                  formatTimeLeftLabel(bookTime, sizeof(bookTime), true)
                              ? bookTime

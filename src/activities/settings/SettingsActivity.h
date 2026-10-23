@@ -39,11 +39,9 @@ enum class SettingAction {
   ControlsEdgeGestures,
   ControlsControlCenter,
   Dictionaries,
-  SystemDevice,
-  SystemFilesCache,
-  SystemReadingStats,
   SystemGlobalStats,
   Network,
+  BluetoothPageTurner,
   BackupStats,
   ResetGlobalStats,
   ClearCache,
@@ -231,7 +229,8 @@ class SettingsActivity final : public Activity {
  private:
   ButtonNavigator buttonNavigator;
 
-  int selectedCategoryIndex = 0;  // Currently selected category
+  int selectedCategoryIndex = -1;  // Open settings group; -1 = the group list
+  int groupListIndex = 0;          // Highlighted row in the group list
   int selectedSettingIndex = 0;
   int settingsCount = 0;
 
@@ -252,8 +251,8 @@ class SettingsActivity final : public Activity {
   std::vector<SettingInfo> controlsTapsGesturesSettings;
   std::vector<SettingInfo> controlsTwoFingerSwipeSettings;
   std::vector<SettingInfo> controlsEdgeGestureSettings;
-  std::vector<SettingInfo> systemSettings;
-  std::vector<SettingInfo> systemDeviceSettings;
+  std::vector<SettingInfo> generalSettings;
+  std::vector<SettingInfo> networkSettings;
   std::vector<SettingInfo> systemFilesCacheSettings;
   std::vector<SettingInfo> fileBrowserSettings;
   std::vector<SettingInfo> systemReadingStatsSettings;
@@ -279,9 +278,6 @@ class SettingsActivity final : public Activity {
 
   OptionPopup optionPopup;
 
-  static constexpr int categoryCount = 4;
-  static const StrId categoryNames[categoryCount];
-
   // FreeInkApp hosts the tab bar + settings list (themed, touch-routed); the
   // header stays on GUI.drawHeader for the battery, OptionPopup stays legacy.
   using UiApp = freeink::ui::FreeInkApp<24, 4>;
@@ -295,12 +291,15 @@ class SettingsActivity final : public Activity {
 
   static void settingsScreen(UiApp::ScreenType& screen, void* user);
   static void onRowEvent(const freeink::ui::ActionEvent& event, void* user);
-  static void onTabEvent(const freeink::ui::ActionEvent& event, void* user);
+  static void onGroupEvent(const freeink::ui::ActionEvent& event, void* user);
   static std::string settingValueText(const SettingInfo& setting);
   void buildSettingsScreen(UiApp::ScreenType& screen);
   void applyUiSettingChange(uint8_t CrossPointSettings::* valuePtr);
 
   void enterCategory(int categoryIndex);
+  void openGroup(int group);
+  void goBack();
+  void buildGroupList(UiApp::ScreenType& screen);
   void setCurrentSettingsForCategory();
   StrId activeSubmenuTitleId() const;
   void openSubmenu(SettingAction action);
@@ -326,6 +325,7 @@ class SettingsActivity final : public Activity {
   void closeRootSettings();
   void finishToParent();
   bool isFileBrowserView() const { return view == View::FileBrowser; }
+  bool inGroupList() const { return !isFileBrowserView() && selectedCategoryIndex < 0; }
 
  public:
   explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool dismissOnUpSwipe = false,
@@ -334,7 +334,7 @@ class SettingsActivity final : public Activity {
   bool handleHomeGesture() override;
 #ifdef SIMULATOR
   int simulatorCategoryIndex() const { return selectedCategoryIndex; }
-  int simulatorSelectedIndex() const { return selectedSettingIndex; }
+  int simulatorSelectedIndex() const { return inGroupList() ? groupListIndex : selectedSettingIndex; }
 #endif
   void onEnter() override;
   void onExit() override;

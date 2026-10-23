@@ -111,6 +111,9 @@ class ActivityManager {
   // Whether to trigger a render after the current loop()
   // This variable must only be set by the main loop, to avoid race conditions
   std::atomic<bool> requestedUpdate{false};
+  // Bluetooth page turner: a new screen bumps screenVisit; the render task records the visit it painted.
+  std::atomic<uint32_t> screenVisit{1};
+  std::atomic<uint32_t> paintedVisit{0};
   // A popped full-screen child leaves its pixels in the framebuffer until the
   // restored activity renders. Partial-screen overlays must not preserve that
   // stale child as their backdrop.
@@ -180,6 +183,12 @@ class ActivityManager {
   bool blocksGlobalInput() const;
   bool isHomeActivity() const;
   bool isReaderActivity() const;
+  // Bluetooth page turner (BlePageTurnerGlue): the screen in front, once its first frame is up.
+  bool isForegroundReaderShown() const;
+  bool isForegroundHomeShown() const;
+  bool isForegroundBleSettings() const;
+  uint32_t visit() const { return screenVisit.load(); }
+  bool remoteChapter(bool forward);
   bool openReaderSettingsForTouchscreenEscapeHatch();
   bool handleHomeButtonBackOrHome();
   bool openReaderMenuFromShortcut();

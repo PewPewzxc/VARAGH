@@ -18,6 +18,7 @@
 
 #include "InlineImageToken.h"
 #include "PersianFocus.h"
+#include "hyphenation/HyphenationCommon.h"
 #include "hyphenation/Hyphenator.h"
 
 constexpr int MAX_COST = std::numeric_limits<int>::max();
@@ -226,6 +227,40 @@ std::vector<size_t> cjkCharacterBreakByteOffsets(const std::string& text) {
     allowedOffsets.push_back(codepoints[i].endOffset);
   }
   return allowedOffsets;
+}
+
+// A visible hyphen or dash lets the line break right after it (CrossPoint #3883). Soft hyphens
+// only show when their own break is taken, and U+2011 exists to forbid a break.
+bool allowsBreakAfterHyphen(const uint32_t cp) { return isExplicitHyphen(cp) && !isSoftHyphen(cp) && cp != 0x2011; }
+
+bool endsWithBreakableHyphen(const std::string& token) {
+  return !token.empty() && allowsBreakAfterHyphen(lastCodepoint(token));
+}
+
+// Byte offsets right after each hyphen/dash run that has text on both sides; a run such as
+// "--" stays together.
+std::vector<size_t> hyphenBreakByteOffsets(const std::string& text, const bool hasTextBefore) {
+  std::vector<size_t> offsets;
+  const auto* const start = reinterpret_cast<const unsigned char*>(text.c_str());
+  const auto* const end = start + text.size();
+  const auto* ptr = start;
+  bool hasLeadingContent = hasTextBefore;
+  while (ptr < end) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (allowsBreakAfterHyphen(cp)) {
+      while (ptr < end) {
+        const auto* const runEnd = ptr;
+        if (!allowsBreakAfterHyphen(utf8NextCodepoint(&ptr))) {
+          ptr = runEnd;
+          break;
+        }
+      }
+      if (hasLeadingContent && ptr < end) offsets.push_back(static_cast<size_t>(ptr - start));
+    }
+    hasLeadingContent = true;
+  }
+  return offsets;
 }
 
 int computeJustifyExtra(const int spareSpace, const size_t gapCount) {
@@ -462,6 +497,8 @@ size_t gapSlotsBeforeToken(const std::string& leftWord, const std::string& right
     return guideDotGapSlots(rightWord);
   }
   if (noSpaceBefore) {
+    // Justification never opens a gap after a hyphen/dash break opportunity.
+    if (endsWithBreakableHyphen(leftWord)) return 0;
     return isClosingPunctuationForJustify(firstCodepoint(rightWord)) ? 0 : 1;
   }
   if (continues) {
@@ -689,7 +726,8 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
   // whitespace separated the two words, that space is content and must be rendered: Korean
   // is a space-delimited script written in Hangul, which utf8IsCjkBreakable() covers.
   if (attachToPrevious && !words.empty() &&
-      hasCjkBreakOpportunityBetween(lastCodepoint(words.back()), firstCodepoint(word))) {
+      (endsWithBreakableHyphen(words.back()) ||
+       hasCjkBreakOpportunityBetween(lastCodepoint(words.back()), firstCodepoint(word)))) {
     effectiveAttachToPrevious = false;
     effectiveNoSpaceBefore = true;
   }
@@ -742,6 +780,29 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
 
   // Already-bold text should stay fully bold; focus splitting would make its suffix regular later.
   if (!this->focusReadingEnabled || (baseStyle & EpdFontFamily::BOLD) != 0) {
+    // "foo—bar" becomes "foo—" + "bar": glued when they share a line, breakable between lines.
+    if (const auto breakOffsets = hyphenBreakByteOffsets(word, attachToPrevious && !words.empty());
+        !breakOffsets.empty()) {
+      reserveTokenCapacity(breakOffsets.size() + 1);
+      size_t tokenStart = 0;
+      uint32_t tokenVisibleOffset = visibleTextOffset;
+      uint32_t tokenReferenceOffset = referenceTextOffset;
+      for (size_t k = 0; k <= breakOffsets.size(); ++k) {
+        const size_t tokenEnd = k < breakOffsets.size() ? breakOffsets[k] : word.size();
+        const std::string_view token(word.data() + tokenStart, tokenEnd - tokenStart);
+        const bool first = k == 0;
+        pushToken(std::string(token), first ? effectiveAttachToPrevious : false, first ? effectiveNoSpaceBefore : true,
+                  baseStyle, 0, tokenVisibleOffset, tokenReferenceOffset, first ? leadingPadding : 0);
+        const uint32_t tokenCodepoints = countCodepoints(token);
+        tokenVisibleOffset += tokenCodepoints;
+        tokenReferenceOffset += tokenCodepoints;
+        tokenStart = tokenEnd;
+      }
+      if (wordStartsRtl) {
+        hasRtlWord = true;
+      }
+      return;
+    }
     pushToken(std::move(word), effectiveAttachToPrevious, effectiveNoSpaceBefore, baseStyle, 0, visibleTextOffset,
               referenceTextOffset, leadingPadding);
     if (wordStartsRtl) {
@@ -894,7 +955,7 @@ int ParsedText::resolveFirstLineIndent(const bool isFirstLine, const GfxRenderer
 bool ParsedText::layoutAndExtractLines(
     const GfxRenderer& renderer, const int fontId, const uint16_t viewportWidth,
     const std::function<void(std::shared_ptr<TextBlock>, uint32_t, uint32_t)>& processLine,
-    const bool includeLastLine) {
+    const bool includeLastLine, const size_t maxLines) {
   if (words.empty()) {
     return true;
   }
@@ -970,7 +1031,9 @@ bool ParsedText::layoutAndExtractLines(
   if (!breaksOk || lineBreakIndices.empty()) {
     return false;
   }
-  const size_t lineCount = includeLastLine ? lineBreakIndices.size() : lineBreakIndices.size() - 1;
+  // maxLines: a drop cap takes only the lines beside it; the rest are laid out at full width.
+  const size_t lineCount =
+      std::min(maxLines, includeLastLine ? lineBreakIndices.size() : lineBreakIndices.size() - 1);
 
   for (size_t i = 0; i < lineCount; ++i) {
     if (!extractLine(layoutArena, i, pageWidth, wordWidths, wordContinues, wordNoSpaceBefore, naturalGaps, gapSlots,
@@ -1002,7 +1065,7 @@ bool ParsedText::layoutAndExtractLines(
   if (lineCount > 0) {
     // A partial flush leaves the remaining words in this same logical
     // paragraph. Mark them so the next pass starts at the normal left edge.
-    isContinuation_ = !includeLastLine;
+    isContinuation_ = !includeLastLine || lineCount < lineBreakIndices.size();
   }
   return true;
 }
