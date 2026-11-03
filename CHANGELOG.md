@@ -16,6 +16,15 @@ once, the first time each is opened.
   and about 2.5–3 s instead of 3–5.5 s on the X3 / X4.
 - **Sudoku answer check:** when the grid is full but not solved, a panel says how many answers
   are wrong, with Show wrong, Clear wrong and Keep looking.
+- **More Sudoku:** two harder levels, **Expert** and **Master**, beside Easy, Medium and Hard,
+  and a **Daily** puzzle (one new puzzle each day, with the days in a row you solved it).
+  **Explaining hints** say why a number goes in a cell ("Only number that fits", "Last empty
+  cell", "Only place for 6") instead of only writing it, and offer Show answer when no simple
+  step is left.
+- **Sudoku settings** (Apps → Manage → Sudoku → Settings), a switch each: Explaining hints and
+  Daily puzzle (on), Live mistake check, Repeated numbers, Number painting (pick a number, then
+  tap cells), Fill last cell, 3-mistake limit, Restart button and More statistics (averages and
+  daily runs), all off until you turn them on.
 - **Clock stays right:** the time is fetched again on every Wi-Fi connect (at most hourly), not
   only the first time. New **Automatic Time Zone** (on by default) sets the GMT offset, summer
   time included, from where the network is; turn it off to set the offset by hand.
@@ -48,6 +57,8 @@ once, the first time each is opened.
   dot screen so the text on it stays clear.
 - **Line breaks after hyphens and dashes** ("word—word" can break after the dash), also
   with Hyphenation off.
+- X3 / X4: choosing Bitter in Font Options before it is on the card says where to get it
+  (Font Options → Download Fonts) instead of changing nothing without a word.
 
 ### Fixed
 
@@ -165,9 +176,10 @@ The readers without a touch screen now get Lion too:
   first, from any folder.
 - **Go** in Apps: 9×9, 13×13 or 19×19, against the computer (Easy, Medium) or
   two players. Tap a point twice to place a stone (the first tap shows where),
-  or move with the buttons. Undo, Pass, Hint and a score at the end.
-- **Tic Tac Toe** in Apps: classic or infinite, against the computer or two
-  players.
+  or move with the buttons. Undo, Pass, Hint and a score at the end: after two
+  passes, tap the dead stones, then Count (or Play on).
+- **Tic Tac Toe** in Apps: classic or infinite (three marks each; the oldest,
+  drawn faded, leaves next), against the computer or two players.
 - **The Lion** on the boot screen and "1.3.0 Lion" in Settings.
 
 ### Changed
@@ -180,7 +192,9 @@ The readers without a touch screen now get Lion too:
   right 90°" and "Turned left 90°" (were Landscape CW / CCW) always turn
   exactly 90° that way, and the front buttons and touch follow, so the forward
   button is still forward. The separate "orientation aware" settings are gone.
-  The sleep screen is always drawn upright.
+  "Portrait 180°" is now called "Upside down", and a side button can be set to
+  Turn Left 90°, Turn Right 90° or Turn 180°. The sleep screen is always drawn
+  upright.
 - **Battery icon:** a new design in every theme, with the percentage beside
   it, a bolt while charging and "!" at 15 % or less.
 - **Hold buttons in apps** (New game, Give up) show "Hold to …" for two

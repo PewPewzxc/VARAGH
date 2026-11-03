@@ -115,7 +115,7 @@ the following, release by release since 1.0.0.
 
 ### Apps and clock
 
-- **Games:** Wordle, Sudoku with an answer check, Chess, Checkers, Go and
+- **Games:** Wordle, Sudoku with five levels, a daily puzzle and explaining hints, Chess, Checkers, Go and
   Tic Tac Toe; apps stay open across sleep; hide the ones you do not use.
 - **Clock & Calendar** with the Persian date, also as a sleep screen.
 - **A clock that stays right:** set on every Wi-Fi connect, Automatic Time Zone,
@@ -167,7 +167,9 @@ needed. Open your own books in it, try the dictionary and the apps, then decide.
   lightly shaded boxes, and line breaks after dashes.
 - **Bluetooth page turner:** pair a remote and map its buttons.
 - **Faster picture pages:** the next page's pictures are prepared while you read.
-- **Sudoku answer check**, and a **clock that stays right**: it is set on every
+- **Sudoku:** an answer check, Expert and Master levels, a daily puzzle,
+  explaining hints and nine switches in its settings.
+- A **clock that stays right**: it is set on every
   Wi-Fi connect, with an Automatic Time Zone and an optional Live Clock.
 
 <table>
@@ -191,7 +193,7 @@ See the [changelog](CHANGELOG.md) for everything.
 
 | Version | Date | What it added |
 |---|---|---|
-| **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, clock sync and Live Clock |
+| **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, levels, daily puzzle and explaining hints, clock sync and Live Clock |
 | **1.3.0 "Lion"** | 2026-10-20 | Control Center and night light, dictionaries per language with online sources, Persian menus and keyboard, went → go lookups, resizing a selection, rotation, one icon style, Go and Tic Tac Toe; the X4 Classic and X3 join with button apps and menu-language downloads |
 | **1.2.1 "Tiger"** | 2026-10-13 | Tap to Look Up, Long Press choices with Ask, book ratings, apps that stay open across sleep, a stronger chess computer, the new logo |
 | **1.2.0 "Tiger"** | 2026-10-07 | Apps on Home (Wordle, Sudoku, Chess, Checkers, Clock & Calendar), online Wiktionary dictionary, faster Home, Clock & Calendar sleep screen |
@@ -343,9 +345,13 @@ Every change, version by version: **[CHANGELOG.md](CHANGELOG.md)**.
 
 ### Readers without touch
 
-<p align="center">
-  <img src="docs/images/varagh/v1.3.0/all-devices.png" width="420" alt="VARAGH 1.3.0 on the X4 Pro (Control Center), X4 Classic (Apps) and X3 (Look Up, Highlight, Add to)">
-</p>
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/control-center.png" width="230" alt="X4 Pro: the Control Center"><br><b>X4 Pro</b>: Control Center</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/x4-classic-apps.png" width="230" alt="X4 Classic: Apps with a frame on Tic Tac Toe"><br><b>X4 Classic</b>: apps with buttons</td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/x3-button-selection.png" width="230" alt="X3: three words selected with the buttons and Look Up, Highlight, Add to"><br><b>X3</b>: Look Up / Highlight / Add to</td>
+  </tr>
+</table>
 
 On the X4 Classic and X3 the apps are played with a frame that the direction
 buttons move and Confirm taps. In Look Up Word, hold Confirm, add words with

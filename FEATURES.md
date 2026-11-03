@@ -10,10 +10,11 @@ VARAGH runs on the **Xteink X4 Pro**, the **X4 Classic** and the **X3 / X4**. Th
 X4 Pro has a touch screen and a front light; the X4 Classic and X3 / X4 do every
 feature with the buttons (see [section 21](#21-readers-without-touch)).
 
-The photos (`.jpg`) on this page were taken on an X4 Pro running VARAGH 1.0.0,
-with the front light on. Screens marked 1.2.x, 1.3.0 or 1.3.1 were captured from
-that firmware in the [Reader Simulator](https://pewpewzxc.github.io/reader-simulator/).
-The picture comparisons in section 7 are computed, not photographed.
+Every screen on this page shows VARAGH 1.3.1, captured from the release firmware
+in the [Reader Simulator](https://pewpewzxc.github.io/reader-simulator/) (X4 Pro,
+and in section 21 the X4 Classic and X3). Only the picture comparisons in section 7
+show older firmware on purpose: they compare 1.0.1 with 1.1.0, and are computed,
+not photographed.
 
 **Nothing to set up after installing (1.3.1).** English, German, Persian and
 pronunciation letters display with the built-in fonts on every reader. The
@@ -55,7 +56,7 @@ NotoVazir font from the SD-card zip is optional (see [section 1](#notovazir-font
   <tr>
     <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/persian-book.png" width="250" alt="The first page of the Shahnameh in Persian"><br><sub>The Shahnameh in the built-in font (1.3.1).</sub></td>
     <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/mixed-languages.png" width="250" alt="One page with English, a Persian line, German words, a table and pronunciations"><br><sub>English, Persian, German and pronunciations on one page (1.3.1).</sub></td>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/persian-book.jpg" width="250" alt="Persian poetry displayed in NotoVazir"><br><sub>Khayyam's Rubaiyat in NotoVazir (1.0.0). Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/hold-persian.png" width="250" alt="A Persian word held in the Shahnameh, with handles and the Look Up, Highlight, Add to bubble"><br><sub>Holding a Persian word: handles and the Ask bubble.</sub></td>
   </tr>
 </table>
 
@@ -152,8 +153,8 @@ language you read has its own dictionary and online sources: see
 
 <table>
   <tr>
-    <td align="center" width="50%" valign="top"><img src="docs/images/varagh/german-dictionary.jpg" width="300" alt="Dictionary entry for anfangen with pronunciation"><br><sub><b>anfangen</b>: German → English entry with its pronunciation and related forms. Front light on.</sub></td>
-    <td align="center" width="50%" valign="top"><img src="docs/images/varagh/dictionary-add-to-buttons.jpg" width="300" alt="Dictionary entry for schließlich with Highlight and Add to buttons"><br><sub><b>schließlich</b>: pronunciation letters such as ʃ and ç display correctly; <b>Highlight</b> and <b>Add to…</b> at the bottom. Front light on.</sub></td>
+    <td align="center" width="50%" valign="top"><img src="docs/images/varagh/v1.3.1/german-lookup-ipa.png" width="300" alt="Dictionary entry for Haus with its pronunciation"><br><sub><b>Häuser</b> opens <b>Haus</b>: the German → English entry with its pronunciation [haʊ̯s], synonyms and related words.</sub></td>
+    <td align="center" width="50%" valign="top"><img src="docs/images/varagh/v1.3.1/german-dictionary.png" width="300" alt="Dictionary entry for nehmen with Highlight and Add to buttons"><br><sub>A tap on <b>nahm</b> opens <b>nehmen</b>; <b>Switch Dictionary</b>, <b>Highlight</b> and <b>Add to…</b> at the bottom.</sub></td>
   </tr>
 </table>
 
@@ -208,8 +209,7 @@ no font has a symbol does VARAGH draw the nearest look-alike (arrows, bullets,
 ≈, ≠, ≤, ✓ and others) or leave it out. It never draws a box.
 
 <p>
-  <img src="docs/images/varagh/v1.3.1/german-lookup-ipa.png" width="230" alt="German dictionary entry for Haus with its pronunciation over the book page">
-  <img src="docs/images/varagh/v1.3.0/word-forms.png" width="230" alt="Looking up went opens go">
+  <img src="docs/images/varagh/v1.3.1/word-forms.png" width="230" alt="Looking up angefangen opens anfangen">
 </p>
 
 ---
@@ -218,9 +218,9 @@ no font has a symbol does VARAGH draw the nearest look-alike (arrows, bullets,
 
 <table>
   <tr>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/hold-to-select.jpg" width="250" alt="A finger holding a word in a book"><br><sub>Hold a word until it is selected. Front light on.</sub></td>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/selection-handles.jpg" width="250" alt="Several words selected with handles at both ends"><br><sub>Slide to select more words; handles mark both ends. Front light on.</sub></td>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/hold-to-select-setting.jpg" width="250" alt="Hold to Select setting with Fast, Normal, Slow and Very slow"><br><sub>Settings → Reader → <b>Hold to Select</b>. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/long-press-ask.png" width="250" alt="The word Häuser selected by holding it, with the Ask bubble"><br><sub>Hold a word until it is selected.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/selection-handles.png" width="250" alt="Several words selected with handles at both ends"><br><sub>Slide (or press the buttons) to select more words; handles mark both ends.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/hold-to-select-setting.png" width="250" alt="Hold to Select setting with Fast, Normal, Slow and Very slow"><br><sub>Settings → Reader → <b>Hold to Select</b>.</sub></td>
   </tr>
 </table>
 
@@ -260,7 +260,7 @@ example, set Long Press on a Word to **Highlight** and Tap to Look Up to
 **On**: a tap gives the meaning, a hold marks the passage.
 
 <p>
-  <img src="docs/images/varagh/v1.2.1/reader-settings.png" width="230" alt="Settings, Reader, with Hold to Select, Long Press on a Word and Tap to Look Up one under the other">
+  <img src="docs/images/varagh/v1.3.1/reader-settings.png" width="230" alt="Settings, Reader, with Hold to Select, Long Press on a Word and Tap to Look Up one under the other">
 </p>
 
 All three are shown only on readers with a touchscreen (the X4 Classic and
@@ -306,8 +306,7 @@ your finger, and you can change it:
   back to take one off. One press is always one word as it looks on the page.
 
 <p>
-  <img src="docs/images/varagh/v1.3.0/ask-resize.png" width="230" alt="Three words selected with handles and the Ask bubble">
-  <img src="docs/images/varagh/v1.3.1/selection-handles.png" width="230" alt="A selection with handles at both ends (1.3.1)">
+  <img src="docs/images/varagh/v1.3.1/selection-handles.png" width="230" alt="Häuser am Ufer selected after two presses, with handles and the Ask bubble">
 </p>
 
 ### Long Press on a Word (1.2.1)
@@ -326,9 +325,9 @@ selection away. A word sent to **Flashcards** from the bubble (or with Add to…
 is looked up first, so the card gets its meaning.
 
 <p>
-  <img src="docs/images/varagh/v1.2.1/long-press-setting.png" width="230" alt="Settings, Reader: the four choices of Long Press on a Word">
-  <img src="docs/images/varagh/v1.2.1/long-press-ask.png" width="230" alt="A selected word with the bubble Look Up, Highlight, Add to">
-  <img src="docs/images/varagh/v1.2.1/flashcard-added.png" width="230" alt="The dictionary popup saying Added to Flashcards">
+  <img src="docs/images/varagh/v1.3.1/long-press-setting.png" width="230" alt="Settings, Reader: the four choices of Long Press on a Word">
+  <img src="docs/images/varagh/v1.3.1/hold-persian.png" width="230" alt="A selected Persian word with the bubble Look Up, Highlight, Add to">
+  <img src="docs/images/varagh/v1.3.1/flashcard-added.png" width="230" alt="The dictionary popup saying Added to Flashcards">
 </p>
 
 ### Tap to Look Up (1.2.1)
@@ -353,7 +352,7 @@ It needs a dictionary for the book: without one, taps keep turning pages.
 Switch it off again in the same place to get tap-to-turn back.
 
 <p>
-  <img src="docs/images/varagh/v1.2.1/tap-to-look-up.png" width="230" alt="The meaning of a tapped word shown over the page">
+  <img src="docs/images/varagh/v1.3.1/tap-to-look-up.png" width="230" alt="The meaning of a tapped word shown over the page">
 </p>
 
 ---
@@ -381,8 +380,8 @@ Switch it off again in the same place to get tap-to-turn back.
 ### Add to… from the dictionary
 
 <p align="center">
-  <img src="docs/images/varagh/add-to-category.jpg" width="300" alt="Add to menu with Favorite Lines, Flashcards and New Category"><br>
-  <sub><b>Add to…</b>: pick Favorite Lines, Flashcards or one of your categories, or create a new one. Front light on.</sub>
+  <img src="docs/images/varagh/v1.3.1/add-to-category.png" width="300" alt="Add to menu with Favorite Lines, Flashcards and New Category"><br>
+  <sub><b>Add to…</b>: pick Favorite Lines, Flashcards or one of your categories, or create a new one.</sub>
 </p>
 
 The dictionary popup has two buttons below the definition: **Highlight** and
@@ -407,9 +406,9 @@ so they survive firmware updates and can be copied off the card.
 
 <table>
   <tr>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/flashcards-list.jpg" width="250" alt="Flashcards list with a Practice button"><br><sub>The Flashcards list with the <b>Practice</b> button and how many cards you know. Front light on.</sub></td>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/flashcard-front.jpg" width="250" alt="Front of a flashcard showing a German word"><br><sub>Front of a card: the word. Tap to flip. Front light on.</sub></td>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with the meaning and Again and Know it buttons"><br><sub>Back of the card: the saved meaning, then <b>Again</b> or <b>Know it</b>. Front light on.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/flashcards.png" width="250" alt="Flashcards list with a Practice button"><br><sub>The Flashcards list with the <b>Practice</b> button and how many cards you know.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/flashcard-front.png" width="250" alt="Front of a flashcard showing a German word"><br><sub>Front of a card: the word. Tap to flip.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/flashcard-back-ipa.png" width="250" alt="Back of a flashcard with the meaning, the pronunciation, and Again and Know it buttons"><br><sub>Back of the card: the saved meaning with its pronunciation, then <b>Again</b> or <b>Know it</b>.</sub></td>
   </tr>
 </table>
 
@@ -427,18 +426,13 @@ many cards you already know.
   list with any SD-card font. Earlier builds showed boxes here. From 1.3.1 the
   back of a card shows the word's pronunciation with the built-in fonts too.
 
-<p>
-  <img src="docs/images/varagh/v1.3.1/flashcards.png" width="230" alt="A flashcard deck with German words and the Practice button">
-  <img src="docs/images/varagh/v1.3.1/flashcard-back-ipa.png" width="230" alt="The back of a flashcard for Häuser with its pronunciation">
-</p>
-
 ---
 
 ## 6. Swipe to delete
 
 <p align="center">
-  <img src="docs/images/varagh/swipe-to-delete.jpg" width="300" alt="File list with a row swiped left showing a Delete button"><br>
-  <sub>A book swiped left in the File Browser, showing <b>Delete</b>. Front light on.</sub>
+  <img src="docs/images/varagh/v1.3.1/swipe-to-delete.png" width="300" alt="File list with a row swiped left showing a Delete button"><br>
+  <sub>A book swiped left in the File Browser, showing <b>Delete</b>.</sub>
 </p>
 
 Swipe a row **left** to reveal a **Delete** button, then tap Delete. Tapping
@@ -561,15 +555,14 @@ something is slow.
 ## 8. Clock: summer time, sync and Live Clock
 
 <p align="center">
-  <img src="docs/images/varagh/summer-time.jpg" width="300" alt="Summer Time setting with Off, EU (Germany) and US"><br>
-  <sub>Settings → System → Device → <b>Summer Time</b>. The VARAGH version is shown at the bottom. Front light on.</sub>
+  <img src="docs/images/varagh/v1.3.1/summer-time.png" width="300" alt="Summer Time setting with Off, EU (Germany) and US"><br>
+  <sub>Settings → General → <b>Summer Time</b>, beside Live Clock and Automatic Time Zone.</sub>
 </p>
 
-**Settings → System → Device → Summer Time**: Off, EU (Germany) or US. On
+**Settings → General → Summer Time** (up to 1.3.0: Settings → System → Device): Off, EU (Germany) or US. On
 readers with a clock, the time then changes automatically on the right dates.
 It applies to the clock, reading statistics, the dates saved with highlights,
-and file dates on the SD card. (In 1.3.1 Settings is arranged in groups, so the
-path differs: see [section 17](#17-settings-in-groups).)
+and file dates on the SD card.
 
 ### A clock that stays right (1.3.1)
 - **Synced on every Wi-Fi connect**, at most once an hour, not only the first
@@ -587,8 +580,8 @@ path differs: see [section 17](#17-settings-in-groups).)
 The built-in menu font (Inter) now includes the IPA letters (U+0250–02FF) at
 sizes 8, 10 and 12. Pronunciations in lists and menus, such as the flashcard
 list, display correctly instead of as boxes.
-You can see it in the [Flashcards list photo](#5-flashcards): the line under
-*schließlich* shows `/ʃlˈiːslɪç/`. From 1.3.1 the built-in reading fonts have
+You can see it in the [Flashcards list](#5-flashcards): the lines under
+*Fenster*, *Wasser* and *langsam* show their pronunciations. From 1.3.1 the built-in reading fonts have
 them too (see [section 1](#built-in-on-every-reader-131)).
 
 ---
@@ -597,15 +590,15 @@ them too (see [section 1](#built-in-on-every-reader-131)).
 
 - **Logo** (new in 1.2.1): an open book with a V and a turning page.
 - **Boot screen**: the VARAGH logo with "VARAGH" and "Booting", and at the bottom
-  the version with a small tiger, such as **1.2.1 Tiger**. Settings → System
-  shows **VARAGH 1.2.1 Tiger** in the same way. From 1.3.0 a lion takes its
-  place: **1.3.1 Lion**.
+  the version with its animal: a tiger up to 1.2.1 (**1.2.1 Tiger**), a lion from
+  1.3.0 (**1.3.1 Lion**). The bottom of Settings shows **VARAGH 1.3.1 Lion** in
+  the same way.
 - **Default sleep screen** (when no custom sleep image is set): the VARAGH logo
   with "VARAGH" and "Sleeping"; light lines on black in dark mode.
 
 <p>
-  <img src="docs/images/varagh/v1.2.1/boot-logo.png" width="230" alt="Boot screen with the open-book logo, VARAGH, Booting and 1.2.1 Tiger">
-  <img src="docs/images/varagh/v1.2.1/sleep-logo.png" width="230" alt="Dark sleep screen with the logo in light lines, VARAGH and Sleeping">
+  <img src="docs/images/varagh/v1.3.1/sleep-logo.png" width="230" alt="Dark sleep screen with the logo in light lines, VARAGH and Sleeping">
+  <img src="docs/images/varagh/v1.3.1/settings-groups.png" width="230" alt="Settings with VARAGH 1.3.1 Lion and the lion at the bottom">
 </p>
 
 - "VARAGH" in every place the menus said "CrossInk", in every UI language.
@@ -649,7 +642,8 @@ that has to be held (New game, Give up) shows "Hold to …" for two seconds when
 you only tap it.
 
 <p>
-  <img src="docs/images/varagh/v1.3.0/apps.png" width="230" alt="Apps with Go and Tic Tac Toe">
+  <img src="docs/images/varagh/v1.3.1/apps.png" width="230" alt="Apps with Go and Tic Tac Toe">
+  <img src="docs/images/varagh/v1.3.1/apps-manage.png" width="230" alt="Manage apps with a switch per app and Settings for Sudoku and Clock">
 </p>
 
 ### Wordle
@@ -665,8 +659,13 @@ you only tap it.
 
 ### Sudoku
 
-- Tap a cell, then a number. Three levels; every puzzle has exactly one
-  solution, and Easy and Medium can be solved without guessing.
+- Tap a cell, then a number. Five levels (Expert and Master are new in 1.3.1)
+  and a **Daily** puzzle, one new one each day, with the days in a row you
+  solved it. Every puzzle has exactly one solution, and Easy and Medium can be
+  solved without guessing.
+- **Explaining hints (1.3.1):** a hint marks a cell and says why its number
+  goes there ("Only number that fits", "Last empty cell", "Only place for 6"),
+  with **Got it** or **Show answer**.
 - **Notes**: switch it on and the number keys write small numbers into the
   cell, or hold a number key for half a second to write the other kind without
   switching. **Fill** writes every still possible number into all empty cells.
@@ -691,6 +690,12 @@ you only tap it.
   | 3-mistake limit | the game ends at the third mistake | off |
   | Restart button | start the same puzzle again | off |
   | More statistics | averages and daily runs | off |
+
+<p>
+  <img src="docs/images/varagh/v1.3.1/sudoku.png" width="230" alt="A Medium Sudoku with the number keys and Undo, Erase, Notes, Fill and Hint">
+  <img src="docs/images/varagh/v1.3.1/sudoku-hint.png" width="230" alt="An explaining hint: Only number that fits, with Show answer and Got it">
+  <img src="docs/images/varagh/v1.3.1/sudoku-settings.png" width="230" alt="Sudoku settings with a switch for each extra">
+</p>
 
 ### Chess
 
@@ -718,7 +723,7 @@ you only tap it.
 - Undo, Pass, Hint and a score at the end.
 
 <p>
-  <img src="docs/images/varagh/v1.3.0/go.png" width="230" alt="A game of Go on the 9 by 9 board">
+  <img src="docs/images/varagh/v1.3.1/go.png" width="230" alt="A game of Go on the 9 by 9 board">
 </p>
 
 ### Tic Tac Toe (1.3.0)
@@ -793,11 +798,11 @@ you finish it), its rating goes with it. The rating is not written into the
 book file itself.
 
 <p>
-  <img src="docs/images/varagh/v1.2.1/rating-screen.png" width="180" alt="The rating screen with three and a half stars and Clear rating">
-  <img src="docs/images/varagh/v1.2.1/end-of-book-rating.png" width="180" alt="End of book with the title, the rating and what to continue with">
-  <img src="docs/images/varagh/v1.2.1/book-menu-rating.png" width="180" alt="The book menu with Rating and its stars as the first row">
-  <img src="docs/images/varagh/v1.2.1/library-stars.png" width="180" alt="Library with a book's stars at the end of its row">
-  <img src="docs/images/varagh/v1.2.1/reading-stats-stars.png" width="180" alt="Reading Stats with the stars in the title strip">
+  <img src="docs/images/varagh/v1.3.1/rating-screen.png" width="180" alt="The rating screen with four and a half stars and Clear rating">
+  <img src="docs/images/varagh/v1.3.1/end-of-book-rating.png" width="180" alt="End of book with the title, the rating and what to continue with">
+  <img src="docs/images/varagh/v1.3.1/book-menu-rating.png" width="180" alt="The book menu with Rating and its stars after Rename">
+  <img src="docs/images/varagh/v1.3.1/library-stars.png" width="180" alt="Library with a book's stars at the end of its row">
+  <img src="docs/images/varagh/v1.3.1/reading-stats-stars.png" width="180" alt="Reading Stats with the stars in the title strip">
 </p>
 
 ---
@@ -808,8 +813,9 @@ New in 1.3.0. **Settings → Dictionaries** (in 1.3.0: Settings → Reader →
 Dictionaries) is one page for every language you read.
 
 <p>
-  <img src="docs/images/varagh/v1.3.0/dictionaries.png" width="230" alt="The Dictionaries page with a tab per language">
-  <img src="docs/images/varagh/v1.3.0/online-sources.png" width="230" alt="Choosing the first online source: Wiktionary, Datamuse, Wikipedia">
+  <img src="docs/images/varagh/v1.3.1/dictionaries.png" width="230" alt="The Dictionaries page on its Deutsch tab">
+  <img src="docs/images/varagh/v1.3.1/dictionaries-persian.png" width="230" alt="The Dictionaries page on its Persian tab">
+  <img src="docs/images/varagh/v1.3.1/online-sources.png" width="230" alt="Choosing the second online source: Wiktionary, English Wiktionary, OpenThesaurus, Wikipedia, None">
 </p>
 
 - **A tab per language.** **+** adds a language (English, Deutsch, فارسی,
@@ -849,8 +855,8 @@ Dictionaries) is one page for every language you read.
 New in 1.3.0, on the X4 Pro (it needs the touch screen and the front light).
 
 <p>
-  <img src="docs/images/varagh/v1.3.0/control-center.png" width="230" alt="The Control Center with light and warmth sliders and eight buttons">
-  <img src="docs/images/varagh/v1.3.0/control-center-buttons.png" width="230" alt="Settings, Controls, Control Center: eight button slots">
+  <img src="docs/images/varagh/v1.3.1/control-center.png" width="230" alt="The Control Center with light and warmth sliders and eight buttons">
+  <img src="docs/images/varagh/v1.3.1/control-center-buttons.png" width="230" alt="Settings, Controls, Control Center: eight button slots">
 </p>
 
 **Swipe down from the top edge of the screen** to open the Control Center. A
@@ -908,7 +914,7 @@ New in 1.3.1. Books are laid out again once, the first time each is opened.
   <tr>
     <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/drop-cap.png" width="250" alt="A chapter opening with a large drop cap over three lines"><br><sub>A drop cap over the first lines.</sub></td>
     <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/box.png" width="250" alt="A tip in a bordered box with a light grey background"><br><sub>A bordered, lightly shaded box.</sub></td>
-    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/table.png" width="250" alt="A table with English, German and Persian words"><br><sub>A table in three languages.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/table.png" width="250" alt="A table laid out by the book, with a drop cap above it"><br><sub>A table, as the book lays it out.</sub></td>
   </tr>
 </table>
 
@@ -960,8 +966,8 @@ New in 1.3.0.
   a bolt while charging and "!" at 15 % or less.
 
 <p>
-  <img src="docs/images/varagh/v1.3.0/home-icons.png" width="230" alt="Home with the new bold icons and battery icon">
-  <img src="docs/images/varagh/v1.3.1/home.png" width="230" alt="Home with the Shahnameh cover and the menu (1.3.1)">
+  <img src="docs/images/varagh/v1.3.1/home.png" width="230" alt="Home with the Shahnameh cover, the bold icons and the battery icon">
+  <img src="docs/images/varagh/v1.3.1/apps.png" width="230" alt="Apps tiles in the same icon style">
 </p>
 
 ---
@@ -986,9 +992,13 @@ version as on the X4 Pro. They have no touch screen or front light, so:
 - Not on these readers: the Control Center, front light, night light, warmth,
   Tap to Look Up and touch selection handles.
 
-<p>
-  <img src="docs/images/varagh/v1.3.0/all-devices.png" width="420" alt="VARAGH 1.3.0 on the X4 Pro (Control Center), X4 Classic (Apps) and X3 (Look Up, Highlight, Add to)">
-</p>
+<table>
+  <tr>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/control-center.png" width="230" alt="X4 Pro: the Control Center"><br><sub><b>X4 Pro</b>: the Control Center.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/x4-classic-apps.png" width="230" alt="X4 Classic: Apps with a frame on Tic Tac Toe"><br><sub><b>X4 Classic</b>: Apps, the frame moved with the buttons.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/x3-button-selection.png" width="230" alt="X3: three words selected with the buttons and Look Up, Highlight, Add to"><br><sub><b>X3</b>: three words picked with the buttons, then Look Up, Highlight, Add to.</sub></td>
+  </tr>
+</table>
 
 How to install on these readers: [README, Readers without touch](README.md#readers-without-touch).
 
