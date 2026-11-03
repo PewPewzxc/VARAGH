@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="https://github.com/PewPewzxc/VARAGH/releases/latest"><b>Download</b></a> ·
+  <a href="https://pewpewzxc.github.io/reader-simulator/"><b>Try it in your browser</b></a> ·
   <a href="FEATURES.md"><b>Features</b></a> ·
   <a href="#install"><b>Install</b></a> ·
   <a href="CHANGELOG.md"><b>Changelog</b></a> ·
@@ -20,7 +21,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/varagh/cover.jpg" width="420" alt="VARAGH on the Xteink X4 Pro, with a Persian, a German and an English book on the Home screen">
+  <img src="docs/images/varagh/cover.jpg" width="420" alt="VARAGH 1.3.1 asleep on the Xteink X4 Pro: the Shahnameh, a German and an English book on Home, under a drawing used as the sleep picture">
 </p>
 
 **VARAGH** (ورق, Persian for "a sheet / a page") is e-reader firmware for the
@@ -35,11 +36,177 @@ their features are kept.
 > VARAGH is an independent community project, not affiliated with or endorsed by
 > Xteink, CrossInk or CrossPoint.
 
-**Contents:** [New in 1.3.0](#new-in-130-lion-) · [Earlier releases](#earlier-releases) ·
-[Features](#features) · [Install](#install) · [Build from source](#build-from-source) ·
+**Contents:** [Why VARAGH](#why-varagh) · [Try it first](#try-it-first) ·
+[New in 1.3.1](#new-in-131-lion-) · [Version history](#version-history) ·
+[Install](#install) · [Build from source](#build-from-source) ·
 [Contributing](#contributing) · [Support](#support) · [Credits](#credits-and-licences)
 
-## New in 1.3.0 "Lion" 🦁
+## Why VARAGH
+
+VARAGH turns the Xteink readers into a tool for reading and learning in English,
+German and Persian. On top of everything CrossInk and CrossPoint already do, it adds
+the following, release by release since 1.0.0.
+
+### Languages
+
+- **English, German and Persian built in:** every reader shows all three straight
+  after installing, with no font to copy to the SD card.
+- **Persian and Arabic script:** right-to-left lines, joined letters, vowel marks,
+  Persian digits and «» quotes; mixed English and Persian paragraphs keep their
+  direction.
+- **Pronunciation letters:** IPA such as /θɪŋk/ or [haʊ̯s] in books, menus,
+  dictionaries and flashcards.
+- **Font fallback:** books that need Arabic script switch to a font that covers it;
+  downloaded fonts borrow the Persian letters they lack.
+- **Menus in 29 languages:** English and Deutsch built in; Persian and 26 more as
+  small downloads.
+- **Keyboards:** a Persian layout and Caps Lock.
+
+### Dictionaries and word lookup
+
+- **A dictionary per language:** one page with a tab for each language, its own
+  offline dictionary and two online sources.
+- **Online sources:** Wiktionary, Wikipedia, Datamuse (WordNet) and OpenThesaurus,
+  saved on the card after the first lookup; optional Keep Wi-Fi On.
+- **Word forms:** went → go, träumte → träumen, می‌روم → رفتن, with German
+  stemming and repair of broken apostrophes and hyphens.
+- **Remembers your choice:** the last dictionary stays the default; Switch
+  Dictionary at any time.
+- **Lookups never hang:** Back cancels an online lookup at once.
+
+### Selecting words
+
+- **Tap to Look Up:** one tap on a word opens its meaning.
+- **Long Press on a Word:** look up, highlight, add to a category, or Ask with a
+  bubble at the words.
+- **Hold to Select:** Fast, Normal, Slow or Very slow.
+- **Selection handles** to resize a selection, on the touch screen or with the
+  buttons.
+
+### Highlights and flashcards
+
+- **Highlights hub on Home:** Favorite Lines, your own categories and By Book.
+- **Add to…** straight from the dictionary.
+- **Flashcards:** Leitner boxes, *Again* / *Know it* and Practice, with the
+  pronunciation on the back.
+- **Swipe left to delete** in files, recent books, highlights, bookmarks, lookup
+  history and categories.
+
+### Books
+
+- **Drop caps, text and heading sizes**, bordered and lightly shaded boxes, and
+  tables, as the publisher made them.
+- **Smooth grey pictures** without a crosshatch pattern, on clean white paper.
+- **Line breaks after hyphens and dashes.**
+- **Book ratings:** five stars with halves, at the end of a book, in the book menu,
+  in Reading Stats and in Library.
+- **Next in series** at the end of a book.
+
+### Screen, light and controls
+
+- **Settings in eight groups** with an icon and a short description each.
+- **Control Center:** swipe down for light and warmth with exact 1 % steps and
+  eight buttons you choose (X4 Pro).
+- **Night light:** a second brightness and warmth from evening to morning (X4 Pro).
+- **Rotation** that turns the buttons and the touch screen with the page.
+- **Bluetooth page turner:** pair a remote and map its buttons.
+- **One bold icon style** made for e-ink, and the VARAGH logo on the boot and
+  sleep screens.
+
+### Apps and clock
+
+- **Games:** Wordle, Sudoku with an answer check, Chess, Checkers, Go and
+  Tic Tac Toe; apps stay open across sleep; hide the ones you do not use.
+- **Clock & Calendar** with the Persian date, also as a sleep screen.
+- **A clock that stays right:** set on every Wi-Fi connect, Automatic Time Zone,
+  Summer Time and an optional Live Clock.
+
+### Speed and battery
+
+- **Fast chapters:** long chapters show their first page at once (Automatic
+  indexing), with a faster SD card and fonts kept in memory.
+- **Fast picture pages:** the next page's pictures are prepared while you read.
+- **Battery:** the processor slows down sooner and the display powers down when
+  idle, while buttons still respond instantly.
+
+### Readers and updates
+
+- **Three readers:** the X4 Pro with touch and front light; the X4 Classic and X3
+  with every feature on the buttons.
+- **Safe updates:** Check for Updates installs the newest VARAGH release, and the
+  reader warns before a firmware from another project replaces it.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/mixed-languages.png" width="250" alt="One page with English, a Persian line, German words, a table and pronunciations"><br><b>Three languages on one page</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/persian-book.png" width="250" alt="The first page of the Shahnameh in Persian"><br><b>Persian books</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/german-lookup-ipa.png" width="250" alt="German dictionary entry for Haus with its pronunciation over the book page"><br><b>German → English</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/persian-lookup.png" width="250" alt="The Persian word خرد looked up in a Persian dictionary"><br><b>Persian → Persian</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/flashcards.png" width="250" alt="A flashcard deck with German words and the Practice button"><br><b>Flashcards</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/home.png" width="250" alt="Home with the Shahnameh cover and the menu"><br><b>Home</b></td>
+  </tr>
+</table>
+
+Every feature, with photos and how to use it: **[FEATURES.md](FEATURES.md)**.
+
+### Try it first
+
+The **[Reader Simulator](https://pewpewzxc.github.io/reader-simulator/)** runs
+VARAGH in your web browser, on an X4 Pro, X4 Classic or X3 screen, with no reader
+needed. Open your own books in it, try the dictionary and the apps, then decide.
+
+## New in 1.3.1 "Lion" 🦁
+
+- **Persian, German and pronunciations built in** on every reader: no font to
+  copy to the SD card any more, and downloaded fonts such as Bitter borrow the
+  Persian letters they lack.
+- **Settings is a list of eight groups** with an icon and a short line each.
+- **Books look like books:** drop caps, CSS text and heading sizes, bordered and
+  lightly shaded boxes, and line breaks after dashes.
+- **Bluetooth page turner:** pair a remote and map its buttons.
+- **Faster picture pages:** the next page's pictures are prepared while you read.
+- **Sudoku answer check**, and a **clock that stays right**: it is set on every
+  Wi-Fi connect, with an Automatic Time Zone and an optional Live Clock.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/settings-groups.png" width="250" alt="Settings as eight groups with icons and descriptions"><br><b>Settings in groups</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/drop-cap.png" width="250" alt="A chapter opening with a large drop cap over three lines"><br><b>Drop caps</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/box.png" width="250" alt="A tip in a bordered box with a light grey background"><br><b>Boxes</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/table.png" width="250" alt="A table with English, German and Persian words"><br><b>Tables</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/picture.png" width="250" alt="A lake at dawn drawn in smooth greys"><br><b>Pictures</b></td>
+    <td align="center" width="33%"><img src="docs/images/varagh/v1.3.1/flashcard-back-ipa.png" width="250" alt="The back of a flashcard for Häuser with its pronunciation"><br><b>Pronunciations everywhere</b></td>
+  </tr>
+</table>
+
+<sub>Screens captured from the 1.3.1 firmware running in the Reader Simulator.</sub>
+
+See the [changelog](CHANGELOG.md) for everything.
+
+## Version history
+
+| Version | Date | What it added |
+|---|---|---|
+| **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, clock sync and Live Clock |
+| **1.3.0 "Lion"** | 2026-10-20 | Control Center and night light, dictionaries per language with online sources, Persian menus and keyboard, went → go lookups, resizing a selection, rotation, one icon style, Go and Tic Tac Toe; the X4 Classic and X3 join with button apps and menu-language downloads |
+| **1.2.1 "Tiger"** | 2026-10-13 | Tap to Look Up, Long Press choices with Ask, book ratings, apps that stay open across sleep, a stronger chess computer, the new logo |
+| **1.2.0 "Tiger"** | 2026-10-07 | Apps on Home (Wordle, Sudoku, Chess, Checkers, Clock & Calendar), online Wiktionary dictionary, faster Home, Clock & Calendar sleep screen |
+| **1.1.0 "Tiger"** | 2026-10-01 | Smooth grey pictures, faster chapters (Automatic indexing), a faster SD card, longer battery life |
+| **1.0.1** | 2026-09-24 | Check for Updates and KOReader Sync no longer restart the X4 Pro |
+| **1.0.0** | 2026-09-24 | First release: Persian books, German → English lookup with word forms, Highlights and flashcards, swipe to delete, Hold to Select with handles, Summer Time |
+
+Every change, version by version: **[CHANGELOG.md](CHANGELOG.md)**.
+
+### Earlier releases
+
+<details>
+<summary>What came in 1.3.0 "Lion", 1.2.1, 1.2.0 and 1.1.0 "Tiger", with pictures (click to open)</summary>
+
+### New in 1.3.0 "Lion" 🦁
 
 - **Control Center:** swipe down for the light and warmth sliders with exact
   1 % − / + buttons, and eight buttons you choose (Settings → Controls).
@@ -73,13 +240,6 @@ their features are kept.
 </table>
 
 <sub>Screens captured from the 1.3.0 firmware running in the PC simulator.</sub>
-
-See the [changelog](CHANGELOG.md) for everything.
-
-## Earlier releases
-
-<details>
-<summary>What came in 1.2.1, 1.2.0 and 1.1.0 "Tiger" (click to open)</summary>
 
 ### New in 1.2.1 "Tiger"
 
@@ -163,48 +323,23 @@ See the [changelog](CHANGELOG.md) for everything.
   <img src="docs/images/varagh/tiger/shading-landscape.png" alt="The same picture on the X4 Pro screen: crosshatch pattern in 1.0.1, smooth greys in 1.1.0">
 </p>
 
-All changes: [CHANGELOG.md](CHANGELOG.md).
-
 </details>
-
-## Features
-
-- **Persian and Arabic:** books switch to a font that can show them, and Persian
-  words and pronunciations display correctly with any reader font (NotoVazir).
-- **German → English dictionary:** finds the dictionary form of inflected words,
-  with pronunciations.
-- **Highlights and flashcards:** Favorite Lines, your own categories, **Add to…**
-  from the dictionary, flashcards with *Again* / *Know it*.
-- **Online dictionary:** Wiktionary and Wikipedia over Wi-Fi, saved on the card
-  after the first lookup.
-- **Apps:** Wordle, Sudoku, Chess, Checkers, Clock & Calendar.
-- **Touch:** adjustable hold to select, selection handles, swipe left to delete.
-- **Battery and speed:** the display powers down when idle, smoother pictures,
-  faster chapters.
-
-<table>
-  <tr>
-    <td align="center" width="33%"><img src="docs/images/varagh/persian-book.jpg" width="250" alt="A Persian book in NotoVazir"><br><b>Persian books</b></td>
-    <td align="center" width="33%"><img src="docs/images/varagh/german-dictionary.jpg" width="250" alt="German to English dictionary entry with pronunciation"><br><b>German → English</b></td>
-    <td align="center" width="33%"><img src="docs/images/varagh/flashcard-back.jpg" width="250" alt="Back of a flashcard with Again and Know it buttons"><br><b>Flashcards</b></td>
-  </tr>
-</table>
-
-Every feature, with photos and how to use it: **[FEATURES.md](FEATURES.md)**.
 
 ## Install
 
 1. Download the file for your reader from the latest
-   [release](https://github.com/PewPewzxc/VARAGH/releases): `firmware-x4-pro.bin`,
+   [release](https://github.com/PewPewzxc/VARAGH/releases/latest): `firmware-x4-pro.bin`,
    `firmware-x4-classic.bin`, or `firmware-x3-x4.bin` (X3 and the original X4).
    Copy it to the SD card and
    flash it from **Settings → System → SD Card Firmware Update**
    (coming from the original Xteink firmware, see the
    [installation guide](docs/installation.md) first).
-2. From the same release, copy the `.fonts/NotoVazir` folder of
-   `varagh-sd-card-*.zip` to `/.fonts/NotoVazir/` on the SD card.
-3. Select **Settings → Reader → Font Options → Font Family → NotoVazir**.
-4. Optional German → English dictionary: see [Dictionaries](docs/varagh/DICTIONARIES.md).
+2. That is all: English, German and Persian books and pronunciations work with
+   the built-in fonts.
+3. Optional: a German → English dictionary, see [Dictionaries](docs/varagh/DICTIONARIES.md).
+4. Optional: NotoVazir, a different look for Persian. Copy the `.fonts/NotoVazir`
+   folder of `varagh-sd-card-*.zip` from the release to `/.fonts/NotoVazir/` on the
+   SD card and select **Settings → Reader → Font Options → Font Family → NotoVazir**.
 
 ### Readers without touch
 
@@ -218,7 +353,7 @@ Left/Right and press Confirm for Look Up, Highlight or Add to. Not available the
 Control Center, front light, night light, Tap to Look Up and selection handles.
 The X3/X4 firmware has English and German menus built in; other menu languages
 are picked in Settings → Language and download over Wi-Fi, or copy the
-`languages` folder of `varagh-v1.3.0-x3-x4-languages.zip` to the SD card.
+`languages` folder of `varagh-v1.3.1-x3-x4-languages.zip` to the SD card.
 
 **Updating:** Settings → System → Check for Updates installs the newest VARAGH
 release (from 1.0.0, update from the SD card once). Only install VARAGH firmware:
