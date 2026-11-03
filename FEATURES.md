@@ -1,22 +1,23 @@
 # VARAGH features
 
-This page lists everything VARAGH (up to 1.1.0 "Tiger") adds to or changes in
+This page lists everything VARAGH (up to 1.3.1 "Lion") adds to or changes in
 [CrossInk](https://github.com/uxjulia/crossink) v1.6.0. Everything CrossInk and
 CrossPoint already do (EPUB/TXT/XTC reading, fonts from the SD card, KOReader
 sync, Calibre, OPDS, reading stats, Quick Actions, and so on) is still there;
 see [CrossInk's README](https://github.com/uxjulia/crossink#readme) for those.
 
-VARAGH is built for the **Xteink X4 Pro** and, since 1.3.0, also runs on the
-**X4 Classic** and **X3** (no touch screen or front light there: see
-[Readers without touch](README.md#readers-without-touch)).
+VARAGH runs on the **Xteink X4 Pro**, the **X4 Classic** and the **X3 / X4**. The
+X4 Pro has a touch screen and a front light; the X4 Classic and X3 / X4 do every
+feature with the buttons (see [section 21](#21-readers-without-touch)).
 
-All photos on this page were taken on an X4 Pro running VARAGH 1.0.0, with the
-front light on. The picture comparisons in section 7 are computed, not photographed.
+The photos (`.jpg`) on this page were taken on an X4 Pro running VARAGH 1.0.0,
+with the front light on. Screens marked 1.2.x, 1.3.0 or 1.3.1 were captured from
+that firmware in the [Reader Simulator](https://pewpewzxc.github.io/reader-simulator/).
+The picture comparisons in section 7 are computed, not photographed.
 
-**The one setting to make after installing:**
-**Settings → Reader → Font Options → Font Family → NotoVazir.**
-With NotoVazir as the reader font, every English, German and Persian word,
-pronunciation, dictionary entry, highlight and flashcard displays correctly.
+**Nothing to set up after installing (1.3.1).** English, German, Persian and
+pronunciation letters display with the built-in fonts on every reader. The
+NotoVazir font from the SD-card zip is optional (see [section 1](#notovazir-font-optional)).
 
 ---
 
@@ -29,27 +30,46 @@ pronunciation, dictionary entry, highlight and flashcard displays correctly.
 5. [Flashcards](#5-flashcards)
 6. [Swipe to delete](#6-swipe-to-delete)
 7. [Speed, pictures and battery](#7-speed-pictures-and-battery)
-8. [Summer time for the clock](#8-summer-time-for-the-clock)
+8. [Clock: summer time, sync and Live Clock](#8-clock-summer-time-sync-and-live-clock)
 9. [Pronunciations in menus](#9-pronunciations-in-menus)
 10. [VARAGH name and logo](#10-varagh-name-and-logo)
 11. [Safe updates](#11-safe-updates)
 12. [Apps](#12-apps)
 13. [Online dictionary](#13-online-dictionary)
 14. [Book ratings](#14-book-ratings)
-15. [For developers](#15-for-developers)
-16. [Planned](#16-planned)
+15. [Dictionaries for every language](#15-dictionaries-for-every-language)
+16. [Control Center and night light](#16-control-center-and-night-light)
+17. [Settings in groups](#17-settings-in-groups)
+18. [Books as they were made](#18-books-as-they-were-made)
+19. [Bluetooth page turner](#19-bluetooth-page-turner)
+20. [Icons, rotation and battery icon](#20-icons-rotation-and-battery-icon)
+21. [Readers without touch](#21-readers-without-touch)
+22. [For developers](#22-for-developers)
+23. [Planned](#23-planned)
 
 ---
 
 ## 1. Persian and Arabic
 
-<p align="center">
-  <img src="docs/images/varagh/persian-book.jpg" width="320" alt="Persian poetry displayed in NotoVazir"><br>
-  <sub>Khayyam's Rubaiyat in Persian, drawn in NotoVazir. Front light on.</sub>
-</p>
+<table>
+  <tr>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/persian-book.png" width="250" alt="The first page of the Shahnameh in Persian"><br><sub>The Shahnameh in the built-in font (1.3.1).</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/mixed-languages.png" width="250" alt="One page with English, a Persian line, German words, a table and pronunciations"><br><sub>English, Persian, German and pronunciations on one page (1.3.1).</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/persian-book.jpg" width="250" alt="Persian poetry displayed in NotoVazir"><br><sub>Khayyam's Rubaiyat in NotoVazir (1.0.0). Front light on.</sub></td>
+  </tr>
+</table>
 
-### NotoVazir font
-One reader font that contains every letter VARAGH needs:
+### Built in on every reader (1.3.1)
+The built-in reading fonts carry the Persian and Arabic letters (Vazirmatn,
+regular, in four sizes) and the pronunciation letters dictionaries use (IPA, from
+Noto Sans), on the X4 Pro, X4 Classic and X3 / X4. Persian books, German words in
+a dictionary or flashcard, and pronunciations such as /θɪŋk/ or [haʊ̯s] display
+straight after installing, with no font on the SD card. Before 1.3.1 they needed
+NotoVazir and otherwise showed as diamonds.
+
+### NotoVazir font (optional)
+One reader font that contains every letter VARAGH needs. Install it if you want
+Persian in Medium and Bold, or more sizes:
 
 | Part | Letters |
 |---|---|
@@ -72,8 +92,8 @@ font has no Persian letters, VARAGH uses an installed font that does
 ### Persian and pronunciations with any reader font
 You can choose another reader font, such as Bitter or Literata. When that font
 has no Persian letters or pronunciation symbols, VARAGH draws those words in
-NotoVazir at the same size, and the rest of the text stays in your font. This
-works in:
+NotoVazir (or, from 1.3.1, in the built-in font) at the same size, and the rest
+of the text stays in your font. This works in:
 
 - books,
 - dictionary definitions,
@@ -82,11 +102,38 @@ works in:
 
 Covered: Arabic and Persian letters (U+0600–06FF, 0750–077F, 08A0–08FF, and
 presentation forms FB50–FDFF and FE70–FEFF) and IPA (U+0250–02FF, 1D00–1DBF).
-NotoVazir (or another installed font with those letters) must be in `/.fonts/`.
+Up to 1.3.0, NotoVazir (or another installed font with those letters) had to be
+in `/.fonts/`. From 1.3.1 nothing has to be installed: a downloaded font without
+Persian letters, such as Bitter on the X3 / X4, borrows them from the built-in font.
+
+### Mixed English and Persian (1.3.0, 1.3.1)
+- A paragraph takes the direction of its first word: one that starts with an
+  English word reads left to right even when Persian follows.
+- Brackets around English words inside a Persian line face the right way.
+- A kasra (and kasratan, hamza or alef below) under a letter that reaches below
+  the line (خ ج ع, final ر ن م) is drawn below it instead of inside it.
+- The Kurdish letter ە joins the letter before it.
+- Guide Dots sit in the right place in right-to-left lines, and Persian lines in
+  dictionary entries are laid out right to left (1.3.0).
+
+### Persian menus and keyboard (1.3.0)
+- **Persian is a menu language**, written right to left. From 1.3.1 it is a
+  small download in **Settings → General → Language**, like the other 26
+  download languages; English and Deutsch are built in.
+- **Persian keyboard**: standard letter rows with پ چ ژ گ ک ی and a half-space
+  key, in **Keyboard layouts**.
+- **Caps Lock** on every keyboard: tap Shift twice or hold it; the key shows a
+  bar under its arrow.
 
 ### Persian words in the dictionary
 The Persian zero-width non-joiner (نیم‌فاصله) stays part of the word when you
-select it for lookup, so words such as می‌روم are looked up whole.
+select it for lookup, so words such as می‌روم are looked up whole. From 1.3.0
+inflected Persian words find their dictionary form (می‌روم → رفتن, کتاب‌هایم →
+کتاب), and Persian words use the Persian dictionary in any book.
+
+<p>
+  <img src="docs/images/varagh/v1.3.1/persian-lookup.png" width="230" alt="The Persian word خرد looked up in a Persian dictionary">
+</p>
 
 ### Font converter
 `fontconvert_sdcard.py` has a new `arabic` preset with every range Persian and
@@ -99,7 +146,9 @@ Arabic text needs, including the joined forms.
 VARAGH ships no dictionary data (each has its own licence). The recommended
 German → English dictionary is FreeDict's `deu-eng`, prepared with Inky's
 dictionary tools; step-by-step instructions are in
-[docs/varagh/DICTIONARIES.md](docs/varagh/DICTIONARIES.md).
+[docs/varagh/DICTIONARIES.md](docs/varagh/DICTIONARIES.md). From 1.3.0 each
+language you read has its own dictionary and online sources: see
+[section 15](#15-dictionaries-for-every-language).
 
 <table>
   <tr>
@@ -125,7 +174,10 @@ forms, most likely first:
 | Über (start of a sentence) | über | capital letter |
 
 Irregular forms (ging, sah) come from the dictionary's own alternate-forms
-file. German rules are used only when the dictionary translates *from* German
+file. From 1.3.0 that list of word forms is asked first, then spellings with
+other capitals, then the guessed forms above, in English too: "nodes" finds
+node, "cats" cat (not CATS), "went" go, "kamen" kommen. Looking up several words
+tries the whole phrase first ("good fortune"), then the first word. German rules are used only when the dictionary translates *from* German
 (its `lang` field, such as `de-en`, or a name such as "German-English").
 
 ### Repairs before lookup
@@ -148,11 +200,17 @@ lookups. If the book has its own dictionary setting, the book remembers it;
 otherwise it becomes the global default.
 
 ### Pronunciations and symbols display correctly
-IPA (such as [ˈhaʊ̯s]) and symbols in definitions used to show as boxes. With
-NotoVazir they are drawn exactly. With other fonts they are borrowed from
-NotoVazir (see section 1). Only when no installed font has a symbol does VARAGH
-draw the nearest look-alike (arrows, bullets, ≈, ≠, ≤, ✓ and others) or leave it
-out. It never draws a box.
+IPA (such as [ˈhaʊ̯s]) and symbols in definitions used to show as boxes. From
+1.3.1 the built-in fonts carry the IPA letters, so pronunciations display with
+any font and nothing installed. With NotoVazir they are drawn exactly; other
+fonts borrow them from NotoVazir or the built-in font (see section 1). Only when
+no font has a symbol does VARAGH draw the nearest look-alike (arrows, bullets,
+≈, ≠, ≤, ✓ and others) or leave it out. It never draws a box.
+
+<p>
+  <img src="docs/images/varagh/v1.3.1/german-lookup-ipa.png" width="230" alt="German dictionary entry for Haus with its pronunciation over the book page">
+  <img src="docs/images/varagh/v1.3.0/word-forms.png" width="230" alt="Looking up went opens go">
+</p>
 
 ---
 
@@ -173,7 +231,7 @@ one question, and they do not change one another:
 | Setting | The question it answers | Choices | Default |
 |---|---|---|---|
 | **Hold to Select** | How long must my finger rest on a word before it is selected? | Fast, Normal, Slow, Very slow | Normal |
-| **Long Press on a Word** | What happens when I lift my finger after selecting? | Look Up, Ask, Highlight, Add to… | Look Up |
+| **Long Press on a Word** | What happens when I lift my finger after selecting? | Look Up, Ask, Highlight, Add to… | Ask (from 1.3.0; Look Up before) |
 | **Tap to Look Up** | Does a short tap on a word open its meaning? | Off, On | Off |
 
 **What changed for Hold to Select.** Up to 1.2.0, holding a word had one
@@ -205,8 +263,9 @@ example, set Long Press on a Word to **Highlight** and Tap to Look Up to
   <img src="docs/images/varagh/v1.2.1/reader-settings.png" width="230" alt="Settings, Reader, with Hold to Select, Long Press on a Word and Tap to Look Up one under the other">
 </p>
 
-All three are shown only on readers with a touchscreen, and all three need a
-dictionary for the book (see [Remembers your dictionary](#remembers-your-dictionary)).
+All three are shown only on readers with a touchscreen (the X4 Classic and
+X3 / X4 select with the buttons: see [section 21](#21-readers-without-touch)),
+and all three need a dictionary for the book (see [Remembers your dictionary](#remembers-your-dictionary)).
 Without one, a hold does nothing and taps keep turning pages.
 
 ### Hold to Select
@@ -236,8 +295,20 @@ up, so the time also decides where a tap ends and a hold begins.
 ### Selection handles
 While you select with your finger, each end of the selection has a bar, with a
 round knob above the start and below the end, as on a phone. The handles show
-exactly what is selected. To change the selection, keep sliding your finger;
-the knobs themselves cannot be dragged.
+exactly what is selected. To change the selection, keep sliding your finger.
+
+### Resize a selection (1.3.0)
+With Long Press on a Word set to **Ask**, the selection stays after you lift
+your finger, and you can change it:
+
+- drag the handle at either end, or
+- press Right / Down / page forward to add the next word, and Left / Up / page
+  back to take one off. One press is always one word as it looks on the page.
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/ask-resize.png" width="230" alt="Three words selected with handles and the Ask bubble">
+  <img src="docs/images/varagh/v1.3.1/selection-handles.png" width="230" alt="A selection with handles at both ends (1.3.1)">
+</p>
 
 ### Long Press on a Word (1.2.1)
 **Settings → Reader → Long Press on a Word** sets what happens when you lift
@@ -245,8 +316,8 @@ your finger after selecting (how long you hold first is Hold to Select, above):
 
 | Option | What it does |
 |---|---|
-| Look Up (default) | opens the dictionary at once, as before |
-| Ask | keeps the words selected and shows a bubble at them: **Look Up**, **Highlight**, **Add to…** |
+| Look Up (default up to 1.2.1) | opens the dictionary at once, as before |
+| Ask (default from 1.3.0) | keeps the words selected and shows a bubble at them: **Look Up**, **Highlight**, **Add to…** |
 | Highlight | saves the selection as a highlight at once |
 | Add to… | opens the list of Highlights categories at once |
 
@@ -353,7 +424,13 @@ many cards you already know.
 - At the end: "All cards reviewed" and **Start Over**.
 - Progress is saved on the SD card next to the cards.
 - German, English, Persian and IPA display correctly on the cards and in the
-  list with any SD-card font. Earlier builds showed boxes here.
+  list with any SD-card font. Earlier builds showed boxes here. From 1.3.1 the
+  back of a card shows the word's pronunciation with the built-in fonts too.
+
+<p>
+  <img src="docs/images/varagh/v1.3.1/flashcards.png" width="230" alt="A flashcard deck with German words and the Practice button">
+  <img src="docs/images/varagh/v1.3.1/flashcard-back-ipa.png" width="230" alt="The back of a flashcard for Häuser with its pronunciation">
+</p>
 
 ---
 
@@ -383,7 +460,23 @@ anywhere else, swiping right or pressing any button hides it again.
 
 VARAGH 1.1.0 "Tiger" is about speed and picture quality; the battery savings
 from 1.0.0 stay. There is nothing to switch on: everything in this section
-works by itself, except the optional Faster Screen Link.
+works by itself, except the optional Faster Screen Link. 1.3.1 adds faster
+picture pages.
+
+### Faster picture pages (1.3.1)
+
+While you read, the next page's pictures are prepared in the background, so
+turning to a picture page skips the wait. On the X4 Pro a picture page also
+skips one extra screen pass.
+
+| Reader | Picture page before | Picture page in 1.3.1 |
+|---|---|---|
+| X4 Pro | 3–4 s | about 1.2 s |
+| X3 / X4 | 3–5.5 s | about 2.5–3 s |
+
+<p>
+  <img src="docs/images/varagh/v1.3.1/picture.png" width="230" alt="A lake at dawn drawn in smooth greys">
+</p>
 
 ### Smoother, sharper pictures in books (1.1.0)
 
@@ -443,6 +536,8 @@ computed on a computer by VARAGH's own picture code from test pictures.
   ported from CrossPoint #3616.
 - The Persian/IPA fallback font loads only when a book or screen needs it,
   and reads character widths from the SD card only when needed.
+- **X3: the right battery size (1.3.1).** The battery gauge is told the real
+  650 mAh battery, so the percentage stays right after the battery runs flat.
 
 ### Faster Screen Link (1.1.0, optional)
 
@@ -463,7 +558,7 @@ something is slow.
 
 ---
 
-## 8. Summer time for the clock
+## 8. Clock: summer time, sync and Live Clock
 
 <p align="center">
   <img src="docs/images/varagh/summer-time.jpg" width="300" alt="Summer Time setting with Off, EU (Germany) and US"><br>
@@ -473,7 +568,17 @@ something is slow.
 **Settings → System → Device → Summer Time**: Off, EU (Germany) or US. On
 readers with a clock, the time then changes automatically on the right dates.
 It applies to the clock, reading statistics, the dates saved with highlights,
-and file dates on the SD card.
+and file dates on the SD card. (In 1.3.1 Settings is arranged in groups, so the
+path differs: see [section 17](#17-settings-in-groups).)
+
+### A clock that stays right (1.3.1)
+- **Synced on every Wi-Fi connect**, at most once an hour, not only the first
+  time.
+- **Automatic Time Zone** (on by default) sets the GMT offset, summer time
+  included, from where the network is. Turn it off to set the offset by hand.
+- **Live Clock** (off by default): the clock in the reader and on Home updates
+  when the minute changes, with a quick update that does not flash and does not
+  count toward full refreshes. Pages with pictures wait for the next page turn.
 
 ---
 
@@ -483,7 +588,8 @@ The built-in menu font (Inter) now includes the IPA letters (U+0250–02FF) at
 sizes 8, 10 and 12. Pronunciations in lists and menus, such as the flashcard
 list, display correctly instead of as boxes.
 You can see it in the [Flashcards list photo](#5-flashcards): the line under
-*schließlich* shows `/ʃlˈiːslɪç/`.
+*schließlich* shows `/ʃlˈiːslɪç/`. From 1.3.1 the built-in reading fonts have
+them too (see [section 1](#built-in-on-every-reader-131)).
 
 ---
 
@@ -492,7 +598,8 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
 - **Logo** (new in 1.2.1): an open book with a V and a turning page.
 - **Boot screen**: the VARAGH logo with "VARAGH" and "Booting", and at the bottom
   the version with a small tiger, such as **1.2.1 Tiger**. Settings → System
-  shows **VARAGH 1.2.1 Tiger** in the same way.
+  shows **VARAGH 1.2.1 Tiger** in the same way. From 1.3.0 a lion takes its
+  place: **1.3.1 Lion**.
 - **Default sleep screen** (when no custom sleep image is set): the VARAGH logo
   with "VARAGH" and "Sleeping"; light lines on black in dark mode.
 
@@ -506,8 +613,8 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
 - Network names: Wi-Fi hotspot **VARAGH-Reader**, network name **VARAGH-xxxx**,
   web address **http://varagh.local**, device name **VARAGH X4 Pro**.
 - Version numbers start at 1.0.0.
-- New menus and messages are in English and German; other languages show them
-  in English.
+- New menus and messages are in English and German, and from 1.3.0 in Persian;
+  other languages show them in English.
 
 ---
 
@@ -521,18 +628,29 @@ You can see it in the [Flashcards list photo](#5-flashcards): the line under
   battery savings).
 - When there is no release yet, the reader says **"No update available"**
   instead of showing an error.
+- **Menu languages come from the same release** (1.3.0): a language marked
+  "(download)" in the language list is fetched over Wi-Fi from the VARAGH
+  release that matches your firmware, or copied to the card from the
+  `languages` folder of the release zip.
 
 ---
 
 ## 12. Apps
 
-New in 1.2.0. **Apps** on the Home screen opens a tile per app (touch readers,
-every theme; in Cover Grid it is the icon of four squares under the covers). **Manage**, top right, lists the apps with a
+New in 1.2.0. **Apps** on the Home screen opens a tile per app (every theme;
+from 1.3.0 also on the X4 Classic and X3 / X4, played with the buttons:
+see [section 21](#21-readers-without-touch); in Cover Grid it is the icon of four squares under the covers). **Manage**, top right, lists the apps with a
 switch each: an app that is switched off is hidden. The apps are part of the
 firmware; a hidden or closed app uses no memory, processor time or battery.
 Every game is saved after each move, so leaving it or letting the reader sleep
 loses nothing. From 1.2.1, waking the reader returns to the app that was open
-when it went to sleep, as it does to the page of a book.
+when it went to sleep, as it does to the page of a book. From 1.3.0, a button
+that has to be held (New game, Give up) shows "Hold to …" for two seconds when
+you only tap it.
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/apps.png" width="230" alt="Apps with Go and Tic Tac Toe">
+</p>
 
 ### Wordle
 
@@ -555,7 +673,24 @@ when it went to sleep, as it does to the page of a book.
 - Undo, Erase and Hint. Each number key shows how many of that digit are still
   missing.
 - A wrong digit is not marked and mistakes are not counted while you play.
+- **Answer check (1.3.1):** when the grid is full but not solved, a panel says
+  how many answers are wrong, with **Show wrong**, **Clear wrong** and **Keep
+  looking**.
 - **New** (top right) has to be held.
+- **Sudoku settings (1.3.1)** in **Apps → Manage → Sudoku → Settings**, one
+  switch each:
+
+  | Switch | What it does | Default |
+  |---|---|---|
+  | Explaining hints | a hint shows why, not only the answer | on |
+  | Daily puzzle | one new puzzle each day | on |
+  | Live mistake check | cross out a wrong number at once | off |
+  | Repeated numbers | underline a number that repeats | off |
+  | Number painting | pick a number first, then tap cells | off |
+  | Fill last cell | fill a row, column or box one cell short | off |
+  | 3-mistake limit | the game ends at the third mistake | off |
+  | Restart button | start the same puzzle again | off |
+  | More statistics | averages and daily runs | off |
 
 ### Chess
 
@@ -575,10 +710,26 @@ when it went to sleep, as it does to the page of a book.
   in any direction, a capture must be taken and a multiple jump finished.
 - Against the computer or two players. Undo and Hint.
 
+### Go (1.3.0)
+
+- 9×9, 13×13 or 19×19, against the computer (Easy, Medium) or two players.
+- Tap a point twice to place a stone (the first tap shows where), or move with
+  the buttons.
+- Undo, Pass, Hint and a score at the end.
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/go.png" width="230" alt="A game of Go on the 9 by 9 board">
+</p>
+
+### Tic Tac Toe (1.3.0)
+
+- Classic or infinite, against the computer or two players.
+
 ### Clock
 
 - The time above a month calendar, repainted once a minute while it is open.
-  It uses the reader's clock; set it once with Settings → Sync Clock.
+  It uses the reader's clock, which from 1.3.1 is set on every Wi-Fi connect
+  (see [section 8](#8-clock-summer-time-sync-and-live-clock)).
 - Tap the clock to step through three faces: large digits, an analog clock, and
   a calendar with the Persian day under every date.
 - The arrows or a swipe turn the months; tap the month's name to return to
@@ -612,6 +763,8 @@ New in 1.2.0. In a word lookup, **Switch Dictionary** ends with **Online
   it up at once, and a site that does not answer is given up on after 8
   seconds. With Wi-Fi connected but Wiktionary out of reach, the reader says so
   and stays in the book.
+- From 1.3.0 there are more online sources, and each language picks its own:
+  see [section 15](#15-dictionaries-for-every-language).
 
 ---
 
@@ -649,7 +802,199 @@ book file itself.
 
 ---
 
-## 15. For developers
+## 15. Dictionaries for every language
+
+New in 1.3.0. **Settings → Dictionaries** (in 1.3.0: Settings → Reader →
+Dictionaries) is one page for every language you read.
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/dictionaries.png" width="230" alt="The Dictionaries page with a tab per language">
+  <img src="docs/images/varagh/v1.3.0/online-sources.png" width="230" alt="Choosing the first online source: Wiktionary, Datamuse, Wikipedia">
+</p>
+
+- **A tab per language.** **+** adds a language (English, Deutsch, فارسی,
+  Français, Español, Italiano, Nederlands, Português, Русский, العربية, Türkçe,
+  Polski); holding a tab removes it.
+- **Its own dictionaries.** Each language has an offline dictionary on the card
+  and a first and second online source. A language without a choice gets one
+  from the card by itself, a dictionary in the same language first (such as
+  German–German). If the card has none, the page says so and names the folder
+  to copy one into.
+- **The book's language decides.** A book looks words up in the dictionary of
+  its language; Persian words use the Persian dictionary in any book.
+- **Keep Wi-Fi on in books** is on the same page.
+- Works with touch and with the buttons (Left / Right switch the language,
+  Up / Down and Confirm pick a row).
+
+### More online sources
+
+| Source | What it gives |
+|---|---|
+| Wiktionary | meanings in the language of the word (from 1.2.0) |
+| Wikipedia | a short summary when Wiktionary has no entry (from 1.2.0) |
+| **Datamuse** | English meanings from WordNet |
+| **OpenThesaurus** | German synonyms |
+| **English Wiktionary** | meanings in English of German, Persian and other words |
+
+- The lookup popup names the source ("Online: Datamuse") and offers **Try
+  Another Source**. Answers are saved on the card per source.
+- When a word is not in the card's dictionary and Wi-Fi is already on, the
+  online sources are asked by themselves. Without Wi-Fi nothing is fetched
+  unless you choose Online.
+
+---
+
+## 16. Control Center and night light
+
+New in 1.3.0, on the X4 Pro (it needs the touch screen and the front light).
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/control-center.png" width="230" alt="The Control Center with light and warmth sliders and eight buttons">
+  <img src="docs/images/varagh/v1.3.0/control-center-buttons.png" width="230" alt="Settings, Controls, Control Center: eight button slots">
+</p>
+
+**Swipe down from the top edge of the screen** to open the Control Center. A
+tap on the top bar still does what it did before.
+
+- **Light:** a thin slider with the percentage in its knob. The left half
+  covers 0–20 %, so low light can be set finely. Round **−** and **+** buttons
+  beside it always move exactly 1 %.
+- **Warmth:** a second slider, cold (snowflake) on the left and warm (flame) on
+  the right, with its own − and +.
+- **Eight buttons you choose** in **Settings → Controls → Control Center**,
+  from: Tap to Look Up, Wi-Fi, Dark, Touch lock, Light, Night light, Guide Dots,
+  Focus Reading, Refresh, Sync, Sleep, Settings, Reading stats, Library, Apps,
+  File transfer, Rotate, or Empty. Empty places are left out and the card gets
+  shorter. A button is black while its setting is on.
+- **Wi-Fi:** a tap connects to a saved network in range; a hold opens the list
+  of networks.
+
+### Night light
+**Frontlight → Night Light, Night From, Night Until** (in the Display
+settings): from the evening time to the morning time the reader uses a second
+brightness and warmth, then returns to the day values.
+
+---
+
+## 17. Settings in groups
+
+New in 1.3.1, as in CrossPoint 2.0. **Settings** opens a list of eight groups,
+each with an icon and a short line saying what is inside:
+
+| Group | Its line on the reader |
+|---|---|
+| General | Language, keyboard, clock, updates |
+| Display | Sleep screen, light, theme |
+| Reader | Fonts, page layout, status bars |
+| Dictionaries | Offline and online, per language (section 15) |
+| Controls | Buttons, gestures, Control Center |
+| Library | Files, recent books, reading cache |
+| Reading Stats | Tracking, all-time stats, backup |
+| Network | Wi-Fi, Bluetooth remote, sync, OPDS |
+
+All VARAGH settings are kept. The side buttons move through the list.
+
+<p>
+  <img src="docs/images/varagh/v1.3.1/settings-groups.png" width="230" alt="Settings as eight groups with icons and descriptions">
+</p>
+
+---
+
+## 18. Books as they were made
+
+New in 1.3.1. Books are laid out again once, the first time each is opened.
+
+<table>
+  <tr>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/drop-cap.png" width="250" alt="A chapter opening with a large drop cap over three lines"><br><sub>A drop cap over the first lines.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/box.png" width="250" alt="A tip in a bordered box with a light grey background"><br><sub>A bordered, lightly shaded box.</sub></td>
+    <td align="center" width="33%" valign="top"><img src="docs/images/varagh/v1.3.1/table.png" width="250" alt="A table with English, German and Persian words"><br><sub>A table in three languages.</sub></td>
+  </tr>
+</table>
+
+- **Drop caps:** a book's big first letter (CSS `::first-letter`,
+  `initial-letter` or a floated letter) spans the first lines, with built-in
+  and downloaded fonts. Persian, Arabic and Hebrew letters are left as they are.
+- **Text sizes:** CSS `font-size` on paragraphs and headings, and browser
+  heading sizes (h1 twice the text size). With Embedded Style off or in Light
+  mode, text keeps one size. Downloaded fonts do this too: the size is taken
+  from the font sizes installed on the SD card, so installing more sizes gives
+  closer matches.
+- **Boxes:** CSS borders and light grey backgrounds around paragraphs. The grey
+  is a light dot screen so the text on it stays clear.
+- **Line breaks after hyphens and dashes** ("word—word" can break after the
+  dash), also with Hyphenation off.
+- **Next in series** (1.3.0): at the end of a book, the next book of its series
+  comes first, from any folder.
+- Fixes: chapters without a DOCTYPE line no longer stop at the first `&nbsp;`;
+  a picture in a book's reading order gets its own page; the chapter list opens
+  on the sub-chapter you are reading; books with thousands of chapters open.
+
+---
+
+## 19. Bluetooth page turner
+
+New in 1.3.1, from CrossPoint 2.0. **Settings → Network → Bluetooth Page
+Turner**:
+
+- Scan, pair a remote and map its buttons: next / previous page, next /
+  previous chapter, Confirm, Back, reader menu.
+- In a book the status bar says "Connecting Bluetooth…" until the remote links.
+- The radio only runs in a book (and while pairing), stops before sleep and
+  pauses while a chapter is being laid out, to save battery.
+
+---
+
+## 20. Icons, rotation and battery icon
+
+New in 1.3.0.
+
+- **One icon style everywhere.** Every icon (Home, Library, files, reader,
+  keyboard, Control Center) is redrawn in one bold-line style made for e-ink:
+  lines 2.8 px wide on whole pixels, no grey.
+- **Rotation turns the buttons and the touch screen with the page.** "Turned
+  right 90°" and "Turned left 90°" always turn exactly 90° that way, and the
+  front buttons and touch follow, so the forward button is still forward. The
+  sleep screen is always drawn upright.
+- **Battery icon:** a new design in every theme, with the percentage beside it,
+  a bolt while charging and "!" at 15 % or less.
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/home-icons.png" width="230" alt="Home with the new bold icons and battery icon">
+  <img src="docs/images/varagh/v1.3.1/home.png" width="230" alt="Home with the Shahnameh cover and the menu (1.3.1)">
+</p>
+
+---
+
+## 21. Readers without touch
+
+From 1.3.0 VARAGH also runs on the **X4 Classic** and the **X3 / X4**, the same
+version as on the X4 Pro. They have no touch screen or front light, so:
+
+- **Apps with buttons.** Apps is on Home. A frame shows what is picked; the
+  direction buttons move it and Confirm taps it. Hold Confirm on New / Give up.
+  Clock: Left / Right change the month, Confirm the clock face.
+- **Choices after a button selection.** In Menu → Look Up Word, hold Confirm on
+  a word, add words with Left / Right and press Confirm: **Look Up**,
+  **Highlight** and **Add to** appear, as on the X4 Pro. The side buttons pick
+  one; Left / Right still change the selection.
+- **Menu languages as downloads.** English and Deutsch are built in so the
+  firmware fits; the other languages come over Wi-Fi or from the release zip
+  (from 1.3.1 on the X4 Pro too). A language takes about 15–35 KB of memory
+  while it is used.
+- **Persian, German and pronunciations built in** (1.3.1), as on the X4 Pro.
+- Not on these readers: the Control Center, front light, night light, warmth,
+  Tap to Look Up and touch selection handles.
+
+<p>
+  <img src="docs/images/varagh/v1.3.0/all-devices.png" width="420" alt="VARAGH 1.3.0 on the X4 Pro (Control Center), X4 Classic (Apps) and X3 (Look Up, Highlight, Add to)">
+</p>
+
+How to install on these readers: [README, Readers without touch](README.md#readers-without-touch).
+
+---
+
+## 22. For developers
 
 - Licences: MIT like CrossInk and CrossPoint. Every library, font and data
   source is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), OFL
@@ -658,21 +1003,28 @@ book file itself.
 - The display and UI library (FreeInk SDK) has VARAGH changes: the display idle
   power-off hook, a read-only touch hit-test used by swipe to delete, and in
   1.1.0 the 40 MHz SD card and the Faster Screen Link. The library with these
-  changes is in each release's full-source zip.
+  changes is in each release's full-source zip and at
+  [PewPewzxc/freeink-sdk](https://github.com/PewPewzxc/freeink-sdk).
+- Three firmware builds from one source: PlatformIO environments `x4-pro`,
+  `x4-classic` and `default` (X3 / X4). Menu-language packs (`*.lng`, at most
+  64 KB each) are built per reader and attached to each release, which is
+  where the reader downloads them from.
 - Unit tests: German stemming, summer-time rules, glyph drawing, highlight file
   format and storage, lookup-word cleanup; in 1.1.0 also the font memory copy,
   picture shading, the speed log and chapter-file writing; in 1.2.0 the rules
   of Wordle, Sudoku, chess (move generator checked against published position
   counts) and checkers, the calendar arithmetic and the online dictionary text.
 - Book page caches were rebuilt once when installing 1.0.0 (layout format v78);
-  1.1.0 keeps that format, so books are not indexed again.
+  1.1.0 keeps that format, so books are not indexed again. 1.3.0 (a Persian
+  fix) and 1.3.1 (drop caps, text sizes, boxes) each lay books out again once,
+  the first time each is opened.
 - Guides: [fonts](docs/varagh/FONTS.md), [dictionaries](docs/varagh/DICTIONARIES.md),
   [keeping up with CrossInk and CrossPoint](docs/varagh/UPSTREAM-SYNC.md),
   [changelog](CHANGELOG.md).
 
 ---
 
-## 16. Planned
+## 23. Planned
 
 - English, German and Persian dictionaries built from Wiktionary, trimmed for
   the reader and published separately under CC BY-SA 4.0.
