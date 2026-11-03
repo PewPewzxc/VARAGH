@@ -2,6 +2,28 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.3.2 "Lion" 🦁] - 2026-11-03
+
+A small fix release on top of 1.3.1. Books, settings and highlights are kept.
+
+### Fixed
+
+- **Settings on Home with the buttons (X4 Classic and X3 / X4):** Up and Down skipped the last
+  row, Settings, since 1.3.0 added the Apps row. Every Home row can be reached again.
+- **Menu-language downloads on the X4 Pro and X4 Classic:** the reader looked for the packs in a
+  release that does not exist (such as "1.3.1-x4-pro"), so a download from
+  Settings → General → Language failed. They download again.
+
+### Changed
+
+- **One set of menu-language packs for every reader and version:** the 27 packs are the same on
+  the X4 Pro, X4 Classic and X3 / X4. They are kept once, in the release named after the menu
+  text they fit (`lang-ECA0AA6E` for 1.3.2), instead of 81 copies in every release. A new VARAGH
+  version with the same menu text needs no new packs. A pack that does not fit the firmware is
+  still refused.
+- For copying by hand: one `varagh-v1.3.2-languages.zip` for every reader; put its `languages`
+  folder on the SD card.
+
 ## [VARAGH v1.3.1 "Lion" 🦁] - 2026-11-03
 
 Based on VARAGH 1.3.0, with ideas from CrossPoint 2.0. The same on the X4 Pro, X4 Classic

@@ -1031,8 +1031,9 @@ How to install on these readers: [README, Readers without touch](README.md#reade
   [PewPewzxc/freeink-sdk](https://github.com/PewPewzxc/freeink-sdk).
 - Three firmware builds from one source: PlatformIO environments `x4-pro`,
   `x4-classic` and `default` (X3 / X4). Menu-language packs (`*.lng`, at most
-  64 KB each) are built per reader and attached to each release, which is
-  where the reader downloads them from.
+  64 KB each) are the same on every reader. Since 1.3.2 one set is kept in the
+  release named after the menu text it fits (such as `lang-ECA0AA6E`), which is
+  where every reader downloads them from; a pack that does not fit is refused.
 - Unit tests: German stemming, summer-time rules, glyph drawing, highlight file
   format and storage, lookup-word cleanup; in 1.1.0 also the font memory copy,
   picture shading, the speed log and chapter-file writing; in 1.2.0 the rules

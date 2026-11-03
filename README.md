@@ -159,6 +159,9 @@ needed. Open your own books in it, try the dictionary and the apps, then decide.
 
 ## New in 1.3.1 "Lion" 🦁
 
+1.3.2 is a fix release on top of 1.3.1: Settings on Home works with the buttons again on the
+X4 Classic and X3, and menu-language downloads work on the X4 Pro and X4 Classic.
+
 - **Persian, German and pronunciations built in** on every reader: no font to
   copy to the SD card any more, and downloaded fonts such as Bitter borrow the
   Persian letters they lack.
@@ -194,6 +197,7 @@ See the [changelog](CHANGELOG.md) for everything.
 
 | Version | Date | What it added |
 |---|---|---|
+| **1.3.2 "Lion"** | 2026-11-03 | Settings on Home reachable with the buttons again on the X4 Classic and X3, menu-language downloads fixed on the X4 Pro and X4 Classic, one shared set of language packs |
 | **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Persian Focus Reading, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, levels, daily puzzle and explaining hints, clock sync and Live Clock |
 | **1.3.0 "Lion"** | 2026-10-20 | Control Center and night light, dictionaries per language with online sources, Persian menus and keyboard, went → go lookups, resizing a selection, rotation, one icon style, Go and Tic Tac Toe; the X4 Classic and X3 join with button apps and menu-language downloads |
 | **1.2.1 "Tiger"** | 2026-10-13 | Tap to Look Up, Long Press choices with Ask, book ratings, apps that stay open across sleep, a stronger chess computer, the new logo |
@@ -360,7 +364,7 @@ Left/Right and press Confirm for Look Up, Highlight or Add to. Not available the
 Control Center, front light, night light, Tap to Look Up and selection handles.
 The X3/X4 firmware has English and German menus built in; other menu languages
 are picked in Settings → Language and download over Wi-Fi, or copy the
-`languages` folder of `varagh-v1.3.1-x3-x4-languages.zip` to the SD card.
+`languages` folder of `varagh-v1.3.2-languages.zip` (the same for every reader) to the SD card.
 
 **Updating:** Settings → System → Check for Updates installs the newest VARAGH
 release (from 1.0.0, update from the SD card once). Only install VARAGH firmware:

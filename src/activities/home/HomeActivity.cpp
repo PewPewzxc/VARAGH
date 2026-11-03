@@ -585,6 +585,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   count++;  // Highlights hub is always listed
+  if (homeShowsApps()) count++;
   return count;
 }
 

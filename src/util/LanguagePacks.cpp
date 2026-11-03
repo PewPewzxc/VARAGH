@@ -4,14 +4,11 @@
 #include <Logging.h>
 
 #include <cctype>
+#include <cstdio>
 #include <memory>
 #include <new>
 
 #include "util/LanguagePackFormat.h"
-
-#ifndef VARAGH_RELEASE_TAG
-#define VARAGH_RELEASE_TAG CROSSINK_VERSION
-#endif
 
 namespace LanguagePacks {
 namespace {
@@ -62,9 +59,12 @@ bool readPack(const std::string& filePath, std::unique_ptr<uint16_t[]>& buffer, 
 
 std::string path(const Language lang) { return std::string(kDir) + "/" + lowerCode(lang) + ".lng"; }
 
+// One shared set of packs for every reader and version, kept in the release named after the menu-text
+// fingerprint (e.g. lang-ECA0AA6E). A firmware whose menu text changed gets a new fingerprint.
 std::string downloadUrl(const Language lang) {
-  return std::string("https://github.com/PewPewzxc/VARAGH/releases/download/") + VARAGH_RELEASE_TAG + "/" +
-         CROSSINK_FIRMWARE_DEVICE_TYPE + "-lang-" + lowerCode(lang) + ".lng";
+  char tag[16];
+  snprintf(tag, sizeof(tag), "lang-%08X", static_cast<unsigned>(I18N_LAYOUT_ID));
+  return std::string("https://github.com/PewPewzxc/VARAGH/releases/download/") + tag + "/" + lowerCode(lang) + ".lng";
 }
 
 bool installed(const Language lang) { return Storage.exists(path(lang).c_str()); }
