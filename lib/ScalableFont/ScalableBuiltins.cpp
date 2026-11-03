@@ -11,6 +11,10 @@
 #include "ScalableAssets.generated.h"
 namespace {
 std::optional<HalScalableFont> faces[8];
+// VARAGH: Persian letters the reader fonts lack, borrowed glyph by glyph (regular weight only).
+std::optional<HalScalableFont> persianFace;
+// VARAGH: pronunciation (IPA) letters and combining marks, the family's shared fallback.
+std::optional<HalScalableFont> ipaFace;
 bool ready[2] = {};
 const uint8_t* const assets[] = {lexenddeca_regularOutline,    lexenddeca_boldOutline,  lexenddeca_italicOutline,
                                  lexenddeca_bolditalicOutline, bitter_regularOutline,   bitter_boldOutline,
@@ -53,10 +57,29 @@ void ensureScalableBuiltinFamily(GfxRenderer& renderer, unsigned family) {
     LOG_ERR("TTF", "Built-in family unavailable; using UI recovery font");
   }
   ready[family] = ok;
+  if (ok && !persianFace) {
+    persianFace.emplace();
+    if (!persianFace->openMemory(vazirmatn_persianOutline, sizeof(vazirmatn_persianOutline))) {
+      persianFace.reset();
+      LOG_ERR("TTF", "Built-in Persian supplement unavailable");
+    }
+  }
+  if (ok && !ipaFace) {
+    ipaFace.emplace();
+    if (!ipaFace->openMemory(noto_ipaOutline, sizeof(noto_ipaOutline))) {
+      ipaFace.reset();
+      LOG_ERR("TTF", "Built-in IPA fallback unavailable");
+    }
+  }
   for (uint8_t points : SCALABLE_READER_FONT_SIZES) {
     if (ok) {
       EpdFontFamily font(faces[family * 4]->atSize(points), faces[family * 4 + 1]->atSize(points),
-                         faces[family * 4 + 2]->atSize(points), faces[family * 4 + 3]->atSize(points));
+                         faces[family * 4 + 2]->atSize(points), faces[family * 4 + 3]->atSize(points),
+                         ipaFace ? ipaFace->atSize(points) : nullptr);
+      if (persianFace) {
+        const EpdFont* persian = persianFace->atSize(points);
+        font = font.withSupplement(persian, persian);
+      }
       renderer.insertFont(scalableBuiltinReaderFontId(family, points), font);
       for (unsigned size = 0; size < 4; ++size)
         if (points == 10 + size * 2) renderer.insertFont(ids[family][size], font);

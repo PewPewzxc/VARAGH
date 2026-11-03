@@ -11,6 +11,9 @@
 #include <Serialization.h>
 #include <SpeedLog.h>
 
+#include <algorithm>
+#include <cctype>
+
 #include "Epub/ReferencePageNavigation.h"
 #include "Epub/css/CssParser.h"
 #include "Page.h"
@@ -19,6 +22,22 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
+// CrossPoint issue #2994: a reading order may list an image file. Parsing its bytes as XHTML fails, so
+// cache a one-image page in its place (overwriting raw image bytes an older build cached).
+void writeImageSpinePage(const std::string& href, const std::string& htmlDir, const std::string& htmlPath) {
+  std::string ext = href.substr(std::min(href.size(), href.rfind('.')));
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](const unsigned char c) { return std::tolower(c); });
+  if (ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" && ext != ".bmp") return;
+  std::string page = "<html><body><img src=\"";
+  for (const char c : href.substr(href.rfind('/') + 1)) page += c == '&' ? "&amp;" : c == '"' ? "&quot;" : std::string(1, c);
+  page += "\"/></body></html>";
+  Storage.mkdir(htmlDir.c_str());
+  HalFile out;
+  if (!Storage.openFileForWrite("SCT", htmlPath, out) || out.write(page.data(), page.size()) != page.size()) {
+    LOG_ERR("SCT", "Failed to write image spine page %s", htmlPath.c_str());
+  }
+}
+
 constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // v62: Text blocks persist source whitespace semantics for font-preview reflow.
 // This changes their serialized payload, so full and suspended section caches
@@ -35,7 +54,8 @@ constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // measured in the fallback font). VARAGH numbers start at 181 so its caches
 // never match a CrossInk cache of the same number (VARAGH 1.0/1.1.0 used v78).
 // 183: hyphen/dash line breaks; 184: boxes; 185: font sizes + drop caps (VARAGH 1.3.1).
-constexpr uint8_t SECTION_FILE_VERSION = 186;
+// 188: built-in Persian letters + first-strong-letter paragraph direction.
+constexpr uint8_t SECTION_FILE_VERSION = 188;
 // Suspended incremental build: valid pages plus LUTs and a parse-watermark trailer.
 // Change this with layout or payload changes so stale partial pages cannot resume
 // under a different layout contract.
@@ -520,6 +540,7 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
   // inflation entirely. It's promoted by an atomic rename as soon as the inflate succeeds (below), so
   // even a window-only giant spine -- whose .bin never finalizes -- still caches its HTML, letting a
   // reopen skip the multi-second inflate. If htmlPath exists it is known-complete.
+  writeImageSpinePage(localPath, htmlDir, htmlPath);
   const bool reusedHtml = Storage.exists(htmlPath.c_str());
   bool htmlCached = reusedHtml;
   const auto cleanupTempHtml = [&]() {
@@ -897,6 +918,7 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const SectionBuildOptions
     Storage.mkdir(sectionsDir.c_str());
   }
 
+  writeImageSpinePage(localPath, htmlDir, htmlPath);
   const bool reusedHtml = Storage.exists(htmlPath.c_str());
   bool htmlCached = reusedHtml;
   const auto cleanupTempHtml = [&]() {

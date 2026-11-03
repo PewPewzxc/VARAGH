@@ -1574,9 +1574,15 @@ void SettingsActivity::buildGroupList(UiApp::ScreenType& screen) {
   props.selectedIndex = static_cast<int16_t>(groupListIndex);
   props.action = ACTION_GROUP;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
-  props.labelText = screen.theme().bodyText;
+  props.labelText = screen.theme().titleText;
   props.labelText.bold = true;
-  const auto rows = configureUiList(props, screen.theme(), screen.body(), UiListRowType::WithSubtitle);
+  props.subtitleText = screen.theme().bodyText;
+  const fui::Rect body = screen.body();
+  configureUiList(props, screen.theme(), body, UiListRowType::WithSubtitle);
+  // The eight groups share the whole screen: bigger rows read and tap more easily.
+  const int fillHeight = (body.height - props.rowGap * (GroupCount - 1)) / GroupCount;
+  if (fillHeight > props.rowHeight) props.rowHeight = static_cast<int16_t>(fillHeight);
+  const auto rows = fui::listVisibleRows(body, props.rowHeight, props.rowGap);
   visibleRows = rows > 0 ? rows : 1;
   topIndex = scrollListBy(topIndex, 0, visibleRows, GroupCount);
   props.topIndex = static_cast<uint16_t>(topIndex);

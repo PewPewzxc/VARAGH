@@ -430,6 +430,12 @@ bool isScriptFallbackCodepoint(const uint32_t cp) {
          (cp >= 0xFB50 && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF) || (cp >= 0x0250 && cp <= 0x02FF) ||
          (cp >= 0x1D00 && cp <= 0x1DBF);
 }
+
+// Arabic letters are drawn as their shaped forms, so a fallback holding only those
+// (the built-in Persian supplement) still draws a base letter it does not list.
+bool scriptFallbackDraws(const EpdFontFamily& fallback, const uint32_t cp, const EpdFontFamily::Style style) {
+  return fallback.hasCodepoint(cp, style) || (cp >= 0x0620 && cp <= 0x06FF && fallback.hasCodepoint(0xFE8E, style));
+}
 }  // namespace
 
 int GfxRenderer::resolveTextFontId(const int fontId, const char* text, const EpdFontFamily::Style style) const {
@@ -461,7 +467,7 @@ int GfxRenderer::resolveScriptFallbackFontId(const int fontId, const char* text,
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&cursor)))) {
     if (isScriptFallbackCodepoint(cp) && !fontIt->second.hasCodepoint(cp, style) &&
-        fallbackIt->second.hasCodepoint(cp, style)) {
+        scriptFallbackDraws(fallbackIt->second, cp, style)) {
       return fbIt->second;
     }
   }
@@ -475,7 +481,7 @@ bool GfxRenderer::scriptFallbackCovers(const int fontId, const uint32_t cp, cons
   const auto fontIt = fontMap.find(fontId);
   const auto fallbackIt = fontMap.find(fbIt->second);
   if (fontIt == fontMap.end() || fallbackIt == fontMap.end()) return false;
-  return !fontIt->second.hasCodepoint(cp, style) && fallbackIt->second.hasCodepoint(cp, style);
+  return !fontIt->second.hasCodepoint(cp, style) && scriptFallbackDraws(fallbackIt->second, cp, style);
 }
 
 int GfxRenderer::resolveCjkFallbackFontId(const int fontId, const char* text, const EpdFontFamily::Style style) const {
@@ -1258,6 +1264,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
   int lastBaseLeft = 0;
   int lastBaseWidth = 0;
   int lastBaseTop = 0;
+  int lastBaseBottom = 0;  // glyph bottom, negative when it descends below the baseline
   int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: prev glyph's advance + next kern for snap
 
   if (fontCacheManager_ && fontCacheManager_->isScanning()) {
@@ -1294,7 +1301,9 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
           combiningMark::raiseAboveBase(anchor, combiningGlyph->top, combiningGlyph->height, lastBaseTop);
       const int combiningX = combiningMark::anchorOver(anchor, lastBaseX, lastBaseLeft, lastBaseWidth,
                                                        combiningGlyph->left, combiningGlyph->width);
-      renderCharImpl<TextRotation::None>(*this, renderMode, font, cp, combiningX, yPos - raiseBy, black, style);
+      const int lowerBy = combiningMark::lowerBelowBase(cp, combiningGlyph->top, lastBaseBottom);
+      renderCharImpl<TextRotation::None>(*this, renderMode, font, cp, combiningX, yPos - raiseBy + lowerBy, black,
+                                         style);
       continue;
     }
 
@@ -1323,6 +1332,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseLeft = 0;
       lastBaseWidth = 0;
       lastBaseTop = 0;
+      lastBaseBottom = 0;
       prevCp = 0;
       prevScaledSmallCap = false;
       continue;
@@ -1334,6 +1344,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseLeft = metrics.left;
       lastBaseWidth = metrics.width;
       lastBaseTop = metrics.top;
+      lastBaseBottom = 0;
       prevAdvanceFP = metrics.advanceX;
       prevCp = cp;
       prevScaledSmallCap = false;
@@ -1346,6 +1357,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseLeft = metrics.left;
       lastBaseWidth = metrics.width;
       lastBaseTop = metrics.top;
+      lastBaseBottom = 0;
       prevAdvanceFP = metrics.advanceX;
       prevCp = cp;
       prevScaledSmallCap = false;
@@ -1358,6 +1370,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseLeft = metrics.left;
       lastBaseWidth = metrics.width;
       lastBaseTop = metrics.top;
+      lastBaseBottom = 0;
       prevAdvanceFP = metrics.advanceX;
       prevCp = cp;
       prevScaledSmallCap = false;
@@ -1373,6 +1386,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseLeft = 0;
       lastBaseWidth = 0;
       lastBaseTop = 0;
+      lastBaseBottom = 0;
       prevCp = 0;
       prevScaledSmallCap = false;
       continue;
@@ -1381,6 +1395,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
     lastBaseLeft = glyph->left;
     lastBaseWidth = glyph->width;
     lastBaseTop = glyph->top;
+    lastBaseBottom = glyph->top - glyph->height;
     prevAdvanceFP = glyph->advanceX;  // 12.4 fixed-point
 
     const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
@@ -2914,12 +2929,12 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, const EpdFo
   std::string visual;
   text = resolveVisualText(text, visual, BidiUtils::BidiBaseDir::AUTO);
 
-  // Advance table fast-path for SD card fonts during layout.
-  // No kerning/ligature lookup — consistent with previous metadataOnly behavior
-  // where kern/lig data was not loaded.
+  // Advance table fast-path for SD card fonts during layout. Each advance is
+  // snapped to a pixel like drawText does (CrossPoint #3985); summing first and
+  // snapping once left words a pixel or two off and word gaps uneven.
   auto sdIt = sdCardFonts_.find(resolvedFontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
-    int32_t widthFP = 0;
+    int widthPx = 0;
     const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
     const uint8_t styleIdx = resolveSdCardStyle(*sdIt->second, style);
     const auto fontIt = fontMap.find(resolvedFontId);
@@ -2940,11 +2955,11 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, const EpdFo
       }
       const int32_t advFP = resolveSdCardAdvanceFP(*sdIt->second, font, cp, style, styleIdx);
       if (isSupSub) {
-        widthFP += halfAdvanceFP(advFP);
+        widthPx += fp4::toPixel(halfAdvanceFP(advFP));
       } else if (scaledSmallCap) {
-        widthFP += smallCapsAdvanceFP(advFP);
+        widthPx += fp4::toPixel(smallCapsAdvanceFP(advFP));
       } else {
-        widthFP += advFP;
+        widthPx += fp4::toPixel(advFP);
       }
       lastCp = cp;
       lastScaledSmallCap = scaledSmallCap;
@@ -2959,9 +2974,9 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, const EpdFo
       if (lastScaledSmallCap || followingScaledSmallCap) {
         kernFP = smallCapsAdvanceFP(kernFP);
       }
-      widthFP += kernFP;
+      widthPx += fp4::toPixel(kernFP);
     }
-    return fp4::toPixel(widthFP);
+    return widthPx;
   }
 
   const auto fontIt = fontMap.find(resolvedFontId);
@@ -3118,6 +3133,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
   int lastBaseLeft = 0;
   int lastBaseWidth = 0;
   int lastBaseTop = 0;
+  int lastBaseBottom = 0;  // glyph bottom, negative when it descends below the baseline
   int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: prev glyph's advance + next kern for snap
 
   uint32_t cp;
@@ -3138,7 +3154,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       const auto anchor = combiningMark::anchorFor(cp);
       const int raiseBy =
           combiningMark::raiseAboveBase(anchor, combiningGlyph->top, combiningGlyph->height, lastBaseTop);
-      const int combiningX = x - raiseBy;
+      const int combiningX = x - raiseBy + combiningMark::lowerBelowBase(cp, combiningGlyph->top, lastBaseBottom);
       const int combiningY = combiningMark::anchorOverRotated90CW(anchor, lastBaseY, lastBaseLeft, lastBaseWidth,
                                                                   combiningGlyph->left, combiningGlyph->width);
       renderCharImpl<TextRotation::Rotated90CW>(*this, renderMode, font, cp, combiningX, combiningY, black, style);
@@ -3161,6 +3177,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseLeft = 0;
       lastBaseWidth = 0;
       lastBaseTop = 0;
+      lastBaseBottom = 0;
       prevCp = 0;
       continue;
     }
@@ -3171,6 +3188,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseLeft = metrics.left;
       lastBaseWidth = metrics.width;
       lastBaseTop = metrics.top;
+      lastBaseBottom = 0;
       prevAdvanceFP = metrics.advanceX;
       prevCp = cp;
       continue;
@@ -3182,6 +3200,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseLeft = metrics.left;
       lastBaseWidth = metrics.width;
       lastBaseTop = metrics.top;
+      lastBaseBottom = 0;
       prevAdvanceFP = metrics.advanceX;
       prevCp = cp;
       continue;
@@ -3193,6 +3212,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseLeft = metrics.left;
       lastBaseWidth = metrics.width;
       lastBaseTop = metrics.top;
+      lastBaseBottom = 0;
       prevAdvanceFP = metrics.advanceX;
       prevCp = cp;
       continue;
@@ -3207,6 +3227,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseLeft = 0;
       lastBaseWidth = 0;
       lastBaseTop = 0;
+      lastBaseBottom = 0;
       prevCp = 0;
       continue;
     }
@@ -3214,6 +3235,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
     lastBaseLeft = glyph->left;
     lastBaseWidth = glyph->width;
     lastBaseTop = glyph->top;
+    lastBaseBottom = glyph->top - glyph->height;
     prevAdvanceFP = glyph->advanceX;  // 12.4 fixed-point
 
     renderCharImpl<TextRotation::Rotated90CW>(*this, renderMode, font, cp, x, lastBaseY, black, style);

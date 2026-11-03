@@ -15,6 +15,7 @@
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "util/ClockNetSync.h"
 
 void ClockSyncActivity::onEnter() {
   Activity::onEnter();
@@ -66,17 +67,11 @@ void ClockSyncActivity::runSync() {
     return;
   }
 
-  const bool ok = halClock.syncFromNTP();
-  if (!ok) {
+  if (!clocksync::syncNow()) {
     state = FAILED;
     requestUpdate();
     return;
   }
-
-  // Mark as synced so the auto-sync hook stops firing on future WiFi connects.
-  SETTINGS.clockHasBeenSynced = 1;
-  SETTINGS.clockDateHasBeenSynced = 1;
-  SETTINGS.saveToFile();
 
   // Read the freshly synced time back for the user-facing confirmation.
   char buf[9];

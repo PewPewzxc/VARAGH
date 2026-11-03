@@ -220,6 +220,36 @@ for size in ${UI_FONT_SIZES[@]}; do
   done
 done
 
+# VARAGH: Persian supplement for the bitmap reader fonts (X3/X4). Persian letters
+# only, regular weight: Lexend/Bitter keep their own Latin and borrow these.
+# Keep in step with PERSIAN_RANGES in subset-reader-supplements.py (the S3 builds).
+PERSIAN_INTERVALS=(
+  --additional-intervals 0x060C,0x060C --additional-intervals 0x061B,0x061B
+  --additional-intervals 0x061F,0x061F --additional-intervals 0x0621,0x0621
+  --additional-intervals 0x0640,0x0640 --additional-intervals 0x064B,0x0655
+  --additional-intervals 0x0660,0x066C --additional-intervals 0x0670,0x0670
+  --additional-intervals 0x06F0,0x06F9 --additional-intervals 0xFB56,0xFB59
+  --additional-intervals 0xFB7A,0xFB7D --additional-intervals 0xFB8A,0xFB8B
+  --additional-intervals 0xFB8E,0xFB95 --additional-intervals 0xFBFC,0xFBFF
+  --additional-intervals 0xFE80,0xFEFC
+)
+for size in ${READING_FONT_SIZES[@]}; do
+  python fontconvert.py vazirmatn_persian_${size}_regular $size \
+    ../builtinFonts/source/Vazirmatn/Vazirmatn-Medium.ttf --no-default-intervals \
+    "${PERSIAN_INTERVALS[@]}" "${READING_FONT_RENDER_ARGS[@]}" > ../builtinFonts/vazirmatn_persian_${size}_regular.h
+  echo "Generated ../builtinFonts/vazirmatn_persian_${size}_regular.h"
+done
+# Pronunciation (IPA) letters + combining marks: the reader families' shared fallback.
+IPA_INTERVALS=(--additional-intervals 0x0250,0x02FF --additional-intervals 0x0300,0x036F
+  --additional-intervals 0x03B2,0x03B2 --additional-intervals 0x03B8,0x03B8 --additional-intervals 0x03C7,0x03C7
+  --additional-intervals 0x1D4A,0x1D4B --additional-intervals 0x1D51,0x1D51 --additional-intervals 0x1D5D,0x1D5E
+  --additional-intervals 0x1D7B,0x1D7B --additional-intervals 0x1D7F,0x1D7F)
+for size in ${READING_FONT_SIZES[@]}; do
+  python fontconvert.py noto_ipa_${size}_regular $size ../builtinFonts/source/NotoSans/NotoSans-Regular.ttf     --no-default-intervals "${IPA_INTERVALS[@]}" "${READING_FONT_RENDER_ARGS[@]}" > ../builtinFonts/noto_ipa_${size}_regular.h
+  echo "Generated ../builtinFonts/noto_ipa_${size}_regular.h"
+done
+python subset-reader-supplements.py ../builtinFonts/source/Vazirmatn/Vazirmatn-Medium.ttf   ../builtinFonts/source/NotoSans/NotoSans-Regular.ttf
+
 # Small UI Font - Inter
 
 python fontconvert.py inter_8_regular 8 \

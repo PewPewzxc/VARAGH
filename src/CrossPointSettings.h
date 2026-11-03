@@ -528,6 +528,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Set once an NTP sync writes both date and time. Kept separate so older
   // time-only syncs do not unlock date display with stale RTC date registers.
   uint8_t clockDateHasBeenSynced = 0;
+  // Set the UTC offset (summer time included) from the network's location on each clock sync.
+  uint8_t clockAutoZone = 1;
+  // Redraw the clock when the minute changes, while the reader or Home screen is open.
+  uint8_t liveClock = 0;
   // Text rendering settings
   uint8_t extraParagraphSpacing = 1;
   uint8_t forceParagraphIndents = 0;

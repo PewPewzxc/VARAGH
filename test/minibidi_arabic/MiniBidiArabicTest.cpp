@@ -252,3 +252,19 @@ TEST(TransparentMark, LettersAndLatinMarksAreNot) {
   EXPECT_FALSE(BidiUtils::isTransparentMark(0x0661));  // Arabic-Indic digit
   EXPECT_FALSE(BidiUtils::isTransparentMark('a'));
 }
+
+/* ── Brackets around Latin text in an RTL line (UAX#9 L4) ────────────── */
+
+// "עברית (download)" is how Settings > Language lists a pack to download. The
+// brackets resolve RTL, so both are mirrored and keep holding the Latin word.
+TEST(Brackets, LatinInsideRtlLineStaysEnclosed) {
+  const CP logical = {0x05E2, 0x05D1, ' ', '(', 'd', 'l', ')'};
+  EXPECT_EQ(shapeVisual(logical), (CP{'(', 'd', 'l', ')', ' ', 0x05D1, 0x05E2}));
+}
+
+TEST(Brackets, LatinLineInRtlParagraph) {
+  const std::string in = encode({'a', ' ', '(', 'b', ')', ' ', 0x05D0});
+  std::string out;
+  ASSERT_TRUE(BidiUtils::applyBidiVisual(in.c_str(), out, /*paragraphLevel=*/1));
+  EXPECT_EQ(decode(out), (CP{0x05D0, ' ', 'a', ' ', '(', 'b', ')'}));
+}

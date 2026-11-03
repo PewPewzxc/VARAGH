@@ -24,6 +24,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
+#include "util/ClockNetSync.h"
 
 namespace fui = freeink::ui;
 
@@ -724,15 +725,8 @@ void WifiSelectionActivity::checkConnectionStatus() {
             WiFi.RSSI());
 #endif
 
-    // Sync RTC from NTP on the first successful WiFi connection only. Users can force a re-sync from
-    // Settings > System > Device > Sync Date/Time Now.
-    if (halClock.isAvailable() && (!SETTINGS.clockHasBeenSynced || !SETTINGS.clockDateHasBeenSynced)) {
-      if (halClock.syncFromNTP()) {
-        SETTINGS.clockHasBeenSynced = 1;
-        SETTINGS.clockDateHasBeenSynced = 1;
-        SETTINGS.saveToFile();
-      }
-    }
+    // Keep the clock (and, when automatic, the time zone) right on every connect, at most hourly.
+    clocksync::onWifiConnected();
 
     // Save this as the last connected network - SD card operations need lock as
     // we use SPI for both
@@ -1326,10 +1320,9 @@ void WifiSelectionActivity::renderConnected(const Rect* screen, const ThemeMetri
 
   UITheme::drawCenteredText(renderer, *screen, UI_12_FONT_ID, top - 30, tr(STR_CONNECTED), true, EpdFontFamily::BOLD);
 
-  std::string ssidInfo = std::string(tr(STR_NETWORK_PREFIX)) + selectedSSID;
-  if (ssidInfo.length() > 28) {
-    ssidInfo.replace(25, ssidInfo.length() - 25, "...");
-  }
+  const std::string ssidInfo =
+      renderer.truncatedText(UI_10_FONT_ID, (std::string(tr(STR_NETWORK_PREFIX)) + selectedSSID).c_str(),
+                             screen->width - metrics->contentSidePadding * 2);
   UITheme::drawCenteredText(renderer, *screen, UI_10_FONT_ID, top + 10, ssidInfo.c_str());
 
   const std::string ipInfo = std::string(tr(STR_IP_ADDRESS_PREFIX)) + connectedIP;
@@ -1346,10 +1339,9 @@ void WifiSelectionActivity::renderSavePrompt(const Rect* screen, const ThemeMetr
 
   UITheme::drawCenteredText(renderer, *screen, UI_12_FONT_ID, top - 40, tr(STR_CONNECTED), true, EpdFontFamily::BOLD);
 
-  std::string ssidInfo = std::string(tr(STR_NETWORK_PREFIX)) + selectedSSID;
-  if (ssidInfo.length() > 28) {
-    ssidInfo.replace(25, ssidInfo.length() - 25, "...");
-  }
+  const std::string ssidInfo =
+      renderer.truncatedText(UI_10_FONT_ID, (std::string(tr(STR_NETWORK_PREFIX)) + selectedSSID).c_str(),
+                             screen->width - metrics->contentSidePadding * 2);
   UITheme::drawCenteredText(renderer, *screen, UI_10_FONT_ID, top, ssidInfo.c_str());
 
   UITheme::drawCenteredText(renderer, *screen, UI_10_FONT_ID, top + 40, tr(STR_SAVE_PASSWORD));
@@ -1410,10 +1402,9 @@ void WifiSelectionActivity::renderForgetPrompt(const Rect* screen, const ThemeMe
   UITheme::drawCenteredText(renderer, *screen, UI_12_FONT_ID, top - 40, tr(STR_FORGET_NETWORK), true,
                             EpdFontFamily::BOLD);
 
-  std::string ssidInfo = std::string(tr(STR_NETWORK_PREFIX)) + selectedSSID;
-  if (ssidInfo.length() > 28) {
-    ssidInfo.replace(25, ssidInfo.length() - 25, "...");
-  }
+  const std::string ssidInfo =
+      renderer.truncatedText(UI_10_FONT_ID, (std::string(tr(STR_NETWORK_PREFIX)) + selectedSSID).c_str(),
+                             screen->width - metrics->contentSidePadding * 2);
   UITheme::drawCenteredText(renderer, *screen, UI_10_FONT_ID, top, ssidInfo.c_str());
 
   UITheme::drawCenteredText(renderer, *screen, UI_10_FONT_ID, top + 40, tr(STR_FORGET_AND_REMOVE));

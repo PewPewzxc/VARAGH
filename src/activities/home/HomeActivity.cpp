@@ -1573,6 +1573,10 @@ void HomeActivity::loop() {
 
   if (quickActionsPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
 
+  if (liveClockTicker.due() && SETTINGS.shouldShowClockOutsideReader() && !quickActionsPopup.isActive()) {
+    requestUpdate();  // a fast refresh only moves the clock pixels that changed
+  }
+
   if (coverGridUi) {
     const int touched = coverGridUi->selectedAction(mappedInput);
     if (coverGridUi->app.invalidated()) requestUpdate();

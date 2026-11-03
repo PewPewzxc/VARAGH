@@ -18,7 +18,7 @@ class EpubReaderChapterSelectionActivity final : public Activity {
   std::shared_ptr<Epub> epub;
   std::string epubPath;
   ButtonNavigator buttonNavigator;
-  int currentSpineIndex = 0;
+  int currentTocIndex = 0;
   int selectorIndex = 0;
   freeink::ui::GfxRendererTarget uiTarget;
   UiApp app;
@@ -40,7 +40,7 @@ class EpubReaderChapterSelectionActivity final : public Activity {
  public:
   EpubReaderChapterSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                      const std::shared_ptr<Epub>& epub, const std::string& epubPath,
-                                     int currentSpineIndex);
+                                     int currentTocIndex);
   void onEnter() override;
   void onExit() override;
   void loop() override;

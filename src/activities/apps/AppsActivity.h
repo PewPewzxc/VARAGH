@@ -4,13 +4,14 @@
 
 #include "ClockFace.h"
 #include "GameUi.h"
+#include "SudokuActivity.h"
 #include "activities/Activity.h"
 
 // Home > Apps: a tile per built-in app with its icon, its name and a short
 // line about what is going on in it. Manage (top right) lists every app with a
 // switch; an app that is switched off is only hidden from the tiles - it stays
 // in the firmware and costs no memory or battery while it is not open. The
-// Clock's row also leads to its settings.
+// Clock's and Sudoku's rows also lead to their settings.
 class AppsActivity final : public Activity {
  public:
   // What sleep notes about the screen it began on, so that waking returns there
@@ -46,15 +47,27 @@ class AppsActivity final : public Activity {
   void drawManage() const;
   void drawClockSettings() const;
   void changeClockSetting(int row);
+  void drawSudokuSettings() const;
+  // The Settings button on an app's row in Manage, left of its switch.
+  gameui::Box settingsButtonFor(AppId app) const;
 
-  enum class Mode : uint8_t { Tiles, Manage, ClockSettings };
+  enum class Mode : uint8_t { Tiles, Manage, ClockSettings, SudokuSettings };
   enum ClockRow { FaceRow = 0, PersianRow = 1, WeekStartRow = 2, WeekNumberRow = 3, kClockRowCount = 4 };
+  // The Sudoku switches fill two pages.
+  static constexpr int kSudokuRowsPerPage = 5;
+  static constexpr int kSudokuPages =
+      (SudokuActivity::kOptionCount + kSudokuRowsPerPage - 1) / kSudokuRowsPerPage;
 
   Mode mode = Mode::Tiles;
   uint8_t resumeId;
   clockface::Options clockOptions;
   gameui::Box clockSettingsBox;
   gameui::Box clockRows[kClockRowCount];
+  SudokuActivity::Options sudokuOptions;
+  int sudokuPage = 0;
+  gameui::Box sudokuSettingsBox;
+  gameui::Box sudokuRows[kSudokuRowsPerPage];
+  gameui::Box pageBoxes[2];  // previous, next
   uint8_t hiddenMask = 0;
   int shownCount = 0;
   int shown[kAppCount] = {};

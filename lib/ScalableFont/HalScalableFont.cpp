@@ -794,7 +794,8 @@ const EpdGlyph* HalScalableFont::glyph(void* ctx, uint32_t cp) {
                                   failure == freeink::font::FtFont::GlyphFailure::Embolden ||
                                   failure == freeink::font::FtFont::GlyphFailure::Render) &&
                                  error != 0);
-    if (!s.owner->metricFailureLogged_) {
+    // A missing letter is routine: the family's Persian/IPA supplement draws it next.
+    if (!s.owner->metricFailureLogged_ && failure != freeink::font::FtFont::GlyphFailure::MissingGlyph) {
       s.owner->metricFailureLogged_ = true;
       const auto& arena = runtime().allocator;
       LOG_ERR("TTF",

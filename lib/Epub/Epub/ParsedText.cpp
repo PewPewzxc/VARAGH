@@ -975,6 +975,9 @@ bool ParsedText::layoutAndExtractLines(
         blockStyle.isRtl = true;
         break;
       }
+      // UAX#9 P2: the first strong letter decides, so a Latin word ends the probe
+      // ("The word خرد means..." stays left to right).
+      if (BidiUtils::detectParagraphLevel(words[i].c_str(), 1, BidiUtils::RTL_PARAGRAPH_PROBE_DEPTH) == 0) break;
     }
   }
 
@@ -1020,7 +1023,7 @@ bool ParsedText::layoutAndExtractLines(
   if (hyphenationEnabled) {
     // Use greedy layout that can split words mid-loop when a hyphenated prefix fits.
     breaksOk = computeHyphenatedLineBreaks(renderer, fontId, pageWidth, wordWidths, wordContinues, wordNoSpaceBefore,
-                                           lineBreakIndices);
+                                           lineBreakIndices, maxLines);
     if (breaksOk) {
       breaksOk = calculateGapMetrics(naturalGaps, gapSlots, renderer, fontId);
     }
@@ -1032,8 +1035,10 @@ bool ParsedText::layoutAndExtractLines(
     return false;
   }
   // maxLines: a drop cap takes only the lines beside it; the rest are laid out at full width.
+  // A bounded hyphenated layout stops early, so its last computed line is not the paragraph's last.
+  const bool allLinesComputed = lineBreakIndices[lineBreakIndices.size() - 1] == words.size();
   const size_t lineCount =
-      std::min(maxLines, includeLastLine ? lineBreakIndices.size() : lineBreakIndices.size() - 1);
+      std::min(maxLines, lineBreakIndices.size() - (!includeLastLine && allLinesComputed ? 1 : 0));
 
   for (size_t i = 0; i < lineCount; ++i) {
     if (!extractLine(layoutArena, i, pageWidth, wordWidths, wordContinues, wordNoSpaceBefore, naturalGaps, gapSlots,
@@ -1406,14 +1411,15 @@ bool ParsedText::computeLineBreaks(Arena& scratchArena, const GfxRenderer& rende
 bool ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& renderer, const int fontId, const int pageWidth,
                                              ArenaVector<uint16_t>& wordWidths, std::vector<bool>& continuesVec,
                                              std::vector<bool>& noSpaceBeforeVec,
-                                             ArenaVector<size_t>& lineBreakIndices) {
+                                             ArenaVector<size_t>& lineBreakIndices, const size_t maxLines) {
   const int firstLineIndent = resolveFirstLineIndent(true, renderer, fontId);
 
   size_t currentIndex = 0;
   bool isFirstLine = true;
   auto currentTokenAttaches = [&](const size_t index) { return index < wordWidths.size() && continuesVec[index]; };
 
-  while (currentIndex < wordWidths.size()) {
+  // CrossPoint #4173: stop after the lines a drop cap takes, so words below it are not split at its narrow width.
+  while (currentIndex < wordWidths.size() && lineBreakIndices.size() < maxLines) {
     const size_t lineStart = currentIndex;
     int lineWidth = 0;
 
@@ -1791,7 +1797,7 @@ bool ParsedText::extractLine(Arena& scratchArena, const size_t breakIndex, const
 
   // Calculate spacing (account for indent reducing effective page width on first line)
   const int effectivePageWidth = pageWidth - firstLineIndent;
-  const bool isLastLine = breakIndex == lineBreakIndices.size() - 1;
+  const bool isLastLine = lineBreakIndices[breakIndex] == words.size();
   const CssTextAlign effectiveAlignment =
       (blockStyle.isRtl && !blockStyle.textAlignDefined && blockStyle.alignment == CssTextAlign::Left)
           ? CssTextAlign::Right

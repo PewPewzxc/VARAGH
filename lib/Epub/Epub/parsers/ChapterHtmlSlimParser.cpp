@@ -36,6 +36,35 @@
 // Minimum file size (in bytes) to show indexing popup - smaller chapters don't benefit from it
 constexpr size_t MIN_SIZE_FOR_POPUP = 10 * 1024;  // 10KB
 constexpr size_t PARSE_BUFFER_SIZE = 1024;
+// A SYSTEM doctype makes expat pass unknown entities (&nbsp;) to the default handler instead of failing.
+constexpr char FALLBACK_DOCTYPE[] = "<!DOCTYPE html SYSTEM \"x\">";
+constexpr size_t FALLBACK_DOCTYPE_LEN = sizeof(FALLBACK_DOCTYPE) - 1;
+
+// CrossPoint issue #2520: a chapter without a doctype stops at its first HTML entity. Insert one after
+// the XML declaration of the first chunk. Returns the new length; leaves non-UTF-8 input untouched.
+// shortcut: only the first chunk is searched for an existing doctype; a doctype after 1 KB of comments
+// would be duplicated and truncate that chapter.
+size_t insertDoctypeIfMissing(char* buf, const size_t len, const size_t cap) {
+  const auto find = [&](const char* needle, const size_t from, const bool ignoreCase) -> size_t {
+    const size_t n = strlen(needle);
+    for (size_t i = from; i + n <= len; i++) {
+      if (ignoreCase ? strncasecmp(buf + i, needle, n) == 0 : memcmp(buf + i, needle, n) == 0) return i;
+    }
+    return SIZE_MAX;
+  };
+  if (find("<!DOCTYPE", 0, true) != SIZE_MAX || len + FALLBACK_DOCTYPE_LEN > cap) return len;
+  size_t pos = (len >= 3 && memcmp(buf, "\xEF\xBB\xBF", 3) == 0) ? 3 : 0;
+  while (pos < len && (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\r' || buf[pos] == '\n')) pos++;
+  if (pos >= len || buf[pos] != '<') return len;
+  if (len - pos >= 5 && memcmp(buf + pos, "<?xml", 5) == 0) {
+    const size_t declEnd = find("?>", pos, false);
+    if (declEnd == SIZE_MAX) return len;
+    pos = declEnd + 2;
+  }
+  memmove(buf + pos + FALLBACK_DOCTYPE_LEN, buf + pos, len - pos);
+  memcpy(buf + pos, FALLBACK_DOCTYPE, FALLBACK_DOCTYPE_LEN);
+  return len + FALLBACK_DOCTYPE_LEN;
+}
 // Initial slab for the parse arena. Covers both style stacks (~2 KB) with headroom for growth.
 constexpr size_t PARSE_ARENA_SLAB_SIZE = 4 * 1024;
 constexpr size_t DEFAULT_BUFFERED_WORDS_BEFORE_LAYOUT = 350;
@@ -2170,6 +2199,17 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     cssStyle.defined.fontVariantCaps = 1;
   }
 
+  // CrossPoint #4072: resolve explicit `inherit` against the parent before this element changes the
+  // active style; read as "normal" it silently dropped bold and italic in common CSS resets.
+  if (cssStyle.fontWeight == CssFontWeight::Inherit) {
+    cssStyle.fontWeight =
+        (self->effectiveBold || self->boldUntilDepth < self->depth) ? CssFontWeight::Bold : CssFontWeight::Normal;
+  }
+  if (cssStyle.fontStyle == CssFontStyle::Inherit) {
+    cssStyle.fontStyle =
+        (self->effectiveItalic || self->italicUntilDepth < self->depth) ? CssFontStyle::Italic : CssFontStyle::Normal;
+  }
+
   const char* roleAttr = getAttribute(atts, "role");
   const char* epubTypeAttr = getAttribute(atts, "epub:type");
   const bool isPublisherPageBreak =
@@ -3061,6 +3101,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   }
 
   if (matches(name, HEADER_TAGS, std::size(HEADER_TAGS))) {
+    // CrossPoint #4030: text running straight into a block ("text<h3>") is still in the part-word
+    // buffer; flush it into the block it belongs to, or it joins the heading's first word.
+    if (self->partWordBufferIndex > 0) self->flushPartWordBuffer();
     self->headingDepth = self->depth;
     self->headingOpenerActive = true;
     self->currentCssStyle = cssStyle;
@@ -3107,6 +3150,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       brStyle.fromBrElement = true;
       self->startNewTextBlock(brStyle);
     } else {
+      // Flush pending text before the new block, as the header and <br/> branches do.
+      if (self->partWordBufferIndex > 0) self->flushPartWordBuffer();
       self->currentCssStyle = cssStyle;
       self->applyBlockFontScale(userAlignmentBlockStyle, cssStyle, name);
       self->openBoxScope(userAlignmentBlockStyle, cssStyle);
@@ -4181,14 +4226,17 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
     return ParseStatus::Error;
   }
 
-  void* const buf = XML_GetBuffer(activeParser, PARSE_BUFFER_SIZE);
+  const bool atFileStart = parseFile_.position() == 0;
+  const size_t bufCap = PARSE_BUFFER_SIZE + (atFileStart ? FALLBACK_DOCTYPE_LEN : 0);
+  void* const buf = XML_GetBuffer(activeParser, static_cast<int>(bufCap));
   if (!buf) {
     LOG_ERR("EHP", "Couldn't allocate memory for buffer");
     return ParseStatus::Error;
   }
 
-  const size_t len = parseFile_.read(buf, PARSE_BUFFER_SIZE);
+  size_t len = parseFile_.read(buf, PARSE_BUFFER_SIZE);
   parseFileOffset_ = parseFile_.position();
+  if (atFileStart) len = insertDoctypeIfMissing(static_cast<char*>(buf), len, bufCap);
   if (len == 0 && parseFile_.available() > 0) {
     LOG_ERR("EHP", "File read error");
     return ParseStatus::Error;

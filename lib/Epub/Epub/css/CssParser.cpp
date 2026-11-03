@@ -52,9 +52,6 @@ constexpr size_t MAX_DESCENDANT_RULES = CssParser::MAX_DESCENDANT_RULES;
 constexpr size_t MIN_FREE_HEAP_FOR_RULE_GROWTH = 64 * 1024;
 constexpr size_t MIN_LARGEST_BLOCK_FOR_RULE_GROWTH = 8 * 1024;
 
-// Minimum free heap required to apply CSS during rendering
-// If below this threshold, we skip CSS to avoid display artifacts.
-constexpr size_t MIN_FREE_HEAP_FOR_CSS = 48 * 1024;
 
 // Hydrating cached CSS rules is an optimization, not a requirement. Keep a
 // larger heap floor than basic CSS application so low-memory books can still
@@ -556,6 +553,7 @@ CssTextAlign CssParser::interpretAlignment(std::string_view val) {
 CssFontStyle CssParser::interpretFontStyle(std::string_view val) {
   val = trimCssWhitespace(val);
 
+  if (iequalsAscii(val, "inherit")) return CssFontStyle::Inherit;
   if (iequalsAscii(val, "italic") || iequalsAscii(val, "oblique")) return CssFontStyle::Italic;
   return CssFontStyle::Normal;
 }
@@ -563,6 +561,7 @@ CssFontStyle CssParser::interpretFontStyle(std::string_view val) {
 CssFontWeight CssParser::interpretFontWeight(std::string_view val) {
   val = trimCssWhitespace(val);
 
+  if (iequalsAscii(val, "inherit")) return CssFontWeight::Inherit;
   // Named values
   if (iequalsAscii(val, "bold") || iequalsAscii(val, "bolder")) return CssFontWeight::Bold;
   if (iequalsAscii(val, "normal") || iequalsAscii(val, "lighter")) return CssFontWeight::Normal;
@@ -1164,16 +1163,8 @@ bool CssParser::loadFromStream(FsFile& source) {
 
 CssStyle CssParser::resolveStyle(std::string_view tagName, std::string_view classAttr,
                                  const std::vector<CssAncestorEntry>& ancestors) const {
-  static bool lowHeapWarningLogged = false;
-  if (ESP.getFreeHeap() < MIN_FREE_HEAP_FOR_CSS) {
-    if (!lowHeapWarningLogged) {
-      lowHeapWarningLogged = true;
-      LOG_DBG("CSS", "Warning: low heap (%u bytes) below MIN_FREE_HEAP_FOR_CSS (%u), returning empty style",
-              ESP.getFreeHeap(), static_cast<unsigned>(MIN_FREE_HEAP_FOR_CSS));
-    }
-    return CssStyle{};
-  }
-
+  // CrossPoint #4032: lookup borrows the stored rules without allocating, so it runs at any free heap
+  // (skipping it under low memory dropped book styling, mostly on the X3).
   CssStyle result;
 
   // 1. Apply element-level style (lowest priority).
@@ -1227,7 +1218,6 @@ CssStyle CssParser::resolveStyle(std::string_view tagName, std::string_view clas
 
 CssStyle CssParser::resolveFirstLetterStyle(const std::string_view tagName, const std::string_view classAttr) const {
   CssStyle result;
-  if (ESP.getFreeHeap() < MIN_FREE_HEAP_FOR_CSS) return result;
   std::array<char, MAX_SELECTOR_LENGTH + 1> selector{};
   selector[0] = FIRST_LETTER_PREFIX;
   CssStyle matched;

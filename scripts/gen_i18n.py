@@ -863,11 +863,15 @@ def build_language_pack(
         pos += len(translations[key][0].encode("utf-8")) + 1
     offsets: List[int] = []
     data = bytearray()
+    seen: Dict[str, int] = {}  # repeated translations share one copy
     for i, key in enumerate(string_keys):
         s = translations[key][lang_idx]
         if s == translations[key][0]:
             offsets.append(en_offsets[i] | 0x8000)
+        elif s in seen:
+            offsets.append(seen[s])
         else:
+            seen[s] = len(data)
             offsets.append(len(data))
             data += s.encode("utf-8") + b"\0"
     if len(data) > 0x7FFF:

@@ -39,6 +39,14 @@
 #include <builtinFonts/lexenddeca_16_bolditalic.h>
 #include <builtinFonts/lexenddeca_16_italic.h>
 #include <builtinFonts/lexenddeca_16_regular.h>
+#include <builtinFonts/vazirmatn_persian_10_regular.h>
+#include <builtinFonts/vazirmatn_persian_12_regular.h>
+#include <builtinFonts/vazirmatn_persian_14_regular.h>
+#include <builtinFonts/vazirmatn_persian_16_regular.h>
+#include <builtinFonts/noto_ipa_10_regular.h>
+#include <builtinFonts/noto_ipa_12_regular.h>
+#include <builtinFonts/noto_ipa_14_regular.h>
+#include <builtinFonts/noto_ipa_16_regular.h>
 
 #endif
 

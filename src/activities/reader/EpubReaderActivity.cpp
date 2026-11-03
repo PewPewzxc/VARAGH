@@ -16,6 +16,7 @@
 #include <MemoryBudget.h>
 #include <SpeedLog.h>
 #include <Utf8.h>
+#include <HalPowerManager.h>
 #ifndef SIMULATOR
 #include <HalDisplay.h>
 #endif
@@ -2875,6 +2876,72 @@ void EpubReaderActivity::idlePrewarmNextPage() {
   LOG_DBG("ERS", "Idle SD font prewarm: spine=%d page=%d in %lums", currentSpineIndex, nextPage, millis() - startedAt);
 }
 
+// Stock-style picture prefetch: while the reader idles on a page, decode the
+// next page's pictures (the next chapter's first page at a chapter end) into
+// their pixel caches, so turning to that page skips the decode and its
+// placeholder refresh. The decode draws into the framebuffer and the ZIP
+// extraction borrows it, so the visible page is recomposed in RAM afterwards;
+// the panel is not touched.
+// shortcut: the decode is not cancellable, so a key pressed mid-decode waits for it
+// (at most one picture page's decode, which that page would need anyway).
+void EpubReaderActivity::idlePrewarmNextPageImages() {
+  RenderLock lock(*this, RenderLock::Mode::Try);
+  if (!lock.ownsLock()) return;
+
+  if (!section || section->isBuilding() || activeFootnotePreview || automaticPageTurnActive ||
+      !renderer.hasFrameBuffer() || lastRenderCompleteMs == 0 ||
+      (millis() - lastRenderCompleteMs) < IDLE_SD_FONT_PREWARM_DELAY_MS ||
+      quickActionsPopup.isActive() || (endOfBookOptions && endOfBookOptions->menuActive()) ||
+      (idleImagePrewarmSpine == currentSpineIndex && idleImagePrewarmPage == section->currentPage)) {
+    return;
+  }
+  idleImagePrewarmSpine = currentSpineIndex;
+  idleImagePrewarmPage = section->currentPage;
+
+  std::unique_ptr<Section> nextSection;  // keeps the next chapter's page file open while its page loads
+  std::unique_ptr<Page> page;
+  if (section->currentPage + 1 < static_cast<int>(section->pageCount)) {
+    page = section->loadPage(section->currentPage + 1);
+  } else if (epub && preparedNextSpineIndex == currentSpineIndex + 1) {
+    const EpubRenderMode mode = normalizeRenderMode(SETTINGS.epubRenderMode);
+    nextSection = makeUniqueNoThrow<Section>(epub, preparedNextSpineIndex, renderer,
+                                             sectionCacheSuffixForRenderMode(mode));
+    if (nextSection &&
+        nextSection->loadSectionFile(readerRenderSpecForProfile(SETTINGS.getReaderFontId(), preparedNextViewportWidth,
+                                                                preparedNextViewportHeight,
+                                                                buildProfileForRenderMode(mode))) &&
+        nextSection->pageCount > 0) {
+      page = nextSection->loadPage(0);
+    }
+  }
+  if (!page || !page->hasImages() || !page->hasImagesNeedingDecode()) return;
+
+  const auto heap = MemoryBudget::snapshot();
+  if (!MemoryBudget::hasHeap(heap, MemoryBudget::EPUB_INLINE_IMAGE_MIN_FREE,
+                             MemoryBudget::EPUB_INLINE_IMAGE_MIN_MAX_ALLOC)) {
+    LOG_DBG("ERS", "Idle picture prefetch skipped: low heap");
+    return;
+  }
+
+  HalPowerManager::Lock fullSpeed;  // idle runs at low CPU clock (10 MHz on C3): decode ~16x slower without this
+  const unsigned long startedAt = millis();
+  {
+    GfxRenderer::FrameBufferLoan loan(renderer);
+    page->prepareImageCaches();
+  }
+  const ReaderViewportLayout layout = computeReaderViewportLayout(renderer, automaticPageTurnActive);
+  const int renderFontId = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
+  renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+  page->renderImages(renderer, renderFontId, layout.marginLeft, layout.marginTop);
+  page.reset();
+  nextSection.reset();
+  if (!restoreCurrentPageBufferAfterSilentIndex()) {
+    LOG_ERR("ERS", "Idle picture prefetch: failed to restore the current page buffer");
+  }
+  LOG_INF("ERS", "Idle picture prefetch: spine=%d page=%d in %lums", currentSpineIndex, section->currentPage,
+          millis() - startedAt);
+}
+
 // One dismissal rule for every transient reader confirmation: it clears when its
 // dwell time elapses or the reader presses a navigation button.
 bool EpubReaderActivity::transientFeedbackDismissed(const unsigned long showTimeMs) const {
@@ -3453,7 +3520,17 @@ void EpubReaderActivity::loop() {
     if (drainPendingManualPageTurn()) {
       return;
     }
+    if (liveClockTicker.due() && SETTINGS.shouldShowClockInReader() && section && !section->isBuilding() &&
+        !activeFootnotePreview && !automaticPageTurnActive && !shownPageHasImages && lastRenderCompleteMs != 0 &&
+        !quickActionsPopup.isActive() && !(endOfBookOptions && endOfBookOptions->menuActive())) {
+      liveClockSpine = currentSpineIndex;
+      liveClockPage = section->currentPage;
+      liveClockPending.store(true, std::memory_order_release);
+      requestUpdate();
+      return;
+    }
     idlePrewarmNextPage();
+    idlePrewarmNextPageImages();
     return;
   }
 
@@ -3965,11 +4042,25 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuAction action, const 
       return;
     }
     case EpubReaderMenuAction::SELECT_CHAPTER: {
-      const int spineIdx = currentSpineIndex;
+      // Open the list on the sub-chapter being read, not the first TOC entry of this file (CrossPoint #3946).
+      int tocIdx = std::max(0, epub->getTocIndexForSpineIndex(currentSpineIndex));
+      if (section && !activeFootnotePreview) {
+        int bestPage = -1;
+        // shortcut: one anchor-map read per TOC entry of this file; batch like CrossPoint if huge TOCs feel slow.
+        for (int i = tocIdx; i < epub->getTocItemsCount(); ++i) {
+          const auto item = epub->getTocItem(i);
+          if (item.spineIndex != currentSpineIndex || item.anchor.empty()) continue;
+          const auto page = section->findAnchor(item.anchor);
+          if (page && *page <= section->currentPage && static_cast<int>(*page) >= bestPage) {
+            tocIdx = i;
+            bestPage = *page;
+          }
+        }
+      }
       const std::string path = epub->getPath();
       pauseReadingPaceTimer("chapter_selection");
       startActivityForResult(
-          std::make_unique<EpubReaderChapterSelectionActivity>(renderer, mappedInput, epub, path, spineIdx),
+          std::make_unique<EpubReaderChapterSelectionActivity>(renderer, mappedInput, epub, path, tocIdx),
           [this, returnToReaderMenu](const ActivityResult& result) {
             if (!result.isCancelled) {
               const auto& chapterResult = std::get<ChapterResult>(result.data);
@@ -6201,6 +6292,9 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (quickActionsPopup.processRender(renderer, mappedInput)) {
     return;
   }
+  // Only a redraw of the same page counts as a clock tick; a page turn in between wins.
+  clockOnlyRender = liveClockPending.exchange(false, std::memory_order_acq_rel) && section &&
+                    liveClockSpine == currentSpineIndex && liveClockPage == section->currentPage;
 
   const auto showPendingSyncSaveError = [this]() {
     if (!pendingSyncSaveError) return;
@@ -6968,7 +7062,9 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 #else
     const int32_t panelMs = -1;
 #endif
-    SpeedLog::record(SpeedLog::Event::Page, lastRenderCompleteMs - renderStartedMs, -1, panelMs, refreshes);
+    if (!clockOnlyRender) {
+      SpeedLog::record(SpeedLog::Event::Page, lastRenderCompleteMs - renderStartedMs, -1, panelMs, refreshes);
+    }
     if (openStartedMs != 0UL) {
       SpeedLog::record(SpeedLog::Event::Open, lastRenderCompleteMs - openStartedMs);
       openStartedMs = 0UL;
@@ -6980,7 +7076,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     if (heapShapeRedrawStages & HEAP_SHAPE_REDRAW_DICT) {
       MemoryBudget::logHeapShape("dict.reader_redrawn");
     }
-    pageShownAtMs = activeFootnotePreview ? 0UL : millis();
+    // A clock tick keeps the page's reading time running.
+    if (!clockOnlyRender) pageShownAtMs = activeFootnotePreview ? 0UL : millis();
   }
   if (!activeFootnotePreview) {
     const int totalPages = section->estimatedTotalPages();
@@ -7544,6 +7641,7 @@ bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fo
 #endif
 
   const bool pageHasImages = page->hasImages();
+  shownPageHasImages = pageHasImages;
   const bool foregroundBlack = ReaderUtils::readerForegroundBlack();
   bool needsImageGrayscale = pageHasImages;
   bool needsTextGrayscale = SETTINGS.textAntiAliasing && foregroundBlack &&
@@ -7655,8 +7753,8 @@ bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fo
   }
   const bool needsAnyGrayscale = needsTextGrayscale || needsImageGrayscale;
   const bool tiledGrayscale = needsAnyGrayscale && renderer.supportsStripGrayscale();
-  const bool overlapRefresh =
-      tiledGrayscale && !pageHasImages && pagesUntilFullRefresh > 1 && renderer.supportsAsyncGrayscaleBase();
+  const bool overlapRefresh = tiledGrayscale && !pageHasImages && !clockOnlyRender && pagesUntilFullRefresh > 1 &&
+                              renderer.supportsAsyncGrayscaleBase();
   if (pageHasImages && !deferImageLoading) {
     // Keep the legacy blank/base sequence unless the controller can transition
     // directly to the complete image base.
@@ -7695,7 +7793,11 @@ bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fo
     // regardless of residue.
     pagesUntilFullRefresh = 1;
   } else if (needsAnyGrayscale) {
-    if (pagesUntilFullRefresh <= 1) {
+    if (clockOnlyRender) {
+      // Same page, new minute: the quiet base waveform only moves the changed clock pixels,
+      // and the tick does not count toward the full-refresh cadence.
+      renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
+    } else if (pagesUntilFullRefresh <= 1) {
       // Cleanup turns still need the stronger HALF pass, but X3 grayscale
       // overlays settle better if the OEM precondition step runs before the
       // gray planes are written.
@@ -7711,6 +7813,8 @@ bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fo
       renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
       pagesUntilFullRefresh--;
     }
+  } else if (clockOnlyRender) {
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   } else {
     ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
   }
@@ -8316,7 +8420,12 @@ void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool s
   // Keep the return stack for an endnote that happens to point at a TOC
   // chapter.
   const bool saveReturnPosition = savePosition && !contentsNavigation;
-  if (saveReturnPosition && section && footnoteDepth < MAX_FOOTNOTE_DEPTH) {
+  if (saveReturnPosition && section) {
+    // Full: drop the oldest entry so Back always returns from the newest jump (CrossPoint #3764).
+    if (footnoteDepth == MAX_FOOTNOTE_DEPTH) {
+      std::copy(savedPositions + 1, savedPositions + MAX_FOOTNOTE_DEPTH, savedPositions);
+      footnoteDepth--;
+    }
     savedPositions[footnoteDepth] = {currentSpineIndex, section->currentPage};
     footnoteDepth++;
   }

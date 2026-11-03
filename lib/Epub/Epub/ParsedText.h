@@ -104,7 +104,7 @@ class ParsedText {
                          ArenaVector<uint8_t>& gapSlots, ArenaVector<size_t>& lineBreakIndices);
   bool computeHyphenatedLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth,
                                    ArenaVector<uint16_t>& wordWidths, std::vector<bool>& continuesVec,
-                                   std::vector<bool>& noSpaceBeforeVec, ArenaVector<size_t>& lineBreakIndices);
+                                   std::vector<bool>& noSpaceBeforeVec, ArenaVector<size_t>& lineBreakIndices, size_t maxLines);
   bool hyphenateWordAtIndex(size_t wordIndex, int availableWidth, const GfxRenderer& renderer, int fontId,
                             ArenaVector<uint16_t>& wordWidths, bool allowFallbackBreaks);
   bool splitTokenAtCodepointBoundary(size_t wordIndex, int availableWidth, const GfxRenderer& renderer, int fontId,

@@ -6,3 +6,5 @@ lexenddeca_regular.ttf
 lexenddeca_bold.ttf
 lexenddeca_italic.ttf
 lexenddeca_bolditalic.ttf
+vazirmatn_persian.ttf
+noto_ipa.ttf

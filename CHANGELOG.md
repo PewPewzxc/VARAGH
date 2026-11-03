@@ -2,7 +2,7 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
-## [VARAGH v1.3.1 "Lion" 🦁] - not released yet
+## [VARAGH v1.3.1 "Lion" 🦁] - 2026-11-03
 
 Based on VARAGH 1.3.0, with ideas from CrossPoint 2.0. The same on the X4 Pro, X4 Classic
 and X3 / X4 (only the X4 Pro's touch and light features differ). Books are laid out again
@@ -10,6 +10,18 @@ once, the first time each is opened.
 
 ### Changed
 
+- **Faster picture pages:** while you read, the next page's pictures are prepared in the
+  background (as the Xteink firmware does), so turning to them skips the wait. On the X4 Pro a
+  picture page also skips one extra screen pass. About 1.2 s instead of 3–4 s on the X4 Pro,
+  and about 2.5–3 s instead of 3–5.5 s on the X3 / X4.
+- **Sudoku answer check:** when the grid is full but not solved, a panel says how many answers
+  are wrong, with Show wrong, Clear wrong and Keep looking.
+- **Clock stays right:** the time is fetched again on every Wi-Fi connect (at most hourly), not
+  only the first time. New **Automatic Time Zone** (on by default) sets the GMT offset, summer
+  time included, from where the network is; turn it off to set the offset by hand.
+- **Live Clock** (off by default): the clock in the reader and on Home updates when the minute
+  changes, with a quick no-flash update, and without counting toward full refreshes. Pages with
+  pictures wait for the next page turn.
 - **Settings is a list of groups** (as in CrossPoint 2.0): General, Display, Reader,
   Dictionaries, Controls, Library, Reading Stats and Network, each with an icon and a short
   line saying what is inside. All VARAGH settings are kept. The side buttons move through
@@ -39,7 +51,33 @@ once, the first time each is opened.
 
 ### Fixed
 
+- **Persian, German and pronunciations without extra fonts:** the built-in reading fonts now
+  carry Persian letters (Vazirmatn, regular) and the pronunciation letters dictionaries use
+  (IPA, from Noto Sans), on all three readers. Persian text in a book, German words in a
+  dictionary or flashcard, and pronunciations such as /θɪŋk/ or [haʊ̯s] no longer show as
+  diamonds. A downloaded font without Persian letters (Bitter on the X3 / X4) borrows them
+  from the built-in font.
+- **Mixed English and Persian:** a paragraph that starts with an English word reads left to
+  right even when Persian follows, and brackets around English words inside a Persian line
+  (such as language names in Settings download lists) face the right way.
 - Books with thousands of chapters no longer run out of memory while opening.
+- **Persian and Arabic:** a kasra (and kasratan, hamza or alef below) under a letter that
+  reaches below the line (خ ج ع, final ر ن م) is drawn below it instead of inside it.
+  The Kurdish letter ە joins the letter before it.
+- Chapters without a DOCTYPE line no longer stop at the first `&nbsp;` or other HTML entity
+  with "Chapter incomplete".
+- A picture listed in a book's reading order is shown on its own page instead of the
+  "malformed markup" message.
+- With Hyphenation on, the lines beside a drop cap no longer split words in odd places
+  further down the paragraph.
+- Words no longer run together where a paragraph or heading starts mid-text, and CSS
+  `inherit` keeps bold and italic.
+- The chapter list opens on the sub-chapter you are reading, not the first one in that file.
+- After three followed links, Back still returns from the newest one.
+- X3: the battery gauge is told the real 650 mAh battery size, so the percentage stays
+  right after the battery runs flat.
+- Smaller fixes from CrossPoint: long Wi-Fi names are shortened, the last typed password
+  letter shows correctly, CSS on very large books, and even word spacing with downloaded fonts.
 
 ## [VARAGH v1.3.0 "Lion" 🦁] - 2026-10-20
 

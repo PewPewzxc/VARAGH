@@ -404,3 +404,30 @@ TEST_F(ChapterHtmlSlimParserTest, HiddenNestedListDoesNotResetOuterCounter) {
 }
 
 }  // namespace
+
+size_t insertDoctypeIfMissing(char* buf, size_t len, size_t cap);
+
+namespace {
+XML_Status parseWithFallbackDoctype(std::string text) {
+  text.resize(text.size() + 64);
+  const size_t len = insertDoctypeIfMissing(text.data(), text.size() - 64, text.size());
+  XML_Parser xml = XML_ParserCreate(nullptr);
+  XML_SetDefaultHandlerExpand(xml, [](void*, const XML_Char*, int) {});
+  const XML_Status status = XML_Parse(xml, text.data(), static_cast<int>(len), XML_TRUE);
+  XML_ParserFree(xml);
+  return status;
+}
+}  // namespace
+
+TEST(FallbackDoctypeTest, HtmlEntityWithoutDoctypeParses) {
+  EXPECT_EQ(parseWithFallbackDoctype("<?xml version=\"1.0\"?>\n<html><p>a&nbsp;b</p></html>"), XML_STATUS_OK);
+  EXPECT_EQ(parseWithFallbackDoctype("\xEF\xBB\xBF<html><p>a&mdash;b</p></html>"), XML_STATUS_OK);
+  EXPECT_EQ(parseWithFallbackDoctype("<!DOCTYPE html>\n<html><p>a</p></html>"), XML_STATUS_OK);
+}
+
+TEST(FallbackDoctypeTest, LeavesExistingDoctypeAndNonUtf8Alone) {
+  char withDoctype[64] = "<!doctype html><html/>";
+  EXPECT_EQ(insertDoctypeIfMissing(withDoctype, strlen(withDoctype), sizeof(withDoctype)), strlen(withDoctype));
+  char utf16[64] = "\xFF\xFE<\0h\0";
+  EXPECT_EQ(insertDoctypeIfMissing(utf16, 6, sizeof(utf16)), 6u);
+}

@@ -21,11 +21,11 @@ EpubReaderChapterSelectionActivity::EpubReaderChapterSelectionActivity(GfxRender
                                                                        MappedInputManager& mappedInput,
                                                                        const std::shared_ptr<Epub>& epub,
                                                                        const std::string& epubPath,
-                                                                       const int currentSpineIndex)
+                                                                       const int currentTocIndex)
     : Activity("EpubReaderChapterSelection", renderer, mappedInput),
       epub(epub),
       epubPath(epubPath),
-      currentSpineIndex(currentSpineIndex),
+      currentTocIndex(currentTocIndex),
       uiTarget(makeUiTarget(renderer)),
       app(uiTarget, uiTarget.deviceContext()) {}
 
@@ -37,7 +37,7 @@ void EpubReaderChapterSelectionActivity::onEnter() {
 
   // epub is a required collaborator: the caller dereferences it before constructing
   // this activity, and loop()/render() use it unguarded on every frame.
-  selectorIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
+  selectorIndex = currentTocIndex;
   if (selectorIndex < 0) selectorIndex = 0;
   topIndex = 0;
   visibleRows = 1;

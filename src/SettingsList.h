@@ -1006,6 +1006,10 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           "xtcStatusBarMode", StrId::STR_STATUS_BARS));
     // Clock detail entries live under System > Device in the device UI.
     // Range 0..104 = quarter-hour steps from UTC-12:00 to UTC+14:00, biased by 48.
+    add(SettingInfo::Toggle(StrId::STR_CLOCK_AUTO_ZONE, &CrossPointSettings::clockAutoZone, "clockAutoZone",
+                            StrId::STR_CAT_SYSTEM));
+    add(SettingInfo::Toggle(StrId::STR_LIVE_CLOCK, &CrossPointSettings::liveClock, "liveClock",
+                            StrId::STR_CAT_SYSTEM));
     add(SettingInfo::Value(StrId::STR_CLOCK_UTC_OFFSET, &CrossPointSettings::clockUtcOffsetQ, {0, 104, 1},
                            "clockUtcOffsetQ", StrId::STR_CAT_SYSTEM));
     add(SettingInfo::Enum(StrId::STR_CLOCK_DST, &CrossPointSettings::clockDstRule,
@@ -1562,7 +1566,7 @@ inline std::vector<SettingInfo> buildNetworkSettingsList() {
 
 inline std::vector<SettingInfo> buildGeneralSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
-  settings.reserve(13);
+  settings.reserve(15);
   addSettingByName(settings, allSettings, StrId::STR_DEVICE_NAME);
   addSettingByName(settings, allSettings, StrId::STR_TIME_TO_SLEEP);
   addSettingByName(settings, allSettings, StrId::STR_CUSTOM_BOOTSCREEN);
@@ -1570,6 +1574,8 @@ inline std::vector<SettingInfo> buildGeneralSettingsList(const std::vector<Setti
   settings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
   if (halClock.isAvailable()) {
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_FORMAT);
+    addSettingByName(settings, allSettings, StrId::STR_LIVE_CLOCK);
+    addSettingByName(settings, allSettings, StrId::STR_CLOCK_AUTO_ZONE);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_UTC_OFFSET);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_DST);
     addSettingByName(settings, allSettings, StrId::STR_DATE_FORMAT);

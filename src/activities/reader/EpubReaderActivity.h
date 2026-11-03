@@ -26,6 +26,7 @@
 #include "activities/Activity.h"
 #include "activities/reader/TouchReaderPreviewModel.h"
 #include "components/OptionPopup.h"
+#include "util/LiveClock.h"
 #if CROSSINK_APP_CAP_TOUCH
 #include "activities/reader/ReaderPinchGesture.h"
 #endif
@@ -169,6 +170,15 @@ class EpubReaderActivity final : public Activity {
   int idlePrewarmSpine = -1;
   int idlePrewarmPage = -1;
   int idlePrewarmFontId = 0;
+  int idleImagePrewarmSpine = -1;
+  int idleImagePrewarmPage = -1;
+  // Live Clock: a minute-change redraw of the page on screen, not a page turn.
+  LiveClockTicker liveClockTicker;
+  std::atomic<bool> liveClockPending{false};
+  int liveClockSpine = -1;
+  int liveClockPage = -1;
+  bool clockOnlyRender = false;  // render task only
+  bool shownPageHasImages = false;
   bool paceSampleWarmupPending = true;
   uint32_t sessionPaceSampleSeconds = 0;
   uint16_t sessionPaceSampleCount = 0;
@@ -536,6 +546,7 @@ class EpubReaderActivity final : public Activity {
   }
   bool backgroundSectionBuildHasHeap();
   void idlePrewarmNextPage();
+  void idlePrewarmNextPageImages();
   mutable std::atomic<uint8_t> shownLinkNote{0};  // the Bluetooth note the status bar last drew
   bool skipLoopDelay() override {
     return sectionBuildWantsTick() && !backgroundBuildPausedForLowMemory && !blepager::holdsHeap() &&

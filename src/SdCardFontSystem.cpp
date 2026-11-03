@@ -23,6 +23,10 @@
 #include "fontIds.h"
 
 namespace {
+// Persian letters (base, shaped final alef, Farsi yeh) and common IPA.
+constexpr uint32_t kFullProbes[] = {0x0627, 0xFE8E, 0xFBFC, 0x0259, 0x02C8};
+constexpr uint32_t kArabicProbes[] = {0x0627, 0xFE8E, 0xFBFC};
+
 // Built-in reader font id for a family (0 Lexend Deca, 1 Bitter) at a size it ships in.
 int builtinReaderFontId(const unsigned family, const uint8_t points) {
 #if CROSSINK_SCALABLE_FONTS
@@ -276,20 +280,40 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
 }
 
 void SdCardFontSystem::attachScriptFallback(GfxRenderer& renderer, const int primaryFontId, uint8_t pointSize) {
-#if defined(FREEINK_DEVICE_X4PRO) && FREEINK_DEVICE_X4PRO
   if (primaryFontId == 0 || renderer.hasScriptFallback(primaryFontId)) return;
   const auto primaryIt = renderer.getFontMap().find(primaryFontId);
   if (primaryIt == renderer.getFontMap().end()) return;
 
-  // Persian letters (base, shaped final alef, Farsi yeh) and common IPA.
-  static constexpr uint32_t kFullProbes[] = {0x0627, 0xFE8E, 0xFBFC, 0x0259, 0x02C8};
-  static constexpr uint32_t kArabicProbes[] = {0x0627, 0xFE8E, 0xFBFC};
   bool primaryMissesSome = false;
   for (const uint32_t cp : kFullProbes) {
     if (!primaryIt->second.hasCodepoint(cp)) primaryMissesSome = true;
   }
   if (!primaryMissesSome) return;
+  if (pointSize == 0) {
+    pointSize = manager_.currentPointSize() != 0
+                    ? manager_.currentPointSize()
+                    : CrossPointSettings::getReaderFontPointSize(SETTINGS.getEffectiveReaderFontSize());
+  }
+  if (attachSdScriptFallback(renderer, primaryFontId, pointSize)) return;
 
+  // VARAGH: no installed family can stand in, so borrow the built-in Lexend Deca, whose
+  // Vazirmatn supplement draws Persian (SD-card Bitter on X3/X4, any other SD font).
+  if (primaryIt->second.hasCodepoint(0xFE8E)) return;
+#if CROSSINK_SCALABLE_FONTS
+  ensureScalableBuiltinFamily(renderer, 0);
+#endif
+  const int builtinId = builtinReaderFontId(0, closestBuiltinReaderPointSize(pointSize));
+  const auto builtinIt = renderer.getFontMap().find(builtinId);
+  if (builtinId == primaryFontId || builtinIt == renderer.getFontMap().end() ||
+      !builtinIt->second.hasCodepoint(0xFE8E)) {
+    return;
+  }
+  renderer.setScriptFallbackFont(primaryFontId, builtinId);
+  LOG_INF("SDFS", "Built-in Persian fallback %u pt attached to font %d", pointSize, primaryFontId);
+}
+
+bool SdCardFontSystem::attachSdScriptFallback(GfxRenderer& renderer, const int primaryFontId, uint8_t pointSize) {
+#if defined(FREEINK_DEVICE_X4PRO) && FREEINK_DEVICE_X4PRO
   if (!scriptFallbackLookupDone_.load(std::memory_order_acquire)) {
     scriptFallbackFamily_ = findFamilyCovering(kFullProbes, sizeof(kFullProbes) / sizeof(kFullProbes[0]));
     if (scriptFallbackFamily_.empty()) {
@@ -299,21 +323,16 @@ void SdCardFontSystem::attachScriptFallback(GfxRenderer& renderer, const int pri
     LOG_INF("SDFS", "Script fallback family: %s",
             scriptFallbackFamily_.empty() ? "(none installed)" : scriptFallbackFamily_.c_str());
   }
-  if (scriptFallbackFamily_.empty() || scriptFallbackFamily_ == manager_.currentFamilyName()) return;
+  if (scriptFallbackFamily_.empty() || scriptFallbackFamily_ == manager_.currentFamilyName()) return false;
 
-  if (pointSize == 0) {
-    pointSize = manager_.currentPointSize() != 0
-                    ? manager_.currentPointSize()
-                    : CrossPointSettings::getReaderFontPointSize(SETTINGS.getEffectiveReaderFontSize());
-  }
   char path[160] = {};
   uint8_t selectedPointSize = 0;
   if (!findInstalledFontFile(scriptFallbackFamily_.c_str(), pointSize, FontFileSelection::Closest, path, sizeof(path),
                              selectedPointSize)) {
-    return;
+    return false;
   }
   const int fallbackId = manager_.loadOtherFamilyFile(path, scriptFallbackFamily_.c_str(), selectedPointSize, renderer);
-  if (fallbackId == 0) return;
+  if (fallbackId == 0) return false;
 
   // Measurement takes the SD advance-table path only once the table exists;
   // seed it with the Persian letters so layout does not read them one by one.
@@ -342,10 +361,12 @@ void SdCardFontSystem::attachScriptFallback(GfxRenderer& renderer, const int pri
   }
   LOG_INF("SDFS", "Script fallback %s %u pt attached to font %d", scriptFallbackFamily_.c_str(), selectedPointSize,
           primaryFontId);
+  return true;
 #else
   (void)renderer;
   (void)primaryFontId;
   (void)pointSize;
+  return false;
 #endif
 }
 

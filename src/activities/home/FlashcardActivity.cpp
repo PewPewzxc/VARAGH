@@ -14,6 +14,7 @@
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "util/GlyphApproximation.h"
 
 namespace {
 
@@ -23,8 +24,10 @@ constexpr int kButtonHeight = 56;
 constexpr int kButtonGap = 12;
 
 // Draw text wrapped to `width`, honouring line breaks; stops at maxY.
-int drawParagraphs(const GfxRenderer& renderer, const int fontId, const std::string& text, const int x, int y,
+int drawParagraphs(const GfxRenderer& renderer, const int fontId, const std::string& rawText, const int x, int y,
                    const int width, const int maxY, const EpdFontFamily::Style style, const bool centered) {
+  // Pronunciations like /ˈtʁɔɪ̯mən/ read /troimen/, as in the lookup popup, instead of diamonds.
+  const std::string text = approximateUndrawable(renderer, fontId, rawText);
   const int lineHeight = renderer.getLineHeight(fontId);
   size_t start = 0;
   while (start <= text.size() && y + lineHeight <= maxY) {

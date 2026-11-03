@@ -256,8 +256,11 @@ bool HalDisplay::shouldSkipImageBlanking() const {
   // CrossInk's extra white-image pass is redundant on UC8179. Its driver
   // always supports async display; the existing query also excludes inverted
   // output, a pending inversion transition, and an uninitialized driver.
-  return BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179 &&
-         einkDisplay.supportsAsyncRefresh();
+  // UC8279 (X4 Pro) has the same non-flashing transition once a grey page has
+  // set it up; skipping the blank there saves one ~0.56 s settle pass.
+  return (BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179 &&
+          einkDisplay.supportsAsyncRefresh()) ||
+         einkDisplay.canTransitionGrayscaleBase();
 }
 
 bool HalDisplay::supportsStripGrayscale() const { return einkDisplay.supportsStripGrayscale(); }

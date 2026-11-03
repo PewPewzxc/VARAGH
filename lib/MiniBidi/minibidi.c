@@ -334,6 +334,9 @@ static ucschar shape_form(ucschar c, uchar form) {
     const uchar form_b = shapetypes[c - SHAPE_FIRST].form_b;
     return form_b ? 0xFE00 + form_b + form : c;
   }
+  /* CrossPoint issue #2909: ae has no presentation forms; its joined (final)
+     shape is heh's final form, so borrow it instead of drawing it isolated. */
+  if (c == 0x06D5) return form == SHAPE_FINAL ? 0xFEEA : c;
 
   int i = -1, j = lengthof(xshapeforms);
   while (j - i > 1) {
@@ -887,6 +890,12 @@ int do_bidi(bool autodir, int paragraphLevel, bidi_char* line, int count) {
     }
   }
 
+  /* ── L4: mirror characters in RTL runs ──
+   * Done before L2: flip_runs() reorders line[] but not levels[], so after it
+   * levels[i] no longer belongs to line[i] ("فارسی (download)" lost a bracket). */
+  for (i = 0; i < count; i++)
+    if (levels[i] & 1) line[i].wc = mirror(line[i].wc);
+
   /* ── L2: reverse from highest level down to lowest odd ── */
   uchar max_level = (uchar)paragraphLevel, min_odd = 255;
   for (i = 0; i < count; i++) {
@@ -894,10 +903,6 @@ int do_bidi(bool autodir, int paragraphLevel, bidi_char* line, int count) {
     if ((levels[i] & 1) && levels[i] < min_odd) min_odd = levels[i];
   }
   for (int level = max_level; level >= (int)min_odd; level--) flip_runs(line, levels, level, count);
-
-  /* ── L4: mirror characters in RTL runs ── */
-  for (i = 0; i < count; i++)
-    if (levels[i] & 1) line[i].wc = mirror(line[i].wc);
 
   return paragraphLevel;
 }

@@ -106,6 +106,16 @@ constexpr int raiseAboveBase(const Anchor anchor, const int markTop, const int m
   return (gap < MIN_GAP_PX) ? (MIN_GAP_PX - gap) : 0;
 }
 
+/// CrossPoint issue #3328: marks drawn under the letter (Arabic kasra, kasratan, hamza and alef below).
+/// Returns pixels to lower such a mark so its top clears a base that descends below the baseline
+/// (خ ج ع, final ر ن م); bases that stay on the baseline keep the font's own placement.
+constexpr int lowerBelowBase(const uint32_t cp, const int markTop, const int baseBottom) {
+  if (cp != 0x0650 && cp != 0x064D && cp != 0x0655 && cp != 0x0656) return 0;
+  if (baseBottom >= 0) return 0;
+  const int gap = baseBottom - markTop;
+  return (gap < MIN_GAP_PX) ? (MIN_GAP_PX - gap) : 0;
+}
+
 }  // namespace combiningMark
 
 /// GCC/Clang (the ESP32 firmware toolchain) pack structs with __attribute__((packed)).

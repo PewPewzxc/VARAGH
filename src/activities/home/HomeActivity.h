@@ -17,6 +17,7 @@
 #include "components/CoverGridHomeUi.h"
 #include "components/OptionPopup.h"
 #include "util/ButtonNavigator.h"
+#include "util/LiveClock.h"
 
 struct RecentBook;
 struct Rect;
@@ -31,6 +32,7 @@ class HomeActivity final : public Activity {
   static constexpr int kMaxCachedBooks = 3;
 
  private:
+  LiveClockTicker liveClockTicker;
   ButtonNavigator buttonNavigator;
   std::unique_ptr<CoverGridHomeUi> coverGridUi;
   bool gridHasContinueReading = false;

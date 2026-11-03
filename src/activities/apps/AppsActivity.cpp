@@ -201,6 +201,7 @@ void AppsActivity::onEnter() {
   if (gameui::readSave(kSavePath, bytes, sizeof(bytes)) && memcmp(bytes, kFileMagic, 3) == 0) hiddenMask = bytes[3];
   mode = Mode::Tiles;
   clockface::loadOptions(clockOptions);
+  SudokuActivity::loadOptions(sudokuOptions);
 
   // Woken from a sleep that began inside an app: straight back into it. The
   // tiles are read and drawn when that app is left.
@@ -241,17 +242,14 @@ void AppsActivity::readStatus() {
   {
     // Larger than the main task's stack should carry next to the lines above.
     const auto sudokuGame = std::make_unique<sudoku::Game>();
-    uint8_t sudokuBytes[sudoku::Game::kSaveBytes];
-    if (gameui::readSave(SudokuActivity::kSavePath, sudokuBytes, sizeof(sudokuBytes))) {
-      sudokuGame->load(sudokuBytes, sizeof(sudokuBytes));
-    }
+    SudokuActivity::readGame(*sudokuGame);
     if (sudokuGame->started() && !sudokuGame->solved()) {
-      snprintf(line, sizeof(line), tr(STR_SUDOKU_IN_PROGRESS), SudokuActivity::levelName(sudokuGame->difficulty()),
+      snprintf(line, sizeof(line), tr(STR_SUDOKU_IN_PROGRESS),
+               sudokuGame->dailyDay() != 0 ? tr(STR_SUDOKU_DAILY)
+                                           : SudokuActivity::levelName(sudokuGame->difficulty()),
                sudokuGame->emptyCells());
     } else {
-      const unsigned solved = sudokuGame->solvedCount(sudoku::Difficulty::Easy) +
-                              sudokuGame->solvedCount(sudoku::Difficulty::Medium) +
-                              sudokuGame->solvedCount(sudoku::Difficulty::Hard);
+      const unsigned solved = sudokuGame->totalSolved();
       if (solved > 0) {
         snprintf(line, sizeof(line), tr(STR_SUDOKU_RECORD), solved);
       } else {
@@ -296,14 +294,25 @@ void AppsActivity::layout() {
   }
   manageBox = gameui::headerCornerBox(renderer, mappedInput, tr(STR_APPS_MANAGE));
 
-  // Settings, on the Clock's row in Manage, to the left of its switch.
-  const gameui::Box& clockRow = rows[Clock];
-  const int settingsWidth = renderer.getTextWidth(UI_10_FONT_ID, tr(STR_SETTINGS_SHORT), EpdFontFamily::BOLD) + 40;
-  clockSettingsBox = {clockRow.x + clockRow.w - 66 - 22 - 14 - settingsWidth, clockRow.y + (clockRow.h - 50) / 2,
-                      settingsWidth, 50};
+  clockSettingsBox = settingsButtonFor(Clock);
+  sudokuSettingsBox = settingsButtonFor(Sudoku);
   for (int row = 0; row < kClockRowCount; ++row) {
     clockRows[row] = {kTileMargin, top + row * (84 + kRowGap), width - 2 * kTileMargin, 84};
   }
+  for (int row = 0; row < kSudokuRowsPerPage; ++row) {
+    sudokuRows[row] = {kTileMargin, top + row * (84 + kRowGap), width - 2 * kTileMargin, 84};
+  }
+  // Previous and next page at the foot, with "1 / 2" between them. Wide, so the
+  // button pointer goes from "<" to ">" rather than up to the last row.
+  const int pageY = gameui::contentBottom(renderer) - 56;
+  pageBoxes[0] = {kTileMargin, pageY, 160, 56};
+  pageBoxes[1] = {width - kTileMargin - 160, pageY, 160, 56};
+}
+
+gameui::Box AppsActivity::settingsButtonFor(const AppId app) const {
+  const gameui::Box& row = rows[app];
+  const int settingsWidth = renderer.getTextWidth(UI_10_FONT_ID, tr(STR_SETTINGS_SHORT), EpdFontFamily::BOLD) + 40;
+  return {row.x + row.w - 66 - 22 - 14 - settingsWidth, row.y + (row.h - 50) / 2, settingsWidth, 50};
 }
 
 void AppsActivity::changeClockSetting(const int row) {
@@ -365,8 +374,8 @@ void AppsActivity::loop() {
   if (TouchHeaderBackButton::wasTapped(mappedInput, renderer) ||
       mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (mode != Mode::Tiles) {
-      // One step back: from the Clock settings to the switches, from there to the tiles.
-      mode = mode == Mode::ClockSettings ? Mode::Manage : Mode::Tiles;
+      // One step back: from an app's settings to the switches, from there to the tiles.
+      mode = mode == Mode::Manage ? Mode::Tiles : Mode::Manage;
       requestUpdate();
       return;
     }
@@ -394,9 +403,32 @@ void AppsActivity::loop() {
     }
     return;
   }
+  if (mode == Mode::SudokuSettings) {
+    for (int i = 0; i < 2; ++i) {
+      if (!pageBoxes[i].contains(tx, ty)) continue;
+      sudokuPage = (sudokuPage + (i == 0 ? kSudokuPages - 1 : 1)) % kSudokuPages;
+      requestUpdate();
+      return;
+    }
+    for (int row = 0; row < kSudokuRowsPerPage; ++row) {
+      const int option = sudokuPage * kSudokuRowsPerPage + row;
+      if (option >= SudokuActivity::kOptionCount || !sudokuRows[row].contains(tx, ty)) continue;
+      sudokuOptions.on[option] = !sudokuOptions.on[option];
+      SudokuActivity::saveOptions(sudokuOptions);
+      requestUpdate();
+      return;
+    }
+    return;
+  }
   if (mode == Mode::Manage) {
     if (clockSettingsBox.grown(6).contains(tx, ty)) {
       mode = Mode::ClockSettings;
+      requestUpdate();
+      return;
+    }
+    if (sudokuSettingsBox.grown(6).contains(tx, ty)) {
+      mode = Mode::SudokuSettings;
+      sudokuPage = 0;
       requestUpdate();
       return;
     }
@@ -486,6 +518,7 @@ void AppsActivity::drawManage() const {
     if (hidden(app)) gameui::fade(renderer, label);
     drawSwitch(renderer, row.x + row.w - 66 - 22, row.y + (row.h - 36) / 2, !hidden(app));
     if (app == Clock) gameui::button(renderer, clockSettingsBox, tr(STR_SETTINGS_SHORT), false);
+    if (app == Sudoku) gameui::button(renderer, sudokuSettingsBox, tr(STR_SETTINGS_SHORT), false);
   }
   const int y = rows[kOrder[kAppCount - 1]].y + kRowHeight + 14;
   int lineY = y;
@@ -526,15 +559,57 @@ void AppsActivity::drawClockSettings() const {
   }
 }
 
+void AppsActivity::drawSudokuSettings() const {
+  const char* labels[SudokuActivity::kOptionCount] = {
+      tr(STR_SUDOKU_OPT_EXPLAIN), tr(STR_SUDOKU_OPT_DAILY),     tr(STR_SUDOKU_OPT_LIVE),
+      tr(STR_SUDOKU_OPT_REPEATS), tr(STR_SUDOKU_OPT_PAINT),     tr(STR_SUDOKU_OPT_FILL_LAST),
+      tr(STR_SUDOKU_OPT_LIMIT),   tr(STR_SUDOKU_OPT_RESTART),   tr(STR_SUDOKU_OPT_STATS)};
+  const char* descriptions[SudokuActivity::kOptionCount] = {
+      tr(STR_SUDOKU_OPT_EXPLAIN_DESC), tr(STR_SUDOKU_OPT_DAILY_DESC),     tr(STR_SUDOKU_OPT_LIVE_DESC),
+      tr(STR_SUDOKU_OPT_REPEATS_DESC), tr(STR_SUDOKU_OPT_PAINT_DESC),     tr(STR_SUDOKU_OPT_FILL_LAST_DESC),
+      tr(STR_SUDOKU_OPT_LIMIT_DESC),   tr(STR_SUDOKU_OPT_RESTART_DESC),   tr(STR_SUDOKU_OPT_STATS_DESC)};
+  int bottom = sudokuRows[0].y;
+  for (int row = 0; row < kSudokuRowsPerPage; ++row) {
+    const int option = sudokuPage * kSudokuRowsPerPage + row;
+    if (option >= SudokuActivity::kOptionCount) break;
+    const gameui::Box& box = sudokuRows[row];
+    renderer.drawRoundedRect(box.x, box.y, box.w, box.h, 2, 12, true);
+    // The name and, under it, one line on what the switch does.
+    const int textWidth = box.w - 24 - 66 - 22 - 12;
+    renderer.drawText(UI_12_FONT_ID, box.x + 24, gameui::centredTextY(renderer, UI_12_FONT_ID, {box.x, box.y + 8, box.w, 36}),
+                      renderer.truncatedText(UI_12_FONT_ID, labels[option], textWidth, EpdFontFamily::BOLD).c_str(),
+                      true, EpdFontFamily::BOLD);
+    renderer.drawText(SMALL_FONT_ID, box.x + 24,
+                      gameui::centredTextY(renderer, SMALL_FONT_ID, {box.x, box.y + 46, box.w, 28}),
+                      renderer.truncatedText(SMALL_FONT_ID, descriptions[option], textWidth).c_str());
+    drawSwitch(renderer, box.x + box.w - 66 - 22, box.y + (box.h - 36) / 2, sudokuOptions.on[option]);
+    bottom = box.y + box.h;
+  }
+  int y = bottom + 14;
+  for (const auto& line : renderer.wrappedText(SMALL_FONT_ID, tr(STR_CLOCK_TAP_ROW), renderer.getScreenWidth() - 60, 2)) {
+    gameui::centredText(renderer, SMALL_FONT_ID, {0, y, renderer.getScreenWidth(), 24}, line.c_str());
+    y += 24;
+  }
+  gameui::button(renderer, pageBoxes[0], "<", false, UI_12_FONT_ID);
+  gameui::button(renderer, pageBoxes[1], ">", false, UI_12_FONT_ID);
+  char page[16];
+  snprintf(page, sizeof(page), "%d / %d", sudokuPage + 1, kSudokuPages);
+  gameui::centredText(renderer, UI_12_FONT_ID, {0, pageBoxes[0].y, renderer.getScreenWidth(), pageBoxes[0].h}, page,
+                      true, EpdFontFamily::BOLD);
+}
+
 void AppsActivity::render(RenderLock&&) {
   layout();
   renderer.clearScreen();
-  const char* title = mode == Mode::ClockSettings
-                          ? tr(STR_CLOCK_SETTINGS)
-                          : (mode == Mode::Manage ? tr(STR_APPS_MANAGE_TITLE) : tr(STR_APPS));
+  const char* title = mode == Mode::ClockSettings    ? tr(STR_CLOCK_SETTINGS)
+                      : mode == Mode::SudokuSettings ? tr(STR_SUDOKU_SETTINGS)
+                      : mode == Mode::Manage         ? tr(STR_APPS_MANAGE_TITLE)
+                                                     : tr(STR_APPS);
   gameui::drawHeader(renderer, mappedInput, title);
   if (mode == Mode::ClockSettings) {
     drawClockSettings();
+  } else if (mode == Mode::SudokuSettings) {
+    drawSudokuSettings();
   } else if (mode == Mode::Manage) {
     drawManage();
   } else {
@@ -544,9 +619,15 @@ void AppsActivity::render(RenderLock&&) {
   pointer.clear();
   if (mode == Mode::ClockSettings) {
     for (const auto& row : clockRows) pointer.add(row);
+  } else if (mode == Mode::SudokuSettings) {
+    for (int row = 0; row < kSudokuRowsPerPage; ++row) {
+      if (sudokuPage * kSudokuRowsPerPage + row < SudokuActivity::kOptionCount) pointer.add(sudokuRows[row]);
+    }
+    for (const auto& box : pageBoxes) pointer.add(box);
   } else if (mode == Mode::Manage) {
     for (const auto& row : rows) pointer.add(row);
     pointer.add(clockSettingsBox);
+    pointer.add(sudokuSettingsBox);
   } else {
     for (int i = 0; i < shownCount; ++i) pointer.add(tiles[i]);
     pointer.add(manageBox);

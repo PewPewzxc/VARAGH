@@ -39,9 +39,10 @@ class SdCardFontSystem {
   /// installed SD family that can (NotoVazir, for example) at `pointSize`
   /// (0 = the active reader size) and register it as the renderer's script
   /// fallback for that font. Words the primary cannot draw are then drawn in
-  /// the fallback. X4 Pro only (it needs a second resident font). No-op when
-  /// already attached, when the font covers those scripts, or when no
-  /// installed family does.
+  /// the fallback. The SD family is X4 Pro only (it needs a second resident
+  /// font); otherwise a font without Persian borrows the built-in Lexend Deca,
+  /// which carries Vazirmatn's Persian letters. No-op when already attached or
+  /// when the font covers those scripts.
   void attachScriptFallback(GfxRenderer& renderer, int primaryFontId, uint8_t pointSize = 0);
   /// Prepare the selected built-in family before using it as a reader fallback.
   int ensureBuiltInReaderFont(GfxRenderer& renderer);
@@ -150,6 +151,7 @@ class SdCardFontSystem {
   int resolveSdFontVariant(int fontId, float scale);
 
  private:
+  bool attachSdScriptFallback(GfxRenderer& renderer, int primaryFontId, uint8_t pointSize);
   static constexpr uint8_t MAX_SIZE_VARIANTS = 4;
   struct SizeVariant {
     uint8_t pointSize;
