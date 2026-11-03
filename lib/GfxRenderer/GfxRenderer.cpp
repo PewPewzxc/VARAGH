@@ -430,12 +430,6 @@ bool isScriptFallbackCodepoint(const uint32_t cp) {
          (cp >= 0xFB50 && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF) || (cp >= 0x0250 && cp <= 0x02FF) ||
          (cp >= 0x1D00 && cp <= 0x1DBF);
 }
-
-// Arabic letters are drawn as their shaped forms, so a fallback holding only those
-// (the built-in Persian supplement) still draws a base letter it does not list.
-bool scriptFallbackDraws(const EpdFontFamily& fallback, const uint32_t cp, const EpdFontFamily::Style style) {
-  return fallback.hasCodepoint(cp, style) || (cp >= 0x0620 && cp <= 0x06FF && fallback.hasCodepoint(0xFE8E, style));
-}
 }  // namespace
 
 int GfxRenderer::resolveTextFontId(const int fontId, const char* text, const EpdFontFamily::Style style) const {
@@ -467,7 +461,7 @@ int GfxRenderer::resolveScriptFallbackFontId(const int fontId, const char* text,
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&cursor)))) {
     if (isScriptFallbackCodepoint(cp) && !fontIt->second.hasCodepoint(cp, style) &&
-        scriptFallbackDraws(fallbackIt->second, cp, style)) {
+        fallbackIt->second.drawsCodepoint(cp, style)) {
       return fbIt->second;
     }
   }
@@ -481,7 +475,12 @@ bool GfxRenderer::scriptFallbackCovers(const int fontId, const uint32_t cp, cons
   const auto fontIt = fontMap.find(fontId);
   const auto fallbackIt = fontMap.find(fbIt->second);
   if (fontIt == fontMap.end() || fallbackIt == fontMap.end()) return false;
-  return !fontIt->second.hasCodepoint(cp, style) && scriptFallbackDraws(fallbackIt->second, cp, style);
+  return !fontIt->second.hasCodepoint(cp, style) && fallbackIt->second.drawsCodepoint(cp, style);
+}
+
+bool GfxRenderer::fontDraws(const int fontId, const uint32_t cp, const EpdFontFamily::Style style) const {
+  const auto fontIt = fontMap.find(fontId);
+  return fontIt != fontMap.end() && fontIt->second.drawsCodepoint(cp, style);
 }
 
 int GfxRenderer::resolveCjkFallbackFontId(const int fontId, const char* text, const EpdFontFamily::Style style) const {

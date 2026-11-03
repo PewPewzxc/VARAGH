@@ -253,6 +253,10 @@ bool EpdFontFamily::hasCodepoint(const uint32_t cp, const Style style) const {
          (fallback && fallback->hasCodepoint(cp));
 }
 
+bool EpdFontFamily::drawsCodepoint(const uint32_t cp, const Style style) const {
+  return hasCodepoint(cp, style) || (cp >= 0x0620 && cp <= 0x06FF && hasCodepoint(0xFE8E, style));
+}
+
 const EpdFont* EpdFontFamily::getSupplement(const Style style) const {
   if ((style & BOLD) && supplementBold) return supplementBold;
   return supplementRegular;

@@ -323,11 +323,9 @@ bool DictionaryDefinitionActivity::shouldApproximateDefinitionCodepoint(const ui
   // Persian and IPA the definition font lacks are drawn by its script
   // fallback font, so keep them exactly as written.
   if (renderer.scriptFallbackCovers(fontId, cp)) return false;
-  const auto& fonts = renderer.getFontMap();
-  const auto font = fonts.find(fontId);
-  // hasCodepoint() answers from RAM (the interval table, or an SD font's
-  // resident coverage index), never from storage.
-  const bool fontHasGlyph = font != fonts.end() && font->second.hasCodepoint(cp);
+  // Answers from RAM (the interval table, or an SD font's resident coverage
+  // index), never from storage.
+  const bool fontHasGlyph = renderer.fontDraws(fontId, cp);
 
   // SD fonts own their coverage: keep every character the active .cpfont can
   // draw and approximate only what it lacks. Regular (non-dictionary) .cpfont

@@ -64,8 +64,8 @@ once, the first time each is opened.
 
 - **Persian, German and pronunciations without extra fonts:** the built-in reading fonts now
   carry Persian letters (Vazirmatn, regular) and the pronunciation letters dictionaries use
-  (IPA, from Noto Sans), on all three readers. Persian text in a book, German words in a
-  dictionary or flashcard, and pronunciations such as /θɪŋk/ or [haʊ̯s] no longer show as
+  (IPA, from Noto Sans), on all three readers. Persian text in a book, Persian and German
+  words in a dictionary or flashcard, and pronunciations such as /θɪŋk/ or [haʊ̯s] no longer show as
   diamonds. A downloaded font without Persian letters (Bitter on the X3 / X4) borrows them
   from the built-in font.
 - **Mixed English and Persian:** a paragraph that starts with an English word reads left to

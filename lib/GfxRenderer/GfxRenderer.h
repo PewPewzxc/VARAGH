@@ -225,6 +225,8 @@ class GfxRenderer {
   }
   // True when `fontId` lacks `cp` but its script fallback will draw it.
   bool scriptFallbackCovers(int fontId, uint32_t cp, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  // True when `fontId` itself draws `cp`, counting Arabic letters it holds only in their shaped forms.
+  bool fontDraws(int fontId, uint32_t cp, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   // Ensure SD card font glyph data is loaded for the given text. Called from layout code
   // (which holds a const GfxRenderer&) before measuring word widths. Safe to call on non-SD fonts (no-op).
   // styleMask: bitmask of styles to prepare (bit 0=regular, 1=bold, 2=italic, 3=bold-italic).

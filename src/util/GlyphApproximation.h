@@ -218,14 +218,13 @@ inline void appendDictionaryApproximation(uint32_t cp, std::string& out) {
 // `text` with every character `fontId` cannot draw (itself or through its script
 // fallback) replaced by its stand-in, so nothing shows as a replacement diamond.
 inline std::string approximateUndrawable(const GfxRenderer& renderer, const int fontId, const std::string& text) {
-  const auto font = renderer.getFontMap().find(fontId);
-  if (font == renderer.getFontMap().end()) return text;
+  if (renderer.getFontMap().find(fontId) == renderer.getFontMap().end()) return text;
   std::string out;
   out.reserve(text.size());
   const auto* p = reinterpret_cast<const unsigned char*>(text.c_str());
   uint32_t cp = 0;
   while ((cp = utf8NextCodepoint(&p))) {
-    if (cp < 0x80 || font->second.hasCodepoint(cp) || renderer.scriptFallbackCovers(fontId, cp)) {
+    if (cp < 0x80 || renderer.fontDraws(fontId, cp) || renderer.scriptFallbackCovers(fontId, cp)) {
       utf8AppendCodepoint(cp, out);
     } else {
       appendDictionaryApproximation(cp, out);

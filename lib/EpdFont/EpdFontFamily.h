@@ -46,6 +46,9 @@ class EpdFontFamily {
   /// Returns true if the resolved style or shared fallback can render `cp`
   /// (interval coverage only — see EpdFont::hasCodepoint).
   bool hasCodepoint(uint32_t cp, Style style = REGULAR) const;
+  /// hasCodepoint(), and also true for an Arabic letter the family holds only in
+  /// its shaped forms (the built-in Persian supplement): text is shaped before drawing.
+  bool drawsCodepoint(uint32_t cp, Style style = REGULAR) const;
   int8_t getKerning(uint32_t leftCp, uint32_t rightCp, Style style = REGULAR) const;
   uint32_t applyLigatures(uint32_t cp, const char*& text, Style style = REGULAR) const;
 
