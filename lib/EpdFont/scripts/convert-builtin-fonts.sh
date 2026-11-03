@@ -221,7 +221,7 @@ for size in ${UI_FONT_SIZES[@]}; do
 done
 
 # VARAGH: Persian supplement for the bitmap reader fonts (X3/X4). Persian letters
-# only, regular weight: Lexend/Bitter keep their own Latin and borrow these.
+# only, regular and bold: Lexend/Bitter keep their own Latin and borrow these.
 # Keep in step with PERSIAN_RANGES in subset-reader-supplements.py (the S3 builds).
 PERSIAN_INTERVALS=(
   --additional-intervals 0x060C,0x060C --additional-intervals 0x061B,0x061B
@@ -238,6 +238,9 @@ for size in ${READING_FONT_SIZES[@]}; do
     ../builtinFonts/source/Vazirmatn/Vazirmatn-Medium.ttf --no-default-intervals \
     "${PERSIAN_INTERVALS[@]}" "${READING_FONT_RENDER_ARGS[@]}" > ../builtinFonts/vazirmatn_persian_${size}_regular.h
   echo "Generated ../builtinFonts/vazirmatn_persian_${size}_regular.h"
+  # Bold for Focus Reading and bold text in Persian books.
+  python fontconvert.py vazirmatn_persian_${size}_bold $size     ../builtinFonts/source/Vazirmatn/Vazirmatn-Bold.ttf --no-default-intervals     "${PERSIAN_INTERVALS[@]}" "${READING_FONT_RENDER_ARGS[@]}" > ../builtinFonts/vazirmatn_persian_${size}_bold.h
+  echo "Generated ../builtinFonts/vazirmatn_persian_${size}_bold.h"
 done
 # Pronunciation (IPA) letters + combining marks: the reader families' shared fallback.
 IPA_INTERVALS=(--additional-intervals 0x0250,0x02FF --additional-intervals 0x0300,0x036F

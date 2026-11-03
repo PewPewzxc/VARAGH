@@ -162,6 +162,7 @@ needed. Open your own books in it, try the dictionary and the apps, then decide.
 - **Persian, German and pronunciations built in** on every reader: no font to
   copy to the SD card any more, and downloaded fonts such as Bitter borrow the
   Persian letters they lack.
+- **Focus Reading in Persian:** the start of every Persian word is bold, as in English.
 - **Settings is a list of eight groups** with an icon and a short line each.
 - **Books look like books:** drop caps, CSS text and heading sizes, bordered and
   lightly shaded boxes, and line breaks after dashes.
@@ -193,7 +194,7 @@ See the [changelog](CHANGELOG.md) for everything.
 
 | Version | Date | What it added |
 |---|---|---|
-| **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, levels, daily puzzle and explaining hints, clock sync and Live Clock |
+| **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Persian Focus Reading, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, levels, daily puzzle and explaining hints, clock sync and Live Clock |
 | **1.3.0 "Lion"** | 2026-10-20 | Control Center and night light, dictionaries per language with online sources, Persian menus and keyboard, went → go lookups, resizing a selection, rotation, one icon style, Go and Tic Tac Toe; the X4 Classic and X3 join with button apps and menu-language downloads |
 | **1.2.1 "Tiger"** | 2026-10-13 | Tap to Look Up, Long Press choices with Ask, book ratings, apps that stay open across sleep, a stronger chess computer, the new logo |
 | **1.2.0 "Tiger"** | 2026-10-07 | Apps on Home (Wordle, Sudoku, Chess, Checkers, Clock & Calendar), online Wiktionary dictionary, faster Home, Clock & Calendar sleep screen |

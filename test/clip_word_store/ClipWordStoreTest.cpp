@@ -269,12 +269,15 @@ TEST(FocusReadingText, DrawsClippingPrefixWithThePrewarmedBoldStyle) {
     int x;
     std::string text;
     EpdFontFamily::Style style;
+    bool thick;
   };
   std::vector<Run> runs;
 
   ASSERT_TRUE(FocusReadingText::drawSplitRuns(
       "reader", 6, 2, 100, 18, EpdFontFamily::REGULAR, false,
-      [&runs](const int x, const char* text, const EpdFontFamily::Style style) { runs.push_back({x, text, style}); }));
+      [&runs](const int x, const char* text, const EpdFontFamily::Style style, const bool thick) {
+        runs.push_back({x, text, style, thick});
+      }));
 
   ASSERT_EQ(runs.size(), 2U);
   EXPECT_EQ(runs[0].x, 100);
@@ -290,12 +293,15 @@ TEST(FocusReadingText, DrawsTheRegularSuffixFirstForRtlClippings) {
     int x;
     std::string text;
     EpdFontFamily::Style style;
+    bool thick;
   };
   std::vector<Run> runs;
 
   ASSERT_TRUE(FocusReadingText::drawSplitRuns(
       "reader", 6, 2, 100, 18, EpdFontFamily::REGULAR, true,
-      [&runs](const int x, const char* text, const EpdFontFamily::Style style) { runs.push_back({x, text, style}); }));
+      [&runs](const int x, const char* text, const EpdFontFamily::Style style, const bool thick) {
+        runs.push_back({x, text, style, thick});
+      }));
 
   ASSERT_EQ(runs.size(), 2U);
   EXPECT_EQ(runs[0].x, 100);
@@ -311,12 +317,15 @@ TEST(FocusReadingText, PreservesAnEndBoundaryAsABoldRun) {
     int x;
     std::string text;
     EpdFontFamily::Style style;
+    bool thick;
   };
   std::vector<Run> runs;
 
   ASSERT_TRUE(FocusReadingText::drawSplitRuns(
       "reader", 6, 6, 100, 18, EpdFontFamily::REGULAR, false,
-      [&runs](const int x, const char* text, const EpdFontFamily::Style style) { runs.push_back({x, text, style}); }));
+      [&runs](const int x, const char* text, const EpdFontFamily::Style style, const bool thick) {
+        runs.push_back({x, text, style, thick});
+      }));
 
   ASSERT_EQ(runs.size(), 2U);
   EXPECT_EQ(runs[0].x, 100);
@@ -460,4 +469,30 @@ TEST(ClippingTextMatcher, PreservesCompleteShortClippingsAndLongerRelayoutRuns) 
   EXPECT_TRUE(ClippingTextMatcher::isReliableRun(4, true, 3, 3));
   EXPECT_TRUE(ClippingTextMatcher::isReliableRun(4, false, 3, 3));
   EXPECT_FALSE(ClippingTextMatcher::isReliableRun(0, false, 0, 3));
+}
+
+TEST(FocusReadingText, ThickensOnlyThePersianBoldRun) {
+  struct Run {
+    int x;
+    std::string text;
+    EpdFontFamily::Style style;
+    bool thick;
+  };
+  std::vector<Run> runs;
+  const std::string word = "کتاب";  // cut after alef: no join across it, so no joiner added
+
+  ASSERT_TRUE(FocusReadingText::drawSplitRuns(
+      word.c_str(), word.size(), 6, 100, 18, EpdFontFamily::REGULAR, true,
+      [&runs](const int x, const char* text, const EpdFontFamily::Style style, const bool thick) {
+        runs.push_back({x, text, style, thick});
+      }));
+
+  ASSERT_EQ(runs.size(), 2U);
+  EXPECT_EQ(runs[0].x, 100);
+  EXPECT_EQ(runs[0].text, "ب");
+  EXPECT_FALSE(runs[0].thick);
+  EXPECT_EQ(runs[1].x, 118);
+  EXPECT_EQ(runs[1].text, "کتا");
+  EXPECT_EQ(runs[1].style, EpdFontFamily::BOLD);
+  EXPECT_TRUE(runs[1].thick);
 }

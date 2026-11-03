@@ -188,11 +188,15 @@ static void logBootHeap(const char* stage) {
 
 // Fonts
 #if !CROSSINK_SCALABLE_FONTS
-// VARAGH: Persian letters the reader fonts lack, borrowed glyph by glyph (regular weight only).
+// VARAGH: Persian letters the reader fonts lack, borrowed glyph by glyph (regular and bold).
 EpdFont persian10Font(&vazirmatn_persian_10_regular);
 EpdFont persian12Font(&vazirmatn_persian_12_regular);
 EpdFont persian14Font(&vazirmatn_persian_14_regular);
 EpdFont persian16Font(&vazirmatn_persian_16_regular);
+EpdFont persian10BoldFont(&vazirmatn_persian_10_bold);
+EpdFont persian12BoldFont(&vazirmatn_persian_12_bold);
+EpdFont persian14BoldFont(&vazirmatn_persian_14_bold);
+EpdFont persian16BoldFont(&vazirmatn_persian_16_bold);
 // Pronunciation (IPA) letters and combining marks, the families' shared fallback.
 EpdFont ipaReader10Font(&noto_ipa_10_regular);
 EpdFont ipaReader12Font(&noto_ipa_12_regular);
@@ -204,28 +208,28 @@ EpdFont lexenddeca10ItalicFont(&lexenddeca_10_italic);
 EpdFont lexenddeca10BoldItalicFont(&lexenddeca_10_bolditalic);
 EpdFontFamily lexenddeca10FontFamily =
     EpdFontFamily(&lexenddeca10RegularFont, &lexenddeca10BoldFont, &lexenddeca10ItalicFont, &lexenddeca10BoldItalicFont,
-                  &ipaReader10Font).withSupplement(&persian10Font, &persian10Font);
+                  &ipaReader10Font).withSupplement(&persian10Font, &persian10BoldFont);
 EpdFont lexenddeca12RegularFont(&lexenddeca_12_regular);
 EpdFont lexenddeca12BoldFont(&lexenddeca_12_bold);
 EpdFont lexenddeca12ItalicFont(&lexenddeca_12_italic);
 EpdFont lexenddeca12BoldItalicFont(&lexenddeca_12_bolditalic);
 EpdFontFamily lexenddeca12FontFamily =
     EpdFontFamily(&lexenddeca12RegularFont, &lexenddeca12BoldFont, &lexenddeca12ItalicFont, &lexenddeca12BoldItalicFont,
-                  &ipaReader12Font).withSupplement(&persian12Font, &persian12Font);
+                  &ipaReader12Font).withSupplement(&persian12Font, &persian12BoldFont);
 EpdFont lexenddeca14RegularFont(&lexenddeca_14_regular);
 EpdFont lexenddeca14BoldFont(&lexenddeca_14_bold);
 EpdFont lexenddeca14ItalicFont(&lexenddeca_14_italic);
 EpdFont lexenddeca14BoldItalicFont(&lexenddeca_14_bolditalic);
 EpdFontFamily lexenddeca14FontFamily =
     EpdFontFamily(&lexenddeca14RegularFont, &lexenddeca14BoldFont, &lexenddeca14ItalicFont, &lexenddeca14BoldItalicFont,
-                  &ipaReader14Font).withSupplement(&persian14Font, &persian14Font);
+                  &ipaReader14Font).withSupplement(&persian14Font, &persian14BoldFont);
 EpdFont lexenddeca16RegularFont(&lexenddeca_16_regular);
 EpdFont lexenddeca16BoldFont(&lexenddeca_16_bold);
 EpdFont lexenddeca16ItalicFont(&lexenddeca_16_italic);
 EpdFont lexenddeca16BoldItalicFont(&lexenddeca_16_bolditalic);
 EpdFontFamily lexenddeca16FontFamily =
     EpdFontFamily(&lexenddeca16RegularFont, &lexenddeca16BoldFont, &lexenddeca16ItalicFont, &lexenddeca16BoldItalicFont,
-                  &ipaReader16Font).withSupplement(&persian16Font, &persian16Font);
+                  &ipaReader16Font).withSupplement(&persian16Font, &persian16BoldFont);
 #if CROSSINK_BUILTIN_BITTER
 EpdFont bitter10RegularFont(&bitter_10_regular);
 EpdFont bitter10BoldFont(&bitter_10_bold);
@@ -233,28 +237,28 @@ EpdFont bitter10ItalicFont(&bitter_10_italic);
 EpdFont bitter10BoldItalicFont(&bitter_10_bolditalic);
 EpdFontFamily bitter10FontFamily =
     EpdFontFamily(&bitter10RegularFont, &bitter10BoldFont, &bitter10ItalicFont, &bitter10BoldItalicFont,
-                  &ipaReader10Font).withSupplement(&persian10Font, &persian10Font);
+                  &ipaReader10Font).withSupplement(&persian10Font, &persian10BoldFont);
 EpdFont bitter12RegularFont(&bitter_12_regular);
 EpdFont bitter12BoldFont(&bitter_12_bold);
 EpdFont bitter12ItalicFont(&bitter_12_italic);
 EpdFont bitter12BoldItalicFont(&bitter_12_bolditalic);
 EpdFontFamily bitter12FontFamily =
     EpdFontFamily(&bitter12RegularFont, &bitter12BoldFont, &bitter12ItalicFont, &bitter12BoldItalicFont,
-                  &ipaReader12Font).withSupplement(&persian12Font, &persian12Font);
+                  &ipaReader12Font).withSupplement(&persian12Font, &persian12BoldFont);
 EpdFont bitter14RegularFont(&bitter_14_regular);
 EpdFont bitter14BoldFont(&bitter_14_bold);
 EpdFont bitter14ItalicFont(&bitter_14_italic);
 EpdFont bitter14BoldItalicFont(&bitter_14_bolditalic);
 EpdFontFamily bitter14FontFamily =
     EpdFontFamily(&bitter14RegularFont, &bitter14BoldFont, &bitter14ItalicFont, &bitter14BoldItalicFont,
-                  &ipaReader14Font).withSupplement(&persian14Font, &persian14Font);
+                  &ipaReader14Font).withSupplement(&persian14Font, &persian14BoldFont);
 EpdFont bitter16RegularFont(&bitter_16_regular);
 EpdFont bitter16BoldFont(&bitter_16_bold);
 EpdFont bitter16ItalicFont(&bitter_16_italic);
 EpdFont bitter16BoldItalicFont(&bitter_16_bolditalic);
 EpdFontFamily bitter16FontFamily =
     EpdFontFamily(&bitter16RegularFont, &bitter16BoldFont, &bitter16ItalicFont, &bitter16BoldItalicFont,
-                  &ipaReader16Font).withSupplement(&persian16Font, &persian16Font);
+                  &ipaReader16Font).withSupplement(&persian16Font, &persian16BoldFont);
 #endif
 
 #endif

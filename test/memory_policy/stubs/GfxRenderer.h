@@ -40,6 +40,7 @@ class GfxRenderer {
   void drawLine(Args...) const {}
   template <class... Args>
   void drawText(Args...) const {}
+  void setThickenGlyphs(bool) const {}
   template <class... Args>
   void fillRect(Args...) const {}
   bool isSdCardFont(int) const { return false; }

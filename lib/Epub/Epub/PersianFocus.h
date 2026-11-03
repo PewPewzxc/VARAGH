@@ -2,19 +2,22 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
 
 // VARAGH: Focus Reading for Persian (and other Arabic-script) words.
 //
-// Bolding "the first part" of a joined Persian word would cut a letter off
-// from its neighbour and change both shapes. Persian words already break
-// naturally after the letters that never join the next one (ا آ د ذ ر ز ژ و
-// and friends) and at the half-space (ZWNJ), so the bold part ends at one of
-// those breaks. Vowel marks (zir, zebar, pish, tashdid, ...) stay with their
-// letter. "می‌روم" -> bold "می‌", "کتاب" -> bold "کتا".
+// Like English, the first part of every word is bold (Focus Reading's share of
+// its letters, at least one letter). The cut may fall between two joined
+// letters: drawing then adds a ZWJ on both sides of the cut so the letters stay
+// joined across the bold and regular runs. Vowel marks (zir, zebar, pish,
+// tashdid, ...) stay with their letter and a half-space (ZWNJ) stays with the
+// bold part. "کتاب" -> bold "ک", "می‌روم" -> bold "می‌", "و" -> all bold.
 namespace PersianFocus {
 
 constexpr uint32_t ZWNJ = 0x200C;
+// Share of each word's letters drawn bold (rounded down, at least one letter).
+constexpr size_t BOLD_PERCENT = 40;
 
 constexpr bool isArabicLetter(const uint32_t cp) {
   return (cp >= 0x0620 && cp <= 0x064A) || (cp >= 0x066E && cp <= 0x06D3) || cp == 0x06D5 ||
@@ -75,44 +78,58 @@ constexpr bool startsArabic(const std::string_view word) {
   return false;
 }
 
-// Byte offset where the bold part ends, or 0 for no bold part (no natural
-// break before the last letter). targetPercent is Focus Reading's share.
+// Byte offset where the bold part ends; word.size() when the whole word is bold
+// (a one-letter word), 0 when the word has no Arabic letter. targetPercent is
+// Focus Reading's share.
 constexpr size_t boundary(const std::string_view word, const size_t targetPercent) {
   size_t letters = 0;
   for (size_t i = 0; i < word.size();) {
     if (isArabicLetter(decode(word, i))) ++letters;
   }
-  if (letters < 2) return 0;
-  size_t target = letters * targetPercent / 100;
+  if (letters == 0) return 0;
+  size_t target = letters * targetPercent / 100;  // rounded down: دانشگاه (7 letters) -> دا
   if (target < 1) target = 1;
+  if (target > 9) target = 9;  // same cap as English words
+  if (target >= letters) return word.size();
 
-  size_t best = 0;          // last break with no more than target letters bold
-  size_t firstAbove = 0;    // first break past the target
+  // Cut right before the letter after the bold ones, so their marks and a
+  // half-space come along with them.
   size_t seen = 0;
-  bool breakPending = false;  // after a non-joining letter, waiting for its marks
   for (size_t i = 0; i < word.size();) {
     const size_t at = i;
-    const uint32_t cp = decode(word, i);
-    if (breakPending && !isMark(cp)) {
-      breakPending = false;
-      if (seen < letters) {  // a letter must stay outside the bold part
-        if (seen <= target) best = at;
-        else if (firstAbove == 0) firstAbove = at;
-      }
-    }
-    if (cp == ZWNJ) {
-      if (seen > 0 && seen < letters) {
-        if (seen <= target) best = i;
-        else if (firstAbove == 0) firstAbove = i;
-      }
-      continue;
-    }
-    if (isArabicLetter(cp)) {
-      ++seen;
-      if (isRightJoiningOnly(cp)) breakPending = true;
-    }
+    if (isArabicLetter(decode(word, i)) && seen++ == target) return at;
   }
-  return best != 0 ? best : firstAbove;
+  return word.size();
+}
+
+// True when the letters on both sides of `cut` join, so the two runs need a
+// ZWJ at the cut to keep their joined shapes.
+constexpr bool joinsAcross(const std::string_view word, const size_t cut) {
+  if (cut == 0 || cut >= word.size()) return false;
+  uint32_t before = 0;
+  for (size_t i = 0; i < cut;) {
+    const uint32_t cp = decode(word, i);
+    if (!isMark(cp)) before = cp;
+  }
+  size_t i = cut;
+  const uint32_t after = decode(word, i);
+  return isArabicLetter(before) && !isRightJoiningOnly(before) && isArabicLetter(after);
+}
+
+// Copies the bold and regular runs of a word split at `cut` into the buffers,
+// with a ZWJ on both sides of a joined cut. False when a run does not fit.
+inline bool splitRuns(const char* word, const size_t wordLength, const size_t cut, char* bold,
+                      const size_t boldCapacity, char* rest, const size_t restCapacity) {
+  static constexpr char kZwj[] = "\xE2\x80\x8D";
+  const size_t joiner = joinsAcross(std::string_view(word, wordLength), cut) ? 3 : 0;
+  if (cut > wordLength || cut + joiner >= boldCapacity || wordLength - cut + joiner >= restCapacity) return false;
+  memcpy(bold, word, cut);
+  memcpy(bold + cut, kZwj, joiner);
+  bold[cut + joiner] = '\0';
+  memcpy(rest, kZwj, joiner);
+  memcpy(rest + joiner, word + cut, wordLength - cut);
+  rest[joiner + wordLength - cut] = '\0';
+  return true;
 }
 
 }  // namespace PersianFocus

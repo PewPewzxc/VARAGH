@@ -8,3 +8,4 @@ lexenddeca_italic.ttf
 lexenddeca_bolditalic.ttf
 vazirmatn_persian.ttf
 noto_ipa.ttf
+vazirmatn_persian_bold.ttf

@@ -62,7 +62,7 @@ NotoVazir font from the SD-card zip is optional (see [section 1](#notovazir-font
 
 ### Built in on every reader (1.3.1)
 The built-in reading fonts carry the Persian and Arabic letters (Vazirmatn,
-regular, in four sizes) and the pronunciation letters dictionaries use (IPA, from
+regular and bold, in four sizes) and the pronunciation letters dictionaries use (IPA, from
 Noto Sans), on the X4 Pro, X4 Classic and X3 / X4. Persian books, German words in
 a dictionary or flashcard, and pronunciations such as /θɪŋk/ or [haʊ̯s] display
 straight after installing, with no font on the SD card. Before 1.3.1 they needed
@@ -70,7 +70,7 @@ NotoVazir and otherwise showed as diamonds.
 
 ### NotoVazir font (optional)
 One reader font that contains every letter VARAGH needs. Install it if you want
-Persian in Medium and Bold, or more sizes:
+Persian in more sizes, or italic English beside it:
 
 | Part | Letters |
 |---|---|
@@ -116,6 +116,20 @@ Persian letters, such as Bitter on the X3 / X4, borrows them from the built-in f
 - The Kurdish letter ە joins the letter before it.
 - Guide Dots sit in the right place in right-to-left lines, and Persian lines in
   dictionary entries are laid out right to left (1.3.0).
+
+### Focus Reading in Persian (1.3.1)
+
+<p align="center">
+  <img src="docs/images/varagh/v1.3.1/persian-focus.png" width="250" alt="A Persian page with Focus Reading: the first letters of every word in bold"><br>
+  <sub>Focus Reading in a Persian book (no extra font).</sub>
+</p>
+
+Focus Reading bolds the start of every Persian word, as it does in English: the
+first 40 % of the word's letters, rounded down and at least one (دانشگاه → **دا**نشگاه,
+کتاب‌ها → **کت**اب‌ها, و → **و**). The letters stay joined where the bold ends, and a
+half-space word (می‌روم) is one word. The bold is drawn a pixel heavier than
+Vazirmatn Bold so it stands out on e-ink, with or without NotoVazir, on all three
+readers.
 
 ### Persian menus and keyboard (1.3.0)
 - **Persian is a menu language**, written right to left. From 1.3.1 it is a

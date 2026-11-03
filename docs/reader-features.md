@@ -52,6 +52,9 @@ stay engaged with the text and reduces mind-wandering.
 1. Open **Settings > Reader**.
 2. Toggle **Focus Reading** on.
 
+Persian and Arabic books get it too (VARAGH 1.3.1): the first 40 % of each word's
+letters are bold, at least one, with the letters kept joined.
+
 Toggling the setting triggers a re-index of the current book, just like changing
 font settings. Once indexing is complete, page turns proceed as normal. No
 changes are made to the EPUB file.

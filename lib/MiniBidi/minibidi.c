@@ -432,7 +432,14 @@ int do_shape(bidi_char* line, bidi_char* to, int count) {
         } else if (prevjoiners == (ZWJ | ZWNJ)) {
           to[i].wc = shape_form(line[i].wc, SHAPE_MEDIAL);
         } else if (prevjoiners == ZWJ) {
-          to[i].wc = shape_form(line[i].wc, SHAPE_FINAL);
+          /* VARAGH deviation: backward join forced; still medial when the
+             visually-left (logically next) neighbour joins too (mintty
+             always wrote final, which broke "ZWJ + شگاه" apart after ش) */
+          tempShape = (pv >= 0) ? stype(line[pv].wc) : SU;
+          if (tempShape == SR || tempShape == SD || tempShape == SC)
+            to[i].wc = shape_form(line[i].wc, SHAPE_MEDIAL);
+          else
+            to[i].wc = shape_form(line[i].wc, SHAPE_FINAL);
         } else if (joiners & ZWNJ) {
           /* forward join blocked; final only if the visually-left
              (logically previous) neighbour joins, else isolated —

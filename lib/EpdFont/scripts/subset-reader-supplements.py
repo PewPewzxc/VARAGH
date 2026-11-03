@@ -1,12 +1,12 @@
 """VARAGH: small outlines the scalable built-in reader fonts borrow letters from.
 
-vazirmatn_persian.ttf: Persian letters (EpdFontFamily::withSupplement).
+vazirmatn_persian.ttf / vazirmatn_persian_bold.ttf: Persian letters (EpdFontFamily::withSupplement).
 noto_ipa.ttf: pronunciation (IPA) letters and combining marks (the family fallback).
 Only those codepoints are kept: Latin comes from the reader font itself, and the
 renderer shapes Arabic into presentation forms itself, so no GSUB/GPOS is needed.
 Keep the ranges in step with PERSIAN_INTERVALS / IPA_INTERVALS in convert-builtin-fonts.sh.
 
-  python subset-reader-supplements.py <Vazirmatn-Medium.ttf> <NotoSans-Regular.ttf>
+  python subset-reader-supplements.py <Vazirmatn-Medium.ttf> <NotoSans-Regular.ttf> <Vazirmatn-Bold.ttf>
 """
 import sys
 from pathlib import Path
@@ -43,3 +43,4 @@ def subset_to(source, ranges, name):
 if __name__ == "__main__":
     subset_to(sys.argv[1], PERSIAN_RANGES, "vazirmatn_persian.ttf")
     subset_to(sys.argv[2], IPA_RANGES, "noto_ipa.ttf")
+    subset_to(sys.argv[3], PERSIAN_RANGES, "vazirmatn_persian_bold.ttf")

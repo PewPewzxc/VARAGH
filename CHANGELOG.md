@@ -63,15 +63,20 @@ once, the first time each is opened.
 ### Fixed
 
 - **Persian, German and pronunciations without extra fonts:** the built-in reading fonts now
-  carry Persian letters (Vazirmatn, regular) and the pronunciation letters dictionaries use
+  carry Persian letters (Vazirmatn, regular and bold) and the pronunciation letters dictionaries use
   (IPA, from Noto Sans), on all three readers. Persian text in a book, Persian and German
   words in a dictionary or flashcard, and pronunciations such as /θɪŋk/ or [haʊ̯s] no longer show as
   diamonds. A downloaded font without Persian letters (Bitter on the X3 / X4) borrows them
   from the built-in font.
+- **Focus Reading in Persian books:** every word now starts in bold, as in English: the first
+  40 % of its letters (at least one), with the letters staying joined where the bold ends and
+  a half-space word (می‌روم) counted as one word. The built-in fonts carry a Vazirmatn bold for
+  it, drawn a pixel heavier so it stands out on e-ink, with or without NotoVazir installed.
 - **Mixed English and Persian:** a paragraph that starts with an English word reads left to
   right even when Persian follows, and brackets around English words inside a Persian line
   (such as language names in Settings download lists) face the right way.
 - Books with thousands of chapters no longer run out of memory while opening.
+- Highlights and the Add to… menu show the Flashcards folder's name once instead of twice.
 - **Persian and Arabic:** a kasra (and kasratan, hamza or alef below) under a letter that
   reaches below the line (خ ج ع, final ر ن م) is drawn below it instead of inside it.
   The Kurdish letter ە joins the letter before it.

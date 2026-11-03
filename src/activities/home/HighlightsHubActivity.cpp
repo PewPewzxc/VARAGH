@@ -71,7 +71,10 @@ void HighlightsHubActivity::reload() {
         case RowKind::Category: {
           const auto& c = categories[static_cast<size_t>(row)];
           item.label = c.name.c_str();
-          if (c.type == HighlightFormat::CategoryType::Flashcards) item.subtitle = tr(STR_FLASHCARDS);
+          // The type line only helps once the folder is renamed; otherwise it repeats the name.
+          if (c.type == HighlightFormat::CategoryType::Flashcards && c.name != tr(STR_FLASHCARDS)) {
+            item.subtitle = tr(STR_FLASHCARDS);
+          }
           item.value = values[static_cast<size_t>(row)].c_str();
           item.icon = listIconFor(UIIcon::Folder, 32);
           break;

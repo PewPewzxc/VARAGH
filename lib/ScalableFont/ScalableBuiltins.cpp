@@ -11,8 +11,9 @@
 #include "ScalableAssets.generated.h"
 namespace {
 std::optional<HalScalableFont> faces[8];
-// VARAGH: Persian letters the reader fonts lack, borrowed glyph by glyph (regular weight only).
+// VARAGH: Persian letters the reader fonts lack, borrowed glyph by glyph (regular and bold).
 std::optional<HalScalableFont> persianFace;
+std::optional<HalScalableFont> persianBoldFace;
 // VARAGH: pronunciation (IPA) letters and combining marks, the family's shared fallback.
 std::optional<HalScalableFont> ipaFace;
 bool ready[2] = {};
@@ -64,6 +65,13 @@ void ensureScalableBuiltinFamily(GfxRenderer& renderer, unsigned family) {
       LOG_ERR("TTF", "Built-in Persian supplement unavailable");
     }
   }
+  if (ok && !persianBoldFace) {
+    persianBoldFace.emplace();
+    if (!persianBoldFace->openMemory(vazirmatn_persian_boldOutline, sizeof(vazirmatn_persian_boldOutline))) {
+      persianBoldFace.reset();
+      LOG_ERR("TTF", "Built-in Persian bold supplement unavailable");
+    }
+  }
   if (ok && !ipaFace) {
     ipaFace.emplace();
     if (!ipaFace->openMemory(noto_ipaOutline, sizeof(noto_ipaOutline))) {
@@ -78,7 +86,7 @@ void ensureScalableBuiltinFamily(GfxRenderer& renderer, unsigned family) {
                          ipaFace ? ipaFace->atSize(points) : nullptr);
       if (persianFace) {
         const EpdFont* persian = persianFace->atSize(points);
-        font = font.withSupplement(persian, persian);
+        font = font.withSupplement(persian, persianBoldFace ? persianBoldFace->atSize(points) : persian);
       }
       renderer.insertFont(scalableBuiltinReaderFontId(family, points), font);
       for (unsigned size = 0; size < 4; ++size)

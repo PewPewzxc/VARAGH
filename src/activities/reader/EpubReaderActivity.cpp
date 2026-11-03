@@ -8055,8 +8055,10 @@ void EpubReaderActivity::drawClippingHighlights(const Page& page, const int font
       if (!FocusReadingText::drawSplitRuns(
               wordText, wordLength, focusBoundary, fullWordX, block.focusRunOffset(wordIndex), textStyle,
               baseDir == BidiUtils::BidiBaseDir::RTL,
-              [&](const int runX, const char* runText, const EpdFontFamily::Style runStyle) {
+              [&](const int runX, const char* runText, const EpdFontFamily::Style runStyle, const bool thicken) {
+                renderer.setThickenGlyphs(thicken);
                 renderer.drawText(lineFontId, runX, wordY, runText, true, runStyle, baseDir);
+                renderer.setThickenGlyphs(false);
               })) {
         renderer.drawText(lineFontId, wordX, wordY, visibleText, true, textStyle);
       }

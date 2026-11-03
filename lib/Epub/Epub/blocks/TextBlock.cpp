@@ -6,6 +6,8 @@
 #include <Memory.h>
 #include <Serialization.h>
 
+#include "../PersianFocus.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -273,17 +275,27 @@ void TextBlock::render(const GfxRenderer& renderer, const int sectionFontId, con
     if (boundary > 0) {
       const auto boldStyle = static_cast<EpdFontFamily::Style>(currentStyle | EpdFontFamily::BOLD);
       char boldBuf[40];
+      char restBuf[96];
+      // A joined Persian cut gets a ZWJ on both runs so the letters stay joined.
+      const bool split = PersianFocus::splitRuns(word, wordLen, boundary, boldBuf, sizeof(boldBuf), restBuf,
+                                                 sizeof(restBuf));
       const size_t boldLen =
           std::min<size_t>({static_cast<size_t>(boundary), static_cast<size_t>(wordLen), sizeof(boldBuf) - 1});
-      memcpy(boldBuf, word, boldLen);
-      boldBuf[boldLen] = '\0';
+      if (!split) {
+        memcpy(boldBuf, word, boldLen);
+        boldBuf[boldLen] = '\0';
+      }
+      const char* const rest = split ? restBuf : word + boldLen;
       const int secondRunX = wordX + focusRunOffset(i);
       if (baseDir == BidiUtils::BidiBaseDir::RTL) {
-        renderer.drawText(fontId, wordX, wordY, word + boldLen, foregroundBlack, currentStyle, baseDir);
+        renderer.drawText(fontId, wordX, wordY, rest, foregroundBlack, currentStyle, baseDir);
+        const bool thicken = PersianFocus::startsArabic(boldBuf);
+        renderer.setThickenGlyphs(thicken);
         renderer.drawText(fontId, secondRunX, wordY, boldBuf, foregroundBlack, boldStyle, baseDir);
+        if (thicken) renderer.setThickenGlyphs(false);
       } else {
         renderer.drawText(fontId, wordX, wordY, boldBuf, foregroundBlack, boldStyle, baseDir);
-        renderer.drawText(fontId, secondRunX, wordY, word + boldLen, foregroundBlack, currentStyle, baseDir);
+        renderer.drawText(fontId, secondRunX, wordY, rest, foregroundBlack, currentStyle, baseDir);
       }
     } else {
       renderer.drawText(fontId, wordX, wordY, word, foregroundBlack, currentStyle, baseDir);

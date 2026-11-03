@@ -82,6 +82,7 @@ class GfxRenderer {
   // table cell. Glyph bitmaps and background fills both pass through this
   // guard, so an emergency oversized codepoint cannot paint into a neighbour.
   mutable bool textClipActive_ = false;
+  mutable bool thickenGlyphs_ = false;
   mutable int textClipLeft_ = 0;
   mutable int textClipTop_ = 0;
   mutable int textClipRight_ = 0;   // half-open
@@ -377,6 +378,11 @@ class GfxRenderer {
   // (a pixel counts when its centre is within radius + 1/2). Used by the
   // Control Center only; other screens keep their exact look.
   void setSmoothRoundEnds(const bool on) { smoothRoundEnds = on; }
+  // VARAGH: draw each glyph one pixel wider and taller (Focus Reading's Persian bold, which
+  // is too close to the regular weight on e-ink). Done in one pass: redrawing shifted copies
+  // would let one copy's grey edge pixels turn the other copy's black pixels grey.
+  void setThickenGlyphs(const bool on) const { thickenGlyphs_ = on; }
+  bool thickenGlyphs() const { return thickenGlyphs_; }
   bool supportsAbsoluteGrayscale() const;
   bool displayAbsoluteGrayscaleBase(HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH) const;
   // Direct grayscale folds the B/W base into the grayscale pass

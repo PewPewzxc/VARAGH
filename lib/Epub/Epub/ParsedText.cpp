@@ -352,8 +352,9 @@ FocusTokenMetadata computeFocusMetadata(const std::string_view segment, const Ep
     return {baseStyle, 0};
   }
   if (PersianFocus::startsArabic(segment)) {
-    // Joined script: end the bold part at a natural break, never mid-join.
-    const size_t cut = PersianFocus::boundary(segment, FOCUS_READING_PERCENT);
+    // Joined script: drawing keeps the letters joined across the cut (PersianFocus::splitRuns).
+    const size_t cut = PersianFocus::boundary(segment, PersianFocus::BOLD_PERCENT);
+    if (cut >= segment.size()) return {static_cast<EpdFontFamily::Style>(baseStyle | EpdFontFamily::BOLD), 0};
     return {baseStyle, static_cast<uint8_t>(cut <= UINT8_MAX ? cut : 0)};
   }
 
@@ -400,9 +401,16 @@ int measureFocusRunOffset(const GfxRenderer& renderer, const int fontId, const s
 
   const auto boldStyle = static_cast<EpdFontFamily::Style>(style | EpdFontFamily::BOLD);
   char prefixBuf[40];
-  const size_t prefixLen = std::min<size_t>(boundary, sizeof(prefixBuf) - 1);
-  memcpy(prefixBuf, word.c_str(), prefixLen);
-  prefixBuf[prefixLen] = '\0';
+  char suffixBuf[96];
+  // Measure the runs exactly as drawn: a joined Persian cut carries a ZWJ on both sides.
+  const bool split = PersianFocus::splitRuns(word.c_str(), word.size(), boundary, prefixBuf, sizeof(prefixBuf),
+                                             suffixBuf, sizeof(suffixBuf));
+  if (!split) {
+    const size_t prefixLen = std::min<size_t>(boundary, sizeof(prefixBuf) - 1);
+    memcpy(prefixBuf, word.c_str(), prefixLen);
+    prefixBuf[prefixLen] = '\0';
+  }
+  const char* const suffix = split ? suffixBuf : word.c_str() + boundary;
 
   const uint32_t firstSuffixCp = firstCodepointAtByteOffset(word, boundary);
   if (!rtl) {
@@ -412,7 +420,7 @@ int measureFocusRunOffset(const GfxRenderer& renderer, const int fontId, const s
     return renderer.getTextAdvanceX(fontId, prefixBuf, boldStyle, firstSuffixCp);
   }
 
-  const int suffixWidth = renderer.getTextAdvanceX(fontId, word.c_str() + boundary, style);
+  const int suffixWidth = renderer.getTextAdvanceX(fontId, suffix, style);
   const int kern = renderer.getKerning(fontId, lastCodepointBeforeByteOffset(word, boundary), firstSuffixCp, boldStyle);
   return suffixWidth + kern;
 }
@@ -427,7 +435,11 @@ uint16_t measureTokenWidth(const GfxRenderer& renderer, const int fontId, const 
   }
 
   const int suffixX = measureFocusRunOffset(renderer, fontId, word, style, focusBoundary, false);
-  const int suffixWidth = renderer.getTextAdvanceX(fontId, word.c_str() + focusBoundary, style);
+  char prefixBuf[40];
+  char suffixBuf[96];
+  const bool split = PersianFocus::splitRuns(word.c_str(), word.size(), focusBoundary, prefixBuf, sizeof(prefixBuf),
+                                             suffixBuf, sizeof(suffixBuf));
+  const int suffixWidth = renderer.getTextAdvanceX(fontId, split ? suffixBuf : word.c_str() + focusBoundary, style);
   return static_cast<uint16_t>(std::max(0, suffixX + suffixWidth));
 }
 
@@ -523,7 +535,8 @@ bool isWordCharacter(uint32_t cp) {
   // General Punctuation Block, Currency, Math, Arrows, & Symbols (0x2000 - 0x2BFF)
   if (cp >= 0x2000 && cp <= 0x2BFF) {
     // Explicitly allow smart quotes, reject all other general punctuation (em-dashes, etc.)
-    return cp == 0x2018 || cp == 0x2019;
+    // VARAGH: ZWNJ/ZWJ sit inside Persian words (می‌روم); PersianFocus::boundary() breaks there itself.
+    return cp == 0x2018 || cp == 0x2019 || cp == 0x200C || cp == 0x200D;
   }
 
   // Latin-1 Punctuation Block (0x00A1 - 0x00BF)

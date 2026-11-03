@@ -951,6 +951,34 @@ static void renderCharSmallCaps(const GfxRenderer& renderer, GfxRenderer::Render
   }
 }
 
+// Returns the glyph dilated by one pixel right and down (each pixel takes the darkest of
+// itself and its left, upper and upper-left neighbours), or nullptr when it does not fit.
+// shortcut: one static buffer, so render from one task only; glyphs over ~90x90 stay thin.
+static const uint8_t* thickenedGlyph(const uint8_t* bitmap, const int width, const int height, const bool twoBit) {
+  static uint8_t out[2048];
+  const int outWidth = width + 1;
+  const int bits = outWidth * (height + 1) * (twoBit ? 2 : 1);
+  if (bits > static_cast<int>(sizeof(out)) * 8) return nullptr;
+  memset(out, 0, (bits + 7) / 8);
+  const auto ink = [&](const int x, const int y) -> uint8_t {
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+    const int i = y * width + x;
+    return twoBit ? (bitmap[i >> 2] >> (6 - (i & 3) * 2)) & 3 : (bitmap[i >> 3] >> (7 - (i & 7))) & 1;
+  };
+  for (int y = 0; y <= height; ++y) {
+    for (int x = 0; x < outWidth; ++x) {
+      const uint8_t v = std::max({ink(x, y), ink(x - 1, y), ink(x, y - 1), ink(x - 1, y - 1)});
+      if (v == 0) continue;
+      const int i = y * outWidth + x;
+      if (twoBit)
+        out[i >> 2] |= static_cast<uint8_t>(v << (6 - (i & 3) * 2));
+      else
+        out[i >> 3] |= static_cast<uint8_t>(0x80u >> (i & 7));
+    }
+  }
+  return out;
+}
+
 template <TextRotation rotation = TextRotation::None>
 static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode renderMode,
                            const EpdFontFamily& fontFamily, const uint32_t cp, int cursorX, int cursorY,
@@ -965,8 +993,9 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
   }
 
   const bool is2Bit = fontData->is2Bit;
-  const uint8_t width = glyph->width;
-  const uint8_t height = glyph->height;
+  const int thicken = renderer.thickenGlyphs() ? 1 : 0;
+  int width = glyph->width + thicken;
+  int height = glyph->height + thicken;
   const int left = glyph->left;
   const int top = glyph->top;
 
@@ -989,6 +1018,15 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
 
   const uint8_t* bitmap = renderer.getGlyphBitmap(fontData, glyph);
   if (bitmap == nullptr) return;
+  if (thicken) {
+    const uint8_t* thick = thickenedGlyph(bitmap, glyph->width, glyph->height, is2Bit);
+    if (thick) {
+      bitmap = thick;
+    } else {
+      width = glyph->width;
+      height = glyph->height;
+    }
+  }
 
   // Logical placement of glyph pixel (0, 0) and the logical step for one move
   // along each glyph axis. Rotated text runs glyph x up the screen and glyph

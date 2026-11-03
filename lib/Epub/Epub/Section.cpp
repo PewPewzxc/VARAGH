@@ -55,7 +55,8 @@ constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // never match a CrossInk cache of the same number (VARAGH 1.0/1.1.0 used v78).
 // 183: hyphen/dash line breaks; 184: boxes; 185: font sizes + drop caps (VARAGH 1.3.1).
 // 188: built-in Persian letters + first-strong-letter paragraph direction.
-constexpr uint8_t SECTION_FILE_VERSION = 188;
+// 190: Persian Focus Reading bolds every word start (joined across the cut) and keeps half-space words whole.
+constexpr uint8_t SECTION_FILE_VERSION = 190;
 // Suspended incremental build: valid pages plus LUTs and a parse-watermark trailer.
 // Change this with layout or payload changes so stale partial pages cannot resume
 // under a different layout contract.
