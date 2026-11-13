@@ -33,8 +33,8 @@ settings and highlights are kept.
 
 ### Changed
 
-- **Smaller firmware:** the X4 Pro firmware went from 6,341 KB to 5,454 KB (about 1,100 KB free
-  instead of 212 KB), the X4 Classic from 6,105 KB to 5,230 KB. Where it came from:
+- **Smaller firmware:** the X4 Pro firmware went from 6,270 KB to 5,454 KB with AirDrop added (about 1,100 KB free
+  instead of 283 KB), the X4 Classic from 6,035 KB to 5,230 KB, the X3 / X4 from 5,922 KB to 5,801 KB. Where it came from:
   - **Bitter is a card font on the X4 Pro and X4 Classic** (as on the X3 / X4 since 1.3.1):
     640 KB. From the card it looks exactly as before, at every size from 8 to 22 pt. If Bitter
     was your font and is not on the card yet, the reader uses Lexend Deca until it is.
