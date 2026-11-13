@@ -22,6 +22,7 @@
  */
 #include <Arduino.h> /* millis(), Serial -- the Serial uses leave at the strip */
 #include <errno.h>
+#include <stdarg.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +43,7 @@
 #include "../core/ad_dvzip.h"
 #include "../core/ad_http.h"
 #include "../core/ad_identity.h"
+#define AD_SERVE_NO_LOG /* sv.log is never set here: keep the format strings out of flash */
 #include "../core/ad_serve.h"
 #include "../core/airdrop_cert.h"
 #include "ad_port_esp32.h"
@@ -55,37 +57,8 @@ extern "C" size_t tinfl_decompress_mem_to_mem(void* pOut_buf, size_t out_buf_len
                                               size_t src_buf_len, int flags);
 #define TINFL_FLAG_PARSE_ZLIB_HEADER 1 /* input is a zlib stream (78 xx ...), not raw */
 
-// M3: a TCP listener on the AirDrop port (8770). If the iPhone opens the AirDrop
-// /Discover connection to us on ch6, lwIP completes the 3-way handshake here and
-// accept() fires -- the decisive proof that ch6 unicast connection is possible.
-static volatile uint32_t g_tcp_accept = 0;
-static volatile uint32_t g_tls_ok = 0;       // TLS handshake completed with a sender
-static volatile uint32_t g_discover_ok = 0;  // answered HTTP POST /Discover (=> tile)
-static volatile uint32_t g_ask_ok = 0;       // accepted a POST /Ask
-static volatile uint32_t g_upload_ok = 0;    // received & decoded a POST /Upload image
-static volatile uint32_t g_desync = 0;       // times the stream was out of frame
-
-// Millisecond-stamped event log for the application layer. The symptom being
-// chased ("the tile appears in the AirDrop window, then vanishes ~6s later") lives
-// entirely in the few seconds after a successful /Discover, so every event in that
-// window needs a timestamp on one greppable line. EV lines are meant to be read
-// together offline, not individually.
-// Formatted into a local buffer and emitted as a SINGLE write. Two tasks print to
-// this port (frame processing and the TCP server), and Serial.printf is not atomic:
-// out of 9153 captured lines exactly 2 were spliced together -- and one of those two
-// swallowed the `http_idle_end ... why=timeout` line that was the sole evidence of a
-// regression. A diagnostic channel that loses the one line that matters is worse than
-// no channel, because it is trusted.
-
-/* --- mDNS and connection counters ---------------------------------------------------
- * These were parked in AwdlDiag while the responder still lived in the link layer. They
- * count AirDrop events -- who asked, what we answered, which advertised port a sender
- * dialled -- so they belong here, with the code that writes them. */
-static volatile uint32_t g_resp_tx = 0, g_resp_err = 0, g_query_seen = 0;
-static volatile uint32_t g_notus = 0, g_ka_suppress = 0;
-static volatile uint32_t g_tcp_tous = 0;
-static volatile uint32_t g_syn_airdrop = 0, g_syn_pair1 = 0, g_syn_pair2 = 0, g_syn_other = 0;
-static volatile uint16_t g_syn_other_port = 0;
+// ad_serve.h counts these; nothing outside this file reads them.
+static volatile uint32_t g_discover_ok = 0, g_ask_ok = 0, g_desync = 0;
 
 /* ==========================================================================
  * mDNS: the advertisement, and the reply that has to leave from the frame path
@@ -424,8 +397,7 @@ static int build_mdns_msg(uint8_t* d) {
 static int build_mdns_ip6(uint8_t* frame) {
   uint8_t* buf = frame + AWDL_TX_HEADROOM;
   static const uint8_t mip[16] = {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfb};
-  uint8_t dns[1280]; /* _airdrop(391) + 2 pairing services(~630) */
-  int dlen = build_mdns_msg(dns);
+  int dlen = build_mdns_msg(buf + 48); /* ~1,030 B: _airdrop(391) + 2 pairing services(~630) */
   int udplen = 8 + dlen;
 
   uint8_t* p = buf;
@@ -450,7 +422,6 @@ static int build_mdns_ip6(uint8_t* frame) {
   *p++ = udplen & 0xff;
   *p++ = 0x00;
   *p++ = 0x00; /* checksum, filled below */
-  memcpy(p, dns, dlen);
   p += dlen;
   uint16_t ck = udp6_checksum(g_id.ll, mip, udp, udplen);
   udp[6] = ck >> 8;
@@ -495,13 +466,11 @@ static int build_mdns_ip6(uint8_t* frame) {
 
 /* The immediate reply, emitted on the frame task the instant a query is seen: one query
  * in, one reply out. */
+/* The reply never changes within a session, so ad_begin() builds it once (that build was
+   ~240 us of frame-task time per reply); awdl_tx_ip6_now() rewrites only the headroom. */
+static uint8_t g_mdns_frame[AWDL_TX_HEADROOM + 1400];
+static int g_mdns_len = 0;
 static void ad_respond(const uint8_t querier[6]) {
-  /* Its own buffer, never shared with the announcement's: the announcement runs on the
-     cadence task at priority 2 and this runs on the frame task at 3, so the frame task
-     can preempt a half-built announcement. That is why there were two static buffers
-     before this code moved, and it is still why. */
-  static uint8_t frame[AWDL_TX_HEADROOM + 1400];
-  int n = build_mdns_ip6(frame);
   /* UNICAST to the querier, not multicast to ff02::fb, and that is measured rather than
    * preferred. esp_wifi_80211_tx refuses a DATA frame whose addr1 is a group address:
    * mDNS to 33:33:00:00:00:fb was rejected 100 % of the time, and the netif's own traffic
@@ -509,10 +478,7 @@ static void ad_respond(const uint8_t querier[6]) {
    * window). The case for multicast is that these queries are QM (class 0x0001, multicast
    * response expected) -- true, and moot for a frame that never leaves the driver. A
    * unicast reply the querier receives beats a QM-correct one it never sees. */
-  if (awdl_tx_ip6_now(querier, frame, (size_t)n) == 0)
-    g_resp_tx++;
-  else
-    g_resp_err++;
+  (void)awdl_tx_ip6_now(querier, g_mdns_frame, (size_t)g_mdns_len);
 }
 
 /* THE RX TAP. Runs on the AWDL frame task. Invariant: no Serial, no lwIP, no blocking --
@@ -539,7 +505,6 @@ static void ad_rx_tap(void*, const uint8_t src[6], const uint8_t* ip6, size_t ip
     if (dns_len > 12 && relevant) {
       bool is_query = !(dns[2] & 0x80);
       if (is_query) {
-        g_query_seen++;
         // RFC 6762 7.1: do not answer a question whose answer the querier already
         // holds. We never honoured it, and it is not a nicety here -- a reply is 1,107
         // bytes built and injected from THIS task, measured 3,400-7,379us against a
@@ -560,43 +525,9 @@ static void ad_rx_tap(void*, const uint8_t src[6], const uint8_t* ip6, size_t ip
         // them reply exactly as the old filter did. Only a query fully parsed, in which
         // no question names a record we hold, is dropped.
         struct AdDnssdOwn own = {g_id.instance, AIRDROP_DNM};
-        if (!ad_dnssd_asks_us(dns, dns_len, &own)) {
-          g_notus++;
-        } else if (ad_dnssd_known_answer_suppresses(dns, dns_len, &own)) {
-          g_ka_suppress++;
-        } else {
+        if (ad_dnssd_asks_us(dns, dns_len, &own) && !ad_dnssd_known_answer_suppresses(dns, dns_len, &own))
           ad_respond(src);
-        }
       }
-    }
-  } else if (nh == 6) {
-    const uint8_t* dst = &ip6[24];
-    if (memcmp(dst, g_id.ll, 16) == 0) {  // to OUR address = iPhone connecting!
-      g_tcp_tous++;
-      uint8_t flags = iplen >= 54 ? ip6[40 + 13] : 0;  // TCP flags byte
-      uint16_t dport = (ip6[42] << 8) | ip6[43];
-      // Which of our ADVERTISED ports does the sender actually dial? We publish three
-      // in mDNS -- _airdrop._tcp on 8770, _applicationServicePairing._tcp on 54763 and
-      // _appSvcPrePair._tcp on 54764 -- but bind() only 8770, so a connection to
-      // either pairing port gets a RST from lwIP. Earlier notes credited those pairing
-      // records with the discovery-to-connection promotion, which may well be the
-      // identity TXT they carry rather than the ports; this counts SYNs per port so
-      // the question is answered by observation before anything is changed.
-      if (flags & 0x02) {  // SYN
-        if (dport == 8770)
-          g_syn_airdrop++;
-        else if (dport == 54763)
-          g_syn_pair1++;
-        else if (dport == 54764)
-          g_syn_pair2++;
-        else {
-          g_syn_other++;
-          g_syn_other_port = dport;
-        }
-      }
-      // SNIFFER-ONLY, same reason as NS-TO-US above. sport is declared here rather than
-      // with dport because this line is its only reader, so the receiver build does not
-      // carry an unused local.
     }
   }
 }
@@ -604,22 +535,14 @@ static void ad_rx_tap(void*, const uint8_t src[6], const uint8_t* ip6, size_t ip
 static uint32_t g_disc_ms = 0;  // when we last answered /Discover
 static uint32_t g_ask_ms = 0;   // when we last answered /Ask (the /Upload clock)
 
-// Transfer progress is updated by the listener and read by the main task.
-#define AD_RX_STALL_MS 20000u
-static volatile uint32_t g_rx_touch_ms = 0;
-static volatile bool g_rx_active = false;  // transfer in progress: "Receiving" UI
-static volatile uint32_t g_rx_bytes = 0;   // compressed bytes received so far
-static volatile uint32_t g_files_ok = 0;
-static volatile uint32_t g_img_err = 0;  // undecodable/oversize transfers
-static char g_img_errmsg[40] = {0};
+// Written by the listener only, read by the main task.
+static volatile uint32_t g_rx_bytes = 0;  // compressed bytes received so far
+static volatile uint32_t g_img_err = 0;   // failed requests/uploads
 // The caller supplies the archive limit; zero selects the library default.
 #define RX_MAX_AUTO (6u * 1024 * 1024)
-static uint32_t g_rx_max = RX_MAX_AUTO;    /* policy, set by ad_begin() */
-static volatile uint32_t g_rx_max_eff = 0; /* what a transfer actually got */
+static uint32_t g_rx_max = RX_MAX_AUTO; /* policy, set by ad_begin() */
 
 // ---- TLS server config, built once ------------------------------------------
-static const char* g_tls_alg = "none";
-static int g_ec_crt_err = 0, g_ec_key_err = 0;  // wolfSSL certificate/key load results
 static WOLFSSL_CTX* g_tlsconf = nullptr;
 static WOLFSSL* g_ssl = nullptr;
 static int g_tls_fd = -1;
@@ -630,13 +553,56 @@ static std::atomic<Consent> g_consent{Consent::Idle};
 static uint8_t g_approved_peer[16];
 static uint32_t g_approved_at = 0;
 static std::atomic<bool> g_approved{false};
-static std::atomic<uint32_t> g_socket_rx_bytes{0}, g_tls_failures{0};
-static std::atomic<int> g_last_tls_error{0};
 static AdAskInfo g_request_info;
 static portMUX_TYPE g_request_lock = portMUX_INITIALIZER_UNLOCKED;
 static std::atomic<uint32_t> g_limit_rejections{0};
 static std::atomic<bool> g_stream_oversized{false};
 void ad_reject_too_large() { g_stream_oversized.store(true); }
+
+// ---- diagnostic log: lines from both tasks, saved to the card by the main task ----
+// shortcut: lines are dropped (and counted) while the 8 KiB buffer is full; the main
+// task drains it every second, so only a stalled main task loses lines.
+static constexpr uint32_t LOG_CAP = 8192;
+static char* g_log = nullptr;  // PSRAM, allocated once by the main task, never freed
+static uint32_t g_log_len = 0, g_log_dropped = 0;
+static portMUX_TYPE g_log_lock = portMUX_INITIALIZER_UNLOCKED;
+static void log_alloc() {
+  if (!g_log) g_log = static_cast<char*>(heap_caps_malloc(LOG_CAP, MALLOC_CAP_SPIRAM));
+}
+void ad_logf(const char* fmt, ...) {
+  char line[224];
+  int n = snprintf(line, sizeof(line), "%lu ", static_cast<unsigned long>(millis()));
+  va_list ap;
+  va_start(ap, fmt);
+  const int body = vsnprintf(line + n, sizeof(line) - n, fmt, ap);
+  va_end(ap);
+  n = std::min<int>(n + std::max(body, 0), sizeof(line) - 2);
+  line[n++] = '\n';
+  portENTER_CRITICAL(&g_log_lock);
+  if (g_log && g_log_len + n <= LOG_CAP) {
+    memcpy(g_log + g_log_len, line, n);
+    g_log_len += n;
+  } else {
+    g_log_dropped++;
+  }
+  portEXIT_CRITICAL(&g_log_lock);
+}
+uint32_t ad_log_take(char* out, uint32_t cap) {
+  portENTER_CRITICAL(&g_log_lock);
+  // Whole lines only, so a line never straddles two takes.
+  uint32_t n = std::min(g_log_len, cap);
+  while (n < g_log_len && n && g_log[n - 1] != '\n') --n;
+  if (n) {
+    memcpy(out, g_log, n);
+    memmove(g_log, g_log + n, g_log_len - n);
+    g_log_len -= n;
+  }
+  const uint32_t dropped = g_log_dropped;
+  g_log_dropped = 0;
+  portEXIT_CRITICAL(&g_log_lock);
+  if (dropped && n + 40 < cap) n += snprintf(out + n, cap - n, "-- %lu lines dropped\n", (unsigned long)dropped);
+  return n;
+}
 static uint32_t g_request_started_at = 0;
 bool ad_request_info(AdAskInfo* out) {
   portENTER_CRITICAL(&g_request_lock);
@@ -651,14 +617,34 @@ bool ad_request_answer(bool accept) {
   return g_consent.compare_exchange_strong(pending, accept ? Consent::Accept : Consent::Decline);
 }
 
-// wolfSSL is already used by CrossPoint's HTTPS transport. This session owns
-// only its context and connection; it never changes the process-wide allocator.
+// wolfSSL is already used by CrossPoint's HTTPS transport. This session owns its context
+// and connection, and while it runs every wolfSSL allocation prefers PSRAM: with AWDL up,
+// internal RAM is what runs out. free() releases either heap, so the swap is safe both ways.
+static void* tls_malloc(size_t n) {
+  void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+  return p ? p : malloc(n);
+}
+static void* tls_realloc(void* p, size_t n) {
+  void* q = heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM);
+  return (q || !n) ? q : realloc(p, n);
+}
+static wolfSSL_Malloc_cb g_prev_malloc = nullptr;
+static wolfSSL_Free_cb g_prev_free = nullptr;
+static wolfSSL_Realloc_cb g_prev_realloc = nullptr;
+static bool g_tls_heap_psram = false;
+static void tls_heap_psram(bool on) {  // main task only, while no other TLS session runs
+  if (on == g_tls_heap_psram) return;
+  if (on) {
+    wolfSSL_GetAllocators(&g_prev_malloc, &g_prev_free, &g_prev_realloc);
+    wolfSSL_SetAllocators(tls_malloc, free, tls_realloc);
+  } else {
+    wolfSSL_SetAllocators(g_prev_malloc, g_prev_free, g_prev_realloc);
+  }
+  g_tls_heap_psram = on;
+}
 static int tls_recv(WOLFSSL*, char* data, int len, void*) {
   const int n = recv(g_tls_fd, data, len, 0);
-  if (n > 0) {
-    g_socket_rx_bytes.fetch_add(n);
-    return n;
-  }
+  if (n > 0) return n;
   if (!n) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
   if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return WOLFSSL_CBIO_ERR_WANT_READ;
   return WOLFSSL_CBIO_ERR_GENERAL;
@@ -688,11 +674,10 @@ static void airdrop_tls_init() {
   if (!g_tlsconf) return;
   // Everyone-mode AirDrop uses a self-signed server certificate, without client authentication.
   wolfSSL_CTX_set_verify(g_tlsconf, WOLFSSL_VERIFY_NONE, nullptr);
-  g_ec_crt_err =
-      wolfSSL_CTX_use_certificate_buffer(g_tlsconf, AIRDROP_CRT_EC_DER, AIRDROP_CRT_EC_DER_LEN, WOLFSSL_FILETYPE_ASN1);
-  g_ec_key_err =
-      wolfSSL_CTX_use_PrivateKey_buffer(g_tlsconf, AIRDROP_KEY_EC_DER, AIRDROP_KEY_EC_DER_LEN, WOLFSSL_FILETYPE_ASN1);
-  if (g_ec_crt_err != WOLFSSL_SUCCESS || g_ec_key_err != WOLFSSL_SUCCESS) {
+  if (wolfSSL_CTX_use_certificate_buffer(g_tlsconf, AIRDROP_CRT_EC_DER, AIRDROP_CRT_EC_DER_LEN,
+                                         WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS ||
+      wolfSSL_CTX_use_PrivateKey_buffer(g_tlsconf, AIRDROP_KEY_EC_DER, AIRDROP_KEY_EC_DER_LEN,
+                                        WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS) {
     airdrop_tls_release();
     return;
   }
@@ -704,11 +689,12 @@ static void airdrop_tls_init() {
     airdrop_tls_release();
     return;
   }
-  g_tls_alg = "ECDSA";
   g_tls_ready = true;
 }
 bool ad_prepare_tls() {
   if (g_listener_running.load()) return false;
+  log_alloc();
+  tls_heap_psram(true);
   airdrop_tls_init();
   return g_tls_ready;
 }
@@ -738,9 +724,7 @@ static int http_src_tls(struct HttpRdr* r, unsigned char* buf, int len) {
   const int n = wolfSSL_read(ssl, buf, len);
   if (n > 0) return n;
   const int error = wolfSSL_get_error(ssl, n);
-  if (tls_want_io(error)) return 0;
-  g_last_tls_error.store(error);
-  return -1;
+  return tls_want_io(error) ? 0 : -1;
 }
 static void http_set_timeout(struct HttpRdr* r, uint32_t ms) {
   r->timeout_ms = ms;
@@ -769,6 +753,7 @@ static AdStreamEvent g_stream_event;
 static const uint8_t* g_stream_data = nullptr;
 static uint32_t g_stream_len = 0;
 static bool g_stream_result = false;
+static TaskHandle_t g_listen_task = nullptr;  // the only producer; ad_poll wakes it
 void ad_on_stream(ad_stream_cb_t cb, void* ctx) {
   g_stream_cb = cb;
   g_stream_ctx = ctx;
@@ -789,7 +774,7 @@ static bool stream_deliver(AdStreamEvent event, const uint8_t* data = nullptr, u
       if (g_stream_slot.compare_exchange_strong(pending, StreamSlot::Idle)) break;
       // A running callback owns the bytes until it returns; never free under it.
     }
-    vTaskDelay(pdMS_TO_TICKS(1));
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));  // woken by ad_poll; the timeout keeps Stop live
   }
   return !cancelled && g_stream_result;
 }
@@ -818,7 +803,6 @@ struct RxPump {
   uint32_t out_len, out_cap;
   uint32_t in_total;      // body bytes ever appended -- sink->len is only the residue
   uint32_t residue_prev;  // sink->len as this hook last left it, for the delta
-  uint32_t nrec, nstored;
   int end;       // AdDvzipEnd of the FINAL drain; init to END_RUNNING
   uint8_t mode;  // RXM_*
   uint8_t fail;  // RXF_*, sticky
@@ -845,8 +829,6 @@ static bool rx_pump_emit(void* vp, const struct AdDvzipRec* rec, const uint8_t* 
       return false;
     }
     p->out_len += rec->len;
-    p->nrec++;
-    p->nstored++;
     return true;
   }
   size_t got = tinfl_decompress_mem_to_mem(target, room, payload, rec->len, TINFL_FLAG_PARSE_ZLIB_HEADER);
@@ -864,14 +846,13 @@ static bool rx_pump_emit(void* vp, const struct AdDvzipRec* rec, const uint8_t* 
     return false;
   }
   p->out_len += (uint32_t)got;
-  p->nrec++;
   return true;
 }
 
 // Accept bounded DvZip records; unsupported body formats fail archive validation.
 #define RX_REC_SANE (1u * 1024 * 1024) /* largest measured compressed payload: 131,118 B */
 static int rx_body_shape(const uint8_t* b, uint32_t n) {
-  if (n < 10) return RXM_UNDECIDED; /* same floor as ad_dvzip_looks_like */
+  if (n < 10) return RXM_UNDECIDED;
   uint32_t hdr = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | (uint32_t)b[3];
   uint32_t rl = ad_dvzip_reclen(hdr);
   if (rl == 0 || rl > RX_REC_SANE) return RXM_RAW;
@@ -883,7 +864,6 @@ static int rx_body_shape(const uint8_t* b, uint32_t n) {
 static bool rx_pump_open(struct RxPump* p) {
   if (g_stream_cb) {
     p->out_cap = g_rx_max;
-    g_rx_max_eff = g_rx_max;
     // Port owns one fixed PSRAM scratch block; rx_upload frees it on every exit.
     p->out = (uint8_t*)heap_caps_malloc(256u * 1024u, MALLOC_CAP_SPIRAM);
     if (!p->out || !stream_deliver(AdStreamEvent::Begin)) {
@@ -912,7 +892,6 @@ static void rx_sink_progress(struct HttpSink* sk) {
   struct RxPump* p = (struct RxPump*)sk->ctx;
   p->in_total += sk->len - p->residue_prev;
   g_rx_bytes = p->in_total;
-  g_rx_touch_ms = (uint32_t)(esp_timer_get_time() / 1000);
   if (p->mode == RXM_UNDECIDED && !p->fail) {
     p->mode = (uint8_t)rx_body_shape(sk->buf, sk->len);
     if (p->mode == RXM_STREAM && !rx_pump_open(p)) p->mode = RXM_RAW; /* fail=RXF_OOM set */
@@ -946,6 +925,13 @@ static void rx_sink_progress(struct HttpSink* sk) {
   p->residue_prev = sk->len;
 }
 
+/* /Ask announced more file bytes than are decoded plus what the residue can still hold
+   (at most two records of 256 KiB decoded each). g_request_info is written by this task. */
+static bool rx_more_expected(struct HttpSink* sk) {
+  const struct RxPump* p = (const struct RxPump*)sk->ctx;
+  return g_request_info.sizesKnown && uint64_t(p->out_len) + 512u * 1024u < g_request_info.totalBytes;
+}
+
 static bool rx_sink_grow(struct HttpSink* sk, uint32_t need) {
   if (g_stream_cb && need > 512u * 1024u) return false;
   uint32_t nc = sk->cap ? sk->cap : (512u * 1024);
@@ -970,7 +956,7 @@ static bool rx_sink_grow(struct HttpSink* sk, uint32_t need) {
 // Receive the /Upload body, decoding a DvZip stream WHILE it arrives, so the
 // outcome is known BEFORE the response is written -- receive+decode, judge, answer.
 // Called on the TLS task, reading through the connection's persistent reader `r`.
-// Sets g_upload_ok / g_img_* on success, g_img_err on failure.
+// Leaves g_img_err unchanged on success, bumps it on failure.
 static std::atomic<bool> g_upload_pending{false};
 bool ad_upload_pending() { return g_upload_pending.load(); }
 
@@ -978,12 +964,13 @@ static void rx_upload(struct HttpRdr* r, bool chunked, int clen) {
   WOLFSSL* ssl = (WOLFSSL*)r->ctx;
   g_stream_oversized.store(false);
   g_upload_pending.store(true);
-  g_rx_active = true;
   g_rx_bytes = 0;
-  g_rx_touch_ms = (uint32_t)(esp_timer_get_time() / 1000);
   g_rx_grow_failed = false;
   uint32_t err0 = g_img_err;
   bool response_sent = false;
+  int rc_log = -9;  // http_recv_chunked's verdict, for the log
+  ad_logf("upload begin chunked=%d clen=%d heap=%u", chunked, clen,
+          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
   struct RxPump pump;
   memset(&pump, 0, sizeof(pump));
@@ -998,7 +985,6 @@ static void rx_upload(struct HttpRdr* r, bool chunked, int clen) {
   uint8_t* gz = (uint8_t*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
   bool overflow = false, clean_end = false;
   if (!gz) {
-    strlcpy(g_img_errmsg, "out of PSRAM", sizeof(g_img_errmsg));
     g_img_err++;
     goto done;
   }
@@ -1018,12 +1004,14 @@ static void rx_upload(struct HttpRdr* r, bool chunked, int clen) {
     sk.max = g_stream_cb ? 512u * 1024u : g_rx_max;
     sk.grow = rx_sink_grow;
     sk.progress = rx_sink_progress;
+    sk.more_expected = rx_more_expected;
     sk.ctx = &pump; /* the progress hook decodes through this */
     // 10s while the body is flowing; 3000ms of silence to accept a boundary-aligned
     // DvZip stream. 3000ms because measured stalls on this link are 3004ms and
     // 4104ms and a shorter settle would answer 200 OK on a truncated body whose
     // DvZip prefix still decompresses -- a corrupt image reported as a success.
     int rc = http_recv_chunked(r, &sk, 10000, 3000, http_set_timeout);
+    rc_log = rc;
     gz = sk.buf;
     cap = sk.cap;
     len = sk.len; /* len: whole body (RAW) or residue (STREAM) */
@@ -1132,55 +1120,22 @@ static void rx_upload(struct HttpRdr* r, bool chunked, int clen) {
        * guarantee the sender reads it: today's /Ask measurement showed sharingd posts its
        * receive only once its whole send is queued, so with more than its 131,072-byte
        * send buffer still unsent it may never look. Draining that much could take minutes
-       * at the 27 KB/s this link gives, which is not a trade worth making blind.
-       * UPLOAD-REPLY-DRAIN is logged so a field observation can settle whether the Mac
-       * actually shows the failure; until it does, this is a fix for one known destroyer
-       * of the message, not a proof the message arrives. */
-      uint32_t t0 = (uint32_t)(esp_timer_get_time() / 1000);
-      uint32_t binned = 0;
-      uint32_t now;
+       * at the 27 KB/s this link gives, which is not a trade worth making blind. This is a
+       * fix for one known destroyer of the message, not a proof the message arrives. */
+      const uint32_t t0 = millis();
       http_set_timeout(r, 300);
-      while (!r->eof && !g_stop.load() && ((now = (uint32_t)(esp_timer_get_time() / 1000)) - t0) < 3000) {
-        int g = hr_fill(r);
-        if (g > 0) {
-          binned += (uint32_t)g;
-          r->consumed += g;
-          r->p = r->n;
-        }
-      }
+      while (!r->eof && !g_stop.load() && millis() - t0 < 3000)
+        if (hr_fill(r) > 0) r->p = r->n;
     }
   }
-  if (pump.fail == RXF_INFLATE) { /* before overflow, same order as the status */
-    snprintf(g_img_errmsg, sizeof(g_img_errmsg), "record %lu would not inflate", (unsigned long)(pump.nrec + 1));
+  if (overflow && pump.fail == RXF_CAP) g_limit_rejections.fetch_add(1);
+  if (pump.fail == RXF_INFLATE || overflow || body_total < 6 || !clean_end || !pump.out ||
+      !ad_dvzip_end_ok(pump.end) || !stream_deliver(AdStreamEvent::Finish))
     g_img_err++;
-    goto done;
-  }
-  if (overflow) {
-    strlcpy(g_img_errmsg, g_rx_grow_failed ? "out of PSRAM" : "file too large", sizeof(g_img_errmsg));
-    g_img_err++;
-    if (pump.fail == RXF_CAP) g_limit_rejections.fetch_add(1);
-    goto done;
-  }
-  if (body_total < 6) {
-    strlcpy(g_img_errmsg, "empty body", sizeof(g_img_errmsg));
-    g_img_err++;
-    goto done;
-  }
-
-  if (!clean_end) {
-    strlcpy(g_img_errmsg, "incomplete upload", sizeof(g_img_errmsg));
-    g_img_err++;
-    goto done;
-  }
-
-  if (pump.out && ad_dvzip_end_ok(pump.end) && stream_deliver(AdStreamEvent::Finish)) {
-    g_upload_ok++;
-  } else {
-    g_img_err++;
-    strlcpy(g_img_errmsg, "stream incomplete or storage failed", sizeof(g_img_errmsg));
-  }
 
 done:
+  ad_logf("upload end rc=%d mode=%u fail=%u end=%d in=%lu out=%lu ok=%d", rc_log, pump.mode, pump.fail, pump.end,
+          (unsigned long)body_total, (unsigned long)pump.out_len, g_img_err == err0);
   if (g_stream_cb && g_img_err != err0) stream_deliver(AdStreamEvent::Abort);
   if (!response_sent) {
     const bool saved = !g_stop.load() && g_img_err == err0;
@@ -1193,7 +1148,6 @@ done:
   if (gz) heap_caps_free(gz);
   if (pump.out) heap_caps_free(pump.out);  // a decode block that never reached handoff
   g_upload_pending.store(false);
-  g_rx_active = false;
   return;
 }
 
@@ -1227,8 +1181,9 @@ static const char* sv_prepare_ask(struct HttpServe* sv, bool chunked, int clen) 
   AdAskParser parser;
   const bool valid = http_read_ask(sv, chunked, clen, body, cap, &length) && parser.parse(body, length, info);
   heap_caps_free(body);
+  ad_logf("ask valid=%d files=%lu bytes=%lu sizes=%d", valid, (unsigned long)info.fileCount,
+          (unsigned long)info.totalBytes, info.sizesKnown);
   if (!valid) {
-    strlcpy(g_img_errmsg, "invalid request metadata", sizeof(g_img_errmsg));
     g_img_err++;
     return "400 Bad Request";
   }
@@ -1250,25 +1205,22 @@ static bool sv_approve(struct HttpServe*) {
   while (g_consent.load() == Consent::Asking && !g_stop.load() && millis() - start < 40000)
     vTaskDelay(pdMS_TO_TICKS(20));
   const Consent result = g_consent.exchange(Consent::Idle);
-  if (result == Consent::Asking && !g_stop.load()) {
-    strlcpy(g_img_errmsg, "acceptance timed out", sizeof(g_img_errmsg));
-    g_img_err++;
-  }
+  ad_logf("consent %s after_ms=%lu", result == Consent::Accept    ? "accept"
+                                     : result == Consent::Decline ? "decline"
+                                                                  : "timeout",
+          (unsigned long)(millis() - start));
+  if (result == Consent::Asking && !g_stop.load()) g_img_err++;  // acceptance timed out
   g_approved = result == Consent::Accept && !g_stop.load();
   g_approved_at = millis();
   return g_approved;
 }
 static void sv_response_failed(struct HttpServe*) {
   g_approved = false;
-  g_rx_active = false;
-  strlcpy(g_img_errmsg, "response write failed", sizeof(g_img_errmsg));
   g_img_err++;
 }
 static void expire_approval() {
   if (!g_approved || millis() - g_approved_at < 90000) return;
   g_approved = false;
-  g_rx_active = false;
-  strlcpy(g_img_errmsg, "no upload after acceptance", sizeof(g_img_errmsg));
   g_img_err++;
 }
 static bool sv_authorized(struct HttpServe*) {
@@ -1279,24 +1231,12 @@ static bool sv_authorized(struct HttpServe*) {
   return true;
 }
 static void sv_upload(struct HttpServe* s, bool chunked, int clen) { rx_upload(s->r, chunked, clen); }
-/* Zero-timeout look at the listening socket: is the upload connection already sitting in
-   the backlog? It is how the /Ask drain knows the sender has read our 200 -- see the note
-   at the drain in ad_serve.h. */
-static int g_listen_fd = -1;
-static bool sv_peer_waiting(struct HttpServe*) {
-  if (g_listen_fd < 0) return false;
-  fd_set rf;
-  FD_ZERO(&rf);
-  FD_SET(g_listen_fd, &rf);
-  struct timeval tv = {0, 0};
-  return select(g_listen_fd + 1, &rf, nullptr, nullptr, &tv) > 0 && FD_ISSET(g_listen_fd, &rf);
-}
 
 static void sv_on_ask_sent(struct HttpServe*) {
-  g_rx_active = true;
-  g_rx_bytes = 0;  // switch the badge to the "Receiving" screen
-  g_rx_touch_ms = (uint32_t)(esp_timer_get_time() / 1000);
+  g_rx_bytes = 0;  // drop the previous transfer's count before this upload starts
 }
+
+static void sv_log(struct HttpServe*, const char* line) { ad_logf("%s", line); }
 
 static void serve_http(WOLFSSL* ssl) {
   struct HttpRdr r;
@@ -1307,7 +1247,7 @@ static void serve_http(WOLFSSL* ssl) {
   sv.io = ssl;
   sv.write = sv_write;
   sv.now = sv_now;
-  sv.log = nullptr;
+  sv.log = sv_log;
   sv.set_timeout = http_set_timeout;
   sv.disc_body = AD_DISC_BODY;
   sv.disc_len = (int)sizeof(AD_DISC_BODY);
@@ -1321,7 +1261,6 @@ static void serve_http(WOLFSSL* ssl) {
   sv.on_ask_sent = sv_on_ask_sent;
   sv.response_failed = sv_response_failed;
   sv.upload = sv_upload;
-  sv.peer_waiting = sv_peer_waiting;
   sv.prepare_ask = sv_prepare_ask;
   sv.cancelled = sv_cancelled;
   sv.approve = sv_approve;
@@ -1337,10 +1276,6 @@ static void serve_http(WOLFSSL* ssl) {
 // NEWEST fd that has a queued ClientHello (MSG_PEEK), step the handshake without
 // blocking, and preempt a silent active connection if a newer one gets a CH.
 #define MAXC 12
-
-static volatile uint32_t g_ls_stack_min = 0xffffffffu;
-
-uint32_t ad_listen_stack_min_free(void) { return (g_ls_stack_min == 0xffffffffu) ? 0 : g_ls_stack_min; }
 
 static void tcp_listen_task(void*) {
   airdrop_tls_init();
@@ -1372,12 +1307,10 @@ static void tcp_listen_task(void*) {
       if (bind(ls, (struct sockaddr*)&a, sizeof(a)) != 0 || listen(ls, 8) != 0) {
         close(ls);
         ls = -1;
-        g_listen_fd = -1;
         vTaskDelay(pdMS_TO_TICKS(1000));
         continue;
       }
       set_nonblock(ls, true);
-      g_listen_fd = ls;  // published for sv_peer_waiting(), which ends the /Ask drain
     }
 
     fd_set rf;
@@ -1390,7 +1323,7 @@ static void tcp_listen_task(void*) {
         if (conn[i] > mx) mx = conn[i];
       }
     struct timeval tv = {0, 100000};  // 100ms tick
-    select(mx + 1, &rf, NULL, NULL, &tv);
+    if (select(mx + 1, &rf, NULL, NULL, &tv) < 0) FD_ZERO(&rf);  // else stale bits reap live fds
     uint32_t now = millis();
 
     // 1. Drain the accept backlog (non-blocking); TCP_NODELAY + O_NONBLOCK each.
@@ -1406,7 +1339,6 @@ static void tcp_listen_task(void*) {
       int one = 1;
       setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
       set_nonblock(fd, true);
-      g_tcp_accept++;
 
       int slot = -1;
       for (int i = 0; i < MAXC; i++)
@@ -1465,6 +1397,7 @@ static void tcp_listen_task(void*) {
       adopt = true;
     else if (active >= 0 && cand >= 0 && cand != active && born[cand] > born[active] &&
              (uint32_t)(now - t_data) > 1200) {
+      ad_logf("tls preempt silent_ms=%lu", (unsigned long)(now - t_data));
       close(conn[active]);
       conn[active] = -1;
       active = -1;
@@ -1483,6 +1416,7 @@ static void tcp_listen_task(void*) {
       }
       active = cand;
       t_hs0 = t_data = now;
+      ad_logf("tls adopt slot=%d", cand);
     }
 
     // 4. Step the handshake on the active connection (non-blocking).
@@ -1490,8 +1424,8 @@ static void tcp_listen_task(void*) {
       if (FD_ISSET(conn[active], &rf)) t_data = now;
       int r = wolfSSL_accept(g_ssl);
       if (r == WOLFSSL_SUCCESS) {
-        g_tls_ok++;
-
+        ad_logf("tls ok ms=%lu heap=%u", (unsigned long)(millis() - t_hs0),
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
         int afd = conn[active];
         for (int i = 0; i < MAXC; i++)
           if (conn[i] >= 0 && i != active) {
@@ -1508,9 +1442,8 @@ static void tcp_listen_task(void*) {
         conn[active] = -1;
         active = -1;
         tls_reset_session();
-      } else if (!tls_want_io(wolfSSL_get_error(g_ssl, r))) {
-        g_tls_failures.fetch_add(1);
-        g_last_tls_error.store(wolfSSL_get_error(g_ssl, r));
+      } else if (const int e = wolfSSL_get_error(g_ssl, r); !tls_want_io(e)) {
+        ad_logf("tls fail err=%d ms=%lu", e, (unsigned long)(now - t_hs0));
         close(conn[active]);
         conn[active] = -1;
         active = -1;
@@ -1521,7 +1454,7 @@ static void tcp_listen_task(void*) {
 
     // 5. Handshake deadline: drop a connection that never finishes.
     if (active >= 0 && (uint32_t)(now - t_hs0) > 15000) {
-      g_tls_failures.fetch_add(1);
+      ad_logf("tls deadline");
       close(conn[active]);
       conn[active] = -1;
       active = -1;
@@ -1531,11 +1464,12 @@ static void tcp_listen_task(void*) {
   for (int i = 0; i < MAXC; i++)
     if (conn[i] >= 0) close(conn[i]);
   if (ls >= 0) close(ls);
-  g_listen_fd = -1;
   g_tls_fd = -1;
   airdrop_tls_release();
   g_listener_running.store(false);
-  vTaskDeleteWithCaps(nullptr);
+  // ad_end() deletes us: self-deletion WithCaps spawns a helper task in internal RAM and
+  // abort()s when that allocation fails, which is likely while AWDL holds the heap.
+  vTaskSuspend(nullptr);
 }
 
 /* ==========================================================================
@@ -1550,6 +1484,7 @@ void ad_poll(void) {
   if (g_stream_slot.compare_exchange_strong(pending, StreamSlot::Processing)) {
     g_stream_result = g_stream_cb && g_stream_cb(g_stream_ctx, g_stream_event, g_stream_data, g_stream_len);
     g_stream_slot.store(StreamSlot::Idle);
+    if (g_listen_task) xTaskNotifyGive(g_listen_task);
   }
 }
 
@@ -1563,12 +1498,7 @@ int ad_begin(uint32_t max_receive) {
   g_consent.store(Consent::Idle);
   g_approved = false;
 
-  g_rx_active = false;
   g_rx_bytes = 0;
-  g_socket_rx_bytes = 0;
-  g_tls_failures = 0;
-  g_last_tls_error = 0;
-  g_img_errmsg[0] = 0;
 
   // Limit total extracted content; the streaming buffers stay bounded independently.
   g_rx_max = max_receive ? max_receive : RX_MAX_AUTO;
@@ -1576,14 +1506,17 @@ int ad_begin(uint32_t max_receive) {
   /* AWDL must already be up: the identity below is derived from the interface MAC, and
      the mDNS records we are about to advertise are built out of it. */
   awdl_identity(&g_id);
+  g_mdns_len = build_mdns_ip6(g_mdns_frame);
   awdl_rx_tap_set(ad_rx_tap, nullptr);
   /* No announce callback is registered -- there is no periodic multicast announcement, for
      the reasons set out in the note above ad_respond(). The hook itself stays available. */
-  // The listener performs no flash writes; its 32 KiB stack can use PSRAM.
-  // TLS uses the existing wolfSSL allocator; only this task stack is forced to PSRAM.
+  // The listener never writes flash or NVS (that would disable the cache under a PSRAM
+  // stack), so its 32 KiB stack -- ROM tinfl alone keeps ~11 KB on it -- lives in PSRAM.
+  tls_heap_psram(true);
   g_listener_running.store(true);
-  if (xTaskCreatePinnedToCoreWithCaps(tcp_listen_task, "tcp_listen", 32768, nullptr, 2, nullptr, 1,
+  if (xTaskCreatePinnedToCoreWithCaps(tcp_listen_task, "tcp_listen", 32768, nullptr, 2, &g_listen_task, 1,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+    g_listen_task = nullptr;
     g_listener_running.store(false);
     return -1;
   }
@@ -1597,9 +1530,11 @@ bool ad_end() {
   const uint32_t start = millis();
   while (g_listener_running.load() && millis() - start < 7000) vTaskDelay(pdMS_TO_TICKS(10));
   if (g_listener_running.load()) return false;
+  if (g_listen_task) vTaskDeleteWithCaps(g_listen_task);  // suspended, all its resources released
+  g_listen_task = nullptr;
   airdrop_tls_release();
+  tls_heap_psram(false);
   awdl_rx_tap_set(nullptr, nullptr);
-  g_rx_active = false;
   g_approved = false;
   ad_on_stream(nullptr, nullptr);
   g_stream_slot.store(StreamSlot::Idle);
@@ -1609,40 +1544,8 @@ bool ad_end() {
 /* --- telemetry ------------------------------------------------------------ */
 
 void ad_stats_read(struct AdStatus* out) {
-  out->tcp_accept = g_tcp_accept;
-  out->tls_ok = g_tls_ok;
-  out->discover_ok = g_discover_ok;
-  out->ask_ok = g_ask_ok;
-  out->upload_ok = g_upload_ok;
-  out->desync = g_desync;
-  /* Recency, for the same reason AwdlStatus needed it: a state with no clock behind it
-     cannot notice that it stopped being true. */
-  {
-    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
-    out->rx_active = g_rx_active && (uint32_t)(now_ms - g_rx_touch_ms) <= AD_RX_STALL_MS;
-  }
-  out->awaiting_upload = g_approved.load();
   out->upload_pending = g_upload_pending.load();
-  out->socket_rx_bytes = g_socket_rx_bytes.load();
-  out->tls_failures = g_tls_failures.load();
-  out->last_tls_error = g_last_tls_error.load();
   out->rx_bytes = g_rx_bytes;
-  out->rx_max = g_rx_max_eff;
-  out->files_ok = g_files_ok;
-  out->limit_rejections = g_limit_rejections.load();
   out->file_err = g_img_err;
-  strlcpy(out->file_errmsg, g_img_errmsg, sizeof(out->file_errmsg));
-  out->tls_alg = g_tls_alg;
-  out->ec_crt_err = g_ec_crt_err;
-  out->ec_key_err = g_ec_key_err;
-  out->query_seen = g_query_seen;
-  out->resp_tx = g_resp_tx;
-  out->notus = g_notus;
-  out->ka_suppress = g_ka_suppress;
-  out->tcp_tous = g_tcp_tous;
-  out->syn_airdrop = g_syn_airdrop;
-  out->syn_pair1 = g_syn_pair1;
-  out->syn_pair2 = g_syn_pair2;
-  out->syn_other = g_syn_other;
-  out->syn_other_port = g_syn_other_port;
+  out->limit_rejections = g_limit_rejections.load();
 }

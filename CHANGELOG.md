@@ -2,6 +2,63 @@
 
 VARAGH versions are listed first; the CrossInk history it builds on follows.
 
+## [VARAGH v1.4.0 "Cheetah" 🐆] - 2026-11-12 (pre-release)
+
+A test release: checked in the emulator, not yet on real readers except where noted. Books,
+settings and highlights are kept.
+
+### Added
+
+- **AirDrop from an iPhone, iPad or Mac (X4 Pro and X4 Classic):** File Transfer → Nearby
+  Device → AirDrop. The reader appears as "VARAGH X4 Pro" or "VARAGH X4 Classic" in the
+  AirDrop sheet. Each incoming file asks Accept or Decline, shows progress, and is saved to
+  the `AirDrop` folder (30 MB and 200 files at most). A book can be opened straight from the
+  Saved screen. Photos are also saved as a screen-size picture the reader can show. About
+  6 KB/s, so it suits books and a few photos. Tried on a real X4 Pro with an iPhone.
+- **Download Extra Files (X4 Pro and X4 Classic):** Settings → General → Download Extra Files
+  fetches the Bitter font and six hyphenation tables over Wi-Fi (see Changed). Files already on
+  the card are skipped.
+
+### Fixed
+
+- **"Memory error" when selecting a word:** on a page where a word with a real hyphen
+  ("internet-capable", "Figure 5-2") broke at the end of a line, long-pressing any word showed
+  "Memory error" and nothing could be selected or looked up. Memory was never short: the space
+  for the joined word was counted one letter too small. In 1.3.1 and 1.3.2 on every reader.
+- **Chapter headings in a smooth-scaling card font (X4 Pro and X4 Classic):** a heading that
+  asked for more than 22 pt was drawn at body size. It is now drawn at 22 pt, as with the
+  built-in fonts.
+- **Word select names the real problem:** "Memory error" is shown only when memory really ran
+  out; any other failure says "Page load error".
+
+### Changed
+
+- **Smaller firmware:** the X4 Pro firmware went from 6,341 KB to 5,454 KB (about 1,100 KB free
+  instead of 212 KB), the X4 Classic from 6,105 KB to 5,230 KB. Where it came from:
+  - **Bitter is a card font on the X4 Pro and X4 Classic** (as on the X3 / X4 since 1.3.1):
+    640 KB. From the card it looks exactly as before, at every size from 8 to 22 pt. If Bitter
+    was your font and is not on the card yet, the reader uses Lexend Deca until it is.
+  - **Hyphenation for French, Russian, Spanish, Swedish, Ukrainian and Polish is read from the
+    card on the X4 Pro and X4 Classic:** 115 KB. English, German, Italian and Portuguese stay
+    built in. Without its file a language is not hyphenated; nothing else changes.
+  - **Menu parts are built once instead of once per screen:** 72 KB.
+  - **Menu fonts lost 235 rarely used characters** (historic Cyrillic, sub- and superscripts,
+    most currency signs, math signs): 49 KB. A file name or book title using one of them shows
+    a replacement mark in menus; text inside books is not affected.
+  - **The Wordle word list is packed tighter:** 15 KB. The same 22,230 words.
+- **Shared files are kept once:** the Bitter font and the hyphenation files live in the
+  [card-files-1](https://github.com/PewPewzxc/VARAGH/releases/tag/card-files-1) release, the
+  menu-language packs in `lang-38DB4203`. A later VARAGH version uses the same files unless a
+  format or the menu text changes.
+- **Codename:** 1.4.0 is "Cheetah", with a cheetah face after the version in Settings.
+
+### For developers
+
+- `scripts/build_guard.py` stops a build whose library links point at another checkout, and a
+  second build in the same checkout.
+- `test/emulator/word_select/run.sh` long-presses a word on hyphen, Persian, table and footnote
+  pages in eink-qemu and fails on any word-select error.
+
 ## [VARAGH v1.3.2 "Lion" 🦁] - 2026-11-03
 
 A small fix release on top of 1.3.1. Books, settings and highlights are kept.

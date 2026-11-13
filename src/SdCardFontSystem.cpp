@@ -649,7 +649,9 @@ int SdCardFontSystem::resolveSdFontVariant(const int fontId, const float scale) 
   const float target = base * scale;
   uint8_t chosen = base;
   if (scalable) {
-    chosen = static_cast<uint8_t>(std::clamp(scale < 1.0f ? std::floor(target) : std::round(target), 6.0f, 60.0f));
+    // Same limits as the built-in scalable fonts: beyond them atSize() fails and the block would stay body size.
+    chosen = static_cast<uint8_t>(std::clamp(scale < 1.0f ? std::floor(target) : std::round(target),
+                                             float(BUILTIN_READER_FONT_SIZES[0]), float(*std::rbegin(BUILTIN_READER_FONT_SIZES))));
   } else if (installedSizeCount_ > 0) {
     if (scale < 1.0f) {
       // Small print never rounds back up to body size.

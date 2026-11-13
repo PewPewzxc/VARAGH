@@ -15,16 +15,10 @@
 
 // Result of electing/measuring the master we sync to (computed each loop).
 struct Selection {
-  int idx;            // index into g_peers.row, or -1
-  float mean, stdev;  // PLL phase predicted to now (us); raw sample stdev (us)
+  int idx;     // index into g_peers.row, or -1
+  float mean;  // PLL phase predicted to now (us)
   uint32_t metric;
-  int count;  // number of active masters
   uint8_t addr[6];
-  float wander;     // smoothed-track jitter (us) — the lock quality
-  float resid_rms;  // raw measurement-noise RMS (us)
-  float drift_ppm;  // estimated clock drift vs master (ppm)
-  uint32_t pll_n;
   uint16_t cur_aw_seq;      // current AW sequence number, extrapolated to now
   uint32_t master_counter;  // chosen master's root master_counter, to echo in our election TLVs
-  bool have_election;       // whether we have real election params for the chosen master
 };

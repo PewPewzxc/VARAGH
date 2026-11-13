@@ -23,6 +23,7 @@
 #include "ClearCacheActivity.h"
 #include "ClockOffsetActivity.h"
 #include "ClockSyncActivity.h"
+#include "ExtraFilesDownloadActivity.h"
 #include "LanguageDownloadActivity.h"
 #include "CrossPointSettings.h"
 #include "DeviceCapabilities.h"
@@ -1249,6 +1250,9 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::DownloadFonts:
         silentRestartToManageFonts();
+        break;
+      case SettingAction::ExtraFiles:
+        startActivityForResult(std::make_unique<ExtraFilesDownloadActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::TtfRendering:
 #if CROSSINK_SCALABLE_FONTS

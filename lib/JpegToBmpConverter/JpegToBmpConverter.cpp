@@ -626,15 +626,24 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bm
   constexpr int MAX_IMAGE_WIDTH = 2048;
   constexpr int MAX_IMAGE_HEIGHT = 3072;
 
-  if (srcWidth <= 0 || srcHeight <= 0 || srcWidth > MAX_IMAGE_WIDTH || srcHeight > MAX_IMAGE_HEIGHT) {
+  // Phone photos (4032x3024) are past that: a baseline JPEG then decodes at 1/2 or 1/4 size,
+  // which JPEGDEC does inside the IDCT, so the buffers below stay within the old bounds.
+  int shift = 0;
+  while (!progressive && shift < 2 && ((srcWidth >> shift) > MAX_IMAGE_WIDTH || (srcHeight >> shift) > MAX_IMAGE_HEIGHT))
+    ++shift;
+  if (srcWidth <= 0 || srcHeight <= 0 || (srcWidth >> shift) > MAX_IMAGE_WIDTH ||
+      (srcHeight >> shift) > MAX_IMAGE_HEIGHT) {
     LOG_DBG("JPG", "Image too large or invalid (%dx%d), max supported: %dx%d", srcWidth, srcHeight, MAX_IMAGE_WIDTH,
             MAX_IMAGE_HEIGHT);
     return false;
   }
 
-  const int effectiveSrcW = progressive ? (srcWidth + 7) / 8 : srcWidth;
-  const int effectiveSrcH = progressive ? (srcHeight + 7) / 8 : srcHeight;
-  const int decodeFlags = progressive ? JPEG_SCALE_EIGHTH : 0;
+  const int effectiveSrcW = progressive ? (srcWidth + 7) / 8 : (srcWidth + (1 << shift) - 1) >> shift;
+  const int effectiveSrcH = progressive ? (srcHeight + 7) / 8 : (srcHeight + (1 << shift) - 1) >> shift;
+  const int decodeFlags = progressive ? JPEG_SCALE_EIGHTH
+                          : shift == 2 ? JPEG_SCALE_QUARTER
+                          : shift == 1 ? JPEG_SCALE_HALF
+                                       : 0;
 
   // Calculate output dimensions. Crop mode behaves like CSS object-fit: cover:
   // scale to fill the requested box, then sample a centered source crop before dithering.

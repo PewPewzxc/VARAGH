@@ -73,10 +73,6 @@ typedef struct {
   int nlog;
   uint32_t disc_ms, ask_ms, disc_ok, ask_ok, desync;
   int ask_sent, uploads;
-  uint32_t peer_at_ms; /* when the upload connection shows up; UINT32_MAX = never.
-                          0 means it is ALREADY in the backlog, which is the ordinary
-                          case: sharingd opens it the instant it reads our 200. */
-  int peer_polls;
   int up_chunked, up_clen; /* what the upload hook was handed */
   int upload_drains;       /* 1 = the hook actually drained the body */
 } Harness;
@@ -106,12 +102,6 @@ static void hz_log(struct HttpServe* sv, const char* line) {
 }
 static void hz_set_timeout(struct HttpRdr* r, uint32_t ms) { r->timeout_ms = ms; }
 static void hz_on_ask_sent(struct HttpServe* sv) { ((Harness*)sv->io)->ask_sent++; }
-/* Stands in for a zero-timeout look at the listening socket. */
-static bool hz_peer_waiting(struct HttpServe* sv) {
-  Harness* h = (Harness*)sv->io;
-  h->peer_polls++;
-  return h->peer_at_ms != UINT32_MAX && h->s->now_ms >= h->peer_at_ms;
-}
 
 /* The upload hook models the firmware's rx_upload closely enough to test the
  * dispatch contract: it records what it was handed, drains the body through the
@@ -158,10 +148,9 @@ static bool gate_upload(struct HttpServe* s) {
   return authorized == 1;
 }
 static bool logs_enabled = true;
-static void harness_run_peer(Harness* h, Script* s, uint32_t peer_at_ms, bool wire_peer) {
+static void harness_run(Harness* h, Script* s) {
   memset(h, 0, sizeof *h);
   h->s = s;
-  h->peer_at_ms = peer_at_ms;
   struct HttpRdr r;
   http_rdr_init(&r, s, script_read);
   struct HttpServe sv;
@@ -186,14 +175,12 @@ static void harness_run_peer(Harness* h, Script* s, uint32_t peer_at_ms, bool wi
   sv.on_ask_sent = hz_on_ask_sent;
   sv.response_failed = hz_response_failed;
   sv.upload = hz_upload;
-  if (wire_peer) sv.peer_waiting = hz_peer_waiting;
   if (metadata_mode) sv.prepare_ask = gate_metadata;
   if (consent >= 0) sv.approve = gate_consent;
   if (authorized >= 0) sv.authorized = gate_upload;
   sv.enter_ms = s->now_ms;
   serve_http_run(&sv);
 }
-static void harness_run(Harness* h, Script* s) { harness_run_peer(h, s, 0, true); }
 
 static int has_log(Harness* h, const char* needle) {
   for (int i = 0; i < h->nlog; i++)
@@ -219,6 +206,11 @@ static int chunk_wrap(unsigned char* out, const unsigned char* p, int n) {
   out[k++] = '\r';
   out[k++] = '\n';
   return k;
+}
+
+static bool always_more(struct HttpSink* sk) {
+  (void)sk;
+  return true;
 }
 
 static int fails = 0, ran = 0;
@@ -267,75 +259,6 @@ int main(void) {
     snprintf(d, sizeof d, "ask_ok=%u ask_sent=%d uploads=%d close=%d", h.ask_ok, h.ask_sent, h.uploads, has_close);
     check("/Ask answers 200 close, flips UI, no upload",
           h.ask_ok == 1 && h.ask_sent == 1 && h.uploads == 0 && has_close, d);
-  }
-
-  /* 2b. THE /Ask DRAIN. The failure this exists for is measured on hardware:
-     a 2.4 MB photo carries a 122,543-byte /Ask body and transfers; a 3.9 MB one carries
-     214,480 and silently never starts; the sending Mac's socket send buffer is 131,072.
-     sharingd posts its receive only after its whole send is queued, so a body that does
-     not fit means it never reads the 200 we sent in millisecond three, and it dies on its
-     own 45 s timer while every counter on our side says success.
-
-     The old code drained for a fixed 1500 ms. At the 5.5 KB/s this link's 5,760-byte
-     window allows, that is about 8 KB -- it never once drained a body, in fifteen captures.
-     The drain now ends on the sender coming back, which is the exact moment it has read
-     our 200. */
-  {
-    /* A body far larger than a 1500 ms window could have absorbed, arriving steadily. */
-    static unsigned char req[40000];
-    int w = 0;
-    w += sprintf((char*)req, "POST /Ask HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n");
-    static unsigned char blob[4096];
-    memset(blob, 'x', sizeof blob);
-    for (int i = 0; i < 8; i++) w += chunk_wrap(req + w, blob, (int)sizeof blob);
-    w += sprintf((char*)req + w, "0\r\n\r\n");
-    Script s;
-    memset(&s, 0, sizeof s);
-    script_add(&s, 0, req, w);
-    Harness h;
-    harness_run_peer(&h, &s, UINT32_MAX, true); /* peer never arrives in this run */
-    char d[200];
-    snprintf(d, sizeof d, "polls=%d log=%s", h.peer_polls, h.nlog ? h.logs[h.nlog - 1] : "-");
-    check("the drain keeps reading past 1500 ms instead of stopping there",
-          has_log(&h, "ask_drain") && !has_log(&h, "binned=0"), d);
-    check("...and it consumes the whole body rather than a window of it",
-          has_log(&h, "why=eof") || has_log(&h, "why=cap"), d);
-    check("...and it polls the listener while it drains", h.peer_polls > 1, d);
-  }
-  {
-    /* The sender comes back: that is the signal, and it must end the drain at once. */
-    static unsigned char req[40000];
-    int w = 0;
-    w += sprintf((char*)req, "POST /Ask HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n");
-    static unsigned char blob[4096];
-    memset(blob, 'y', sizeof blob);
-    for (int i = 0; i < 8; i++) w += chunk_wrap(req + w, blob, (int)sizeof blob);
-    Script s;
-    memset(&s, 0, sizeof s);
-    script_add(&s, 0, req, w);
-    Script s2;
-    memset(&s2, 0, sizeof s2);
-    script_add(&s2, 0, req, w);
-    Harness h2;
-    harness_run_peer(&h2, &s2, 0, true); /* already in the backlog */
-    char d[200];
-    snprintf(d, sizeof d, "log=%s", h2.nlog ? h2.logs[h2.nlog - 1] : "-");
-    check("a peer already in the backlog ends the drain immediately", has_log(&h2, "why=peer"), d);
-    check("...having consumed almost nothing, so a normal transfer pays nothing for this", has_log(&h2, "binned=0"), d);
-  }
-  {
-    /* No predicate wired at all: the drain must still terminate, not hang. */
-    static const char req[] = "POST /Ask HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nWORLD\r\n0\r\n\r\n";
-    Script s;
-    memset(&s, 0, sizeof s);
-    script_add(&s, 0, req, (int)strlen(req));
-    s.close_at_end = 1;
-    Harness h;
-    harness_run_peer(&h, &s, UINT32_MAX, false);
-    char d[200];
-    snprintf(d, sizeof d, "log=%s", h.nlog ? h.logs[h.nlog - 1] : "-");
-    check("a NULL peer_waiting still terminates -- on eof or the cap, never a hang",
-          has_log(&h, "ask_drain") && (has_log(&h, "why=eof") || has_log(&h, "why=cap")), d);
   }
 
   /* 3. The headline desync: /Ask kept alive, then the sender's /Ask body chunk
@@ -488,7 +411,7 @@ int main(void) {
     harness_run(&h, &s);
     if (mode == 1)
       check("metadata consumed before consent and200 without drain",
-            consent_calls == 1 && h.ask_ok == 1 && h.peer_polls == 0, NULL);
+            consent_calls == 1 && h.ask_ok == 1, NULL);
     else
       check("oversize metadata returns413 without consent or acceptance",
             consent_calls == 0 && !h.ask_ok && strstr(h.out, "413 Content Too Large"), NULL);
@@ -518,6 +441,30 @@ int main(void) {
           h.ask_ok == 0 && h.ask_sent == 0 && response_failures == 1 && h.uploads == 0, NULL);
   }
   fail_write = 0;
+  /* A 4104 ms pause right after a whole record: without more_expected that silence
+     reads as the end; with it the reader waits and gets the end record. */
+  for (int expect_more = 0; expect_more <= 1; ++expect_more) {
+    static unsigned char rec[64], first[96], last[16];
+    static const unsigned char end_record[4] = {0, 0, 0, 0};
+    const int first_len = chunk_wrap(first, rec, dvzip_record(rec, 40));
+    const int last_len = chunk_wrap(last, end_record, 4);
+    Script s;
+    memset(&s, 0, sizeof s);
+    script_add(&s, 0, first, first_len);
+    script_add(&s, 4104, last, last_len);
+    struct HttpRdr r;
+    http_rdr_init(&r, &s, script_read);
+    static unsigned char buf[4096];
+    struct HttpSink sk;
+    memset(&sk, 0, sizeof sk);
+    sk.buf = buf;
+    sk.cap = sk.max = sizeof buf;
+    if (expect_more) sk.more_expected = always_more;
+    const int rc = http_recv_chunked(&r, &sk, 10000, 3000, hz_set_timeout);
+    check(expect_more ? "announced bytes outlast a 4 s pause at a record edge"
+                      : "without an announced size, 3 s of quiet still ends the body",
+          rc == (expect_more ? HTTP_RECV_OK_END_RECORD : HTTP_RECV_OK_SILENCE), NULL);
+  }
   printf("\n%d checks, %d failed\n", ran, fails);
   return fails ? 1 : 0;
 }

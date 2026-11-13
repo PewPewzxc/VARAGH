@@ -46,6 +46,9 @@
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
 #include "util/FrontlightPanelActivity.h"
+#if CROSSPOINT_AIRDROP
+#include "activities/network/AirDropActivity.h"
+#endif
 #include "util/FullScreenMessageActivity.h"
 #include "util/SwipeAdjustment.h"
 #include "util/TwoFingerSwipe.h"
@@ -926,6 +929,17 @@ void ActivityManager::goToUsbDrive() {
 
 bool ActivityManager::resumeFileTransferFromNetworkBoot(const uint32_t payload) {
   const uint32_t rawMode = payload & FILE_TRANSFER_MODE_MASK;
+#if CROSSPOINT_AIRDROP
+  if (rawMode == static_cast<uint32_t>(NetworkMode::AIRDROP)) {
+    auto airdrop = makeUniqueNoThrow<AirDropActivity>(renderer, mappedInput);
+    if (!airdrop) {
+      LOG_ERR("ACT", "OOM: AirDrop after minimal boot (free=%u maxAlloc=%u)", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+      return false;
+    }
+    replaceActivity(std::move(airdrop));
+    return true;
+  }
+#endif
   if (rawMode > static_cast<uint32_t>(NetworkMode::CREATE_HOTSPOT)) {
     LOG_ERR("ACT", "Invalid file transfer network boot mode: %lu", static_cast<unsigned long>(rawMode));
     return false;

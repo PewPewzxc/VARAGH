@@ -29,15 +29,38 @@ uint16_t getU16(const uint8_t*& in) {
   return value;
 }
 
+// Decodes one bucket of the Rice-coded word list (see WordleWords.h): visit(wordIndex, tail) for
+// each word in rising order until it returns false. A bucket holds a few hundred words at most.
+template <typename Visit>
+void forEachTail(const int bucket, Visit&& visit) {
+  uint32_t bit = wordle_words::kBucketBit[bucket];
+  const auto next = [&bit] {
+    const bool set = (wordle_words::kTailBits[bit >> 3] >> (7 - (bit & 7))) & 1;
+    ++bit;
+    return set;
+  };
+  int tail = -1;
+  for (uint16_t index = wordle_words::kBucketStart[bucket]; index < wordle_words::kBucketStart[bucket + 1]; ++index) {
+    unsigned gap = 0;
+    while (next()) ++gap;
+    for (unsigned i = 0; i < wordle_words::kRiceBits; ++i) gap = (gap << 1) | (next() ? 1U : 0U);
+    tail += static_cast<int>(gap) + 1;
+    if (!visit(index, static_cast<uint16_t>(tail))) return;
+  }
+}
+
 }  // namespace
 
 bool isAcceptedWord(const char* word) {
   if (!word || !isLowerLetters(word)) return false;
   const int bucket = (word[0] - 'a') * 26 + (word[1] - 'a');
   const uint16_t tail = static_cast<uint16_t>(((word[2] - 'a') * 26 + (word[3] - 'a')) * 26 + (word[4] - 'a'));
-  const uint16_t* first = wordle_words::kTail + wordle_words::kBucketStart[bucket];
-  const uint16_t* last = wordle_words::kTail + wordle_words::kBucketStart[bucket + 1];
-  return std::binary_search(first, last, tail);
+  bool found = false;
+  forEachTail(bucket, [&](uint16_t, const uint16_t candidate) {
+    found = candidate == tail;
+    return candidate < tail;
+  });
+  return found;
 }
 
 uint16_t answerCount() { return wordle_words::kAnswerCount; }
@@ -48,7 +71,11 @@ void answerAt(const uint16_t index, char out[kWordLength + 1]) {
   const uint16_t* end = wordle_words::kBucketStart + 677;
   const int bucket = static_cast<int>(std::upper_bound(wordle_words::kBucketStart, end, wordIndex) -
                                       wordle_words::kBucketStart) - 1;
-  uint16_t tail = wordle_words::kTail[wordIndex];
+  uint16_t tail = 0;
+  forEachTail(bucket, [&](const uint16_t index, const uint16_t candidate) {
+    tail = candidate;
+    return index != wordIndex;
+  });
   out[0] = static_cast<char>('a' + bucket / 26);
   out[1] = static_cast<char>('a' + bucket % 26);
   out[4] = static_cast<char>('a' + tail % 26);

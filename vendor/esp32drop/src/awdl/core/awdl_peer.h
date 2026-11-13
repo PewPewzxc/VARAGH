@@ -194,7 +194,7 @@ static double awdl_pll_noise_rms(const struct AwdlPll* p) { return sqrt(p->resid
 struct AwdlPeer {
   bool used;
   uint8_t addr[6];
-  int64_t off[16]; /* ring of AW-cycle phase estimates (us), ALL samples: the
+  int32_t off[16]; /* ring of AW-cycle phase estimates (us, < AWC_US), ALL samples: the
                       robustness is applied at read time, not at insert time --
                       an insert-time outlier gate once starved the ring */
   uint8_t n, pos;  /* samples filled (<=16), write cursor */
@@ -284,7 +284,7 @@ static int awdl_peer_live(const struct AwdlPeerTable* t, uint32_t now_ms, uint32
  *
  * n is bounded by the caller's fixed 16-wide offset row; u[] is sized to match.
  */
-static inline void phase_stats_raw(const int64_t* off, int n, float* mean, float* stdev) {
+static inline void phase_stats_raw(const int32_t* off, int n, float* mean, float* stdev) {
   if (n == 0) {
     *mean = 0;
     *stdev = 0;

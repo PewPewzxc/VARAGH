@@ -150,7 +150,11 @@ void FontSelectionActivity::activateSelected() {
 #if !CROSSINK_BUILTIN_BITTER
   if (font.isBuiltin && font.settingIndex == CrossPointSettings::BITTER) {
     // Not on the card yet: say where it comes from, change nothing.
+#if defined(CROSSINK_HYPHENATION_SD) && CROSSINK_HYPHENATION_SD
+    GUI.drawPopup(renderer, tr(STR_BITTER_EXTRA_HINT), true);
+#else
     GUI.drawPopup(renderer, tr(STR_BITTER_DOWNLOAD_HINT), true);
+#endif
     delay(2000);
     requestUpdate();
     return;

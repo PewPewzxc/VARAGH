@@ -76,3 +76,17 @@ TEST(DictionaryWordParts, PositionsRtlCompoundFragmentsInVisualOrder) {
   EXPECT_EQ(dictionaryWordPartVisualOffset(fullWidth, logicalSecondPartOffset, 10, true), 0);
   EXPECT_EQ(dictionaryWordPartVisualOffset(fullWidth, logicalSecondPartOffset, 10, false), logicalSecondPartOffset);
 }
+
+// VARAGH 1.3.1/1.3.2 bug: the word-select buffer was sized as if the hyphen were always dropped, so a
+// page where a book hyphen ended a line ("internet-" / "capable") overflowed by one byte: "Memory error".
+TEST(DictionaryWordParts, MergedWordBudgetCoversBookHyphen) {
+  EXPECT_EQ(mergedLookupLength(6, 4, /*keepHyphen=*/false), 9U);   // exter- + nity -> externity
+  EXPECT_EQ(mergedLookupLength(9, 7, /*keepHyphen=*/true), 16U);   // internet- + capable -> internet-capable
+  for (size_t first = 1; first < 40; ++first) {
+    for (size_t second = 0; second < 40; ++second) {
+      const size_t budget = mergedLookupLength(first, second, /*keepHyphen=*/true);
+      EXPECT_GE(budget, mergedLookupLength(first, second, /*keepHyphen=*/false));
+      EXPECT_GE(budget, first + second);
+    }
+  }
+}

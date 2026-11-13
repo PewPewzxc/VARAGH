@@ -914,7 +914,7 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc, bool importingCrossPoint
 #if !CROSSINK_BUILTIN_BITTER
   // Bitter is a download on this reader: a saved built-in Bitter becomes the SD family "Bitter".
   // SdCardFontSystem drops it again (Lexend shows) until the family is on the card.
-  if (fontFamily == BITTER && sdFontFamilyName[0] == ' ') {
+  if (fontFamily == BITTER && sdFontFamilyName[0] == '\0') {
     strncpy(sdFontFamilyName, BITTER_SD_FAMILY, sizeof(sdFontFamilyName) - 1);
     fontFamily = LEXENDDECA;
     needsResave = true;

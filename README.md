@@ -197,6 +197,7 @@ See the [changelog](CHANGELOG.md) for everything.
 
 | Version | Date | What it added |
 |---|---|---|
+| **1.4.0 "Cheetah"** (pre-release) | 2026-11-12 | AirDrop from iPhone, iPad and Mac on the X4 Pro and X4 Classic, the word-select "Memory error" fixed, firmware about 890 KB smaller (Bitter and six hyphenation tables become card downloads via Download Extra Files) |
 | **1.3.2 "Lion"** | 2026-11-03 | Settings on Home reachable with the buttons again on the X4 Classic and X3, menu-language downloads fixed on the X4 Pro and X4 Classic, one shared set of language packs |
 | **1.3.1 "Lion"** | 2026-11-03 | Persian, German and pronunciations built in on every reader, Persian Focus Reading, Settings in groups, drop caps, boxes and text sizes, Bluetooth page turner, faster picture pages, Sudoku answer check, levels, daily puzzle and explaining hints, clock sync and Live Clock |
 | **1.3.0 "Lion"** | 2026-10-20 | Control Center and night light, dictionaries per language with online sources, Persian menus and keyboard, went → go lookups, resizing a selection, rotation, one icon style, Go and Tic Tac Toe; the X4 Classic and X3 join with button apps and menu-language downloads |

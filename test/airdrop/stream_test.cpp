@@ -107,6 +107,13 @@ int main() {
     q.reset(u.sink(), cap);
     assert(!feed(q, bad, 1));
   }
+  // Only leaf names reach storage: "..", "." and directory-only names fail before begin.
+  for (auto name : {"..", "a/..", "/.", "dir/", "../../x/"}) {
+    Target u;
+    AdCpioStream q;
+    q.reset(u.sink(), cap);
+    assert(!feed(q, entry(name, 1) + "x" + entry("TRAILER!!!", 0), 1) && u.begins == 0);
+  }
   // Header overflow in odc's 11-digit filesize field must not wrap.
   auto overflow = entry("x", 0);
   overflow.replace(65, 11, "77777777777");
@@ -132,6 +139,6 @@ int main() {
     assert(!q.complete());
   }
   puts(
-      "stream parser: chunk boundaries, exact 30 MiB, over-limit, truncation, malformed headers and storage failures "
-      "passed");
+      "stream parser: chunk boundaries, exact 30 MiB, over-limit, truncation, malformed headers, dot names and storage "
+      "failures passed");
 }

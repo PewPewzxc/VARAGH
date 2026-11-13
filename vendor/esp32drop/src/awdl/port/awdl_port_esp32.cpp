@@ -13,7 +13,7 @@
  *   awdl_gauge.h   the mesh-wide phase gauge      awdl_elect.h   the election decision
  *   awdl_window.h  AW/AWC arithmetic              awdl_tick.h    the cadence schedule
  *   awdl_peer.h    the master table and the PLL   awdl_frame.h   TLV parse and MIF build
- *   awdl_ring.h    the SPSC cursor                awdl_src.h     per-sender residuals
+ *   awdl_ring.h    the SPSC cursor
  *
  * THREE INVARIANTS. They are not style; each has a measured failure behind it.
  *   (a) NOTHING ON THE FRAME PATH MAY BLOCK. No Serial, no lwIP, no waiting. A 958-byte
@@ -43,7 +43,6 @@
 #include "../core/awdl_peer.h"
 #include "../core/awdl_ring.h"
 #include "../core/awdl_select.h"
-#include "../core/awdl_src.h"
 #include "../core/awdl_tick.h"
 #include "../core/awdl_window.h"
 #include "awdl_port_esp32.h"
@@ -100,7 +99,7 @@ static bool awdl_win_phase(const struct AwdlWinState* w, int64_t* out);
    the two stores can observe it and delete them both. volatile removes the question for
    free; the alternative is a permission that works at -O0 and not at -Os. */
 static volatile bool g_in_tap = false;
-static awdl_rx_tap_fn g_rx_tap = nullptr;
+static awdl_rx_tap_fn volatile g_rx_tap = nullptr;
 static void* g_rx_tap_ctx = nullptr;
 static int build_awdl_data(uint8_t* out, const uint8_t* dst_mac, uint16_t ethertype, const uint8_t* ip, int iplen,
                            uint16_t seq);
@@ -142,7 +141,7 @@ static void build_awdl_data_at(uint8_t* buf, const uint8_t* dst_mac, uint16_t et
 // ============================================================================
 
 static uint8_t g_awdl_mac[6] = {0};
-static struct AwdlPeerTable g_peers;
+static struct AwdlPeerTable* g_peers = nullptr;  // PSRAM, per session (awdl_begin)
 static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;  // core-1-only (proc/loop)
 
 // Our AirDrop identity for the mDNS advertisement (Step 3).
@@ -192,33 +191,21 @@ static volatile uint32_t g_ts_off32 = 0;
 #ifndef AWDL_CADENCE_TASK
 #define AWDL_CADENCE_TASK 1
 #endif
-/* Recency, for the two AwdlStatus fields whose whole point is "right now".
- *
- * MILLISECONDS IN A uint32_t, not microseconds in an int64_t, and that is not an
- * optimisation: these are written by the cadence task at priority 2 and read by the
- * caller's task at priority 1, and a 64-bit read across that boundary on a 32-bit core
- * can tear. Step 9 of this extraction exists because three doubles were being read that
- * way. Unsigned 32-bit subtraction is wrap-exact, so the 49.7-day rollover needs no
- * special case. */
-static volatile uint32_t g_last_mif_ms = 0; /* when the radio last ACCEPTED a MIF */
-static volatile bool g_mif_seen = false;
-static volatile uint32_t g_no_master_since_ms = 0;
-static volatile bool g_no_master = false;
-
 static float g_srchist[16];
 static uint32_t g_srchist_n;
 static void raw_tx_done_cb(const esp_80211_tx_info_t* ti);
 static struct AwdlTick g_tick;
 static TaskHandle_t g_cadence_task = nullptr;
+static TaskHandle_t g_proc_task = nullptr;  // notified by sniffer_cb per committed frame
 
 /* --- cooperative shutdown, for awdl_end() -----------------------------------------
  *
- * The two tasks exit BY THEMSELVES when this is set, and awdl_end() waits for both
- * acknowledgements. It does not vTaskDelete() them, and that is not fastidiousness:
- * proc_task takes g_mux and memcpys into the rings, so a task killed from outside can be
- * killed while holding a spinlock -- which no later begin() can ever release. The
- * cadence task is worse, because it is the thing that transmits: stopping it half way
- * through a frame is a partial write to the radio.
+ * The two tasks PARK THEMSELVES (vTaskSuspend) when this is set, and awdl_end() waits for
+ * both acknowledgements. It never kills a running task: proc_task takes g_mux and memcpys
+ * into the rings, so a task killed from outside can be killed while holding a spinlock,
+ * and the cadence task is the thing that transmits. awdl_end() deletes the parked tasks
+ * only after the radio and netif are gone, because the Wi-Fi task and the tcpip thread
+ * notify them -- a self-deleted task would leave those notifies writing a freed TCB.
  *
  * volatile, not atomic: one writer (the caller), two readers, and a single bool. */
 static volatile bool g_awdl_stop = false;
@@ -281,7 +268,6 @@ static struct AwdlPll g_pll;
 static uint8_t g_sel[6] = {0};
 static bool g_have_sel = false;
 
-static const double LOCK_WANDER_US = 1500;  // "locked": smoothed track stable
 
 // ---- sync-stability instrumentation (measurement only, no behaviour change) --
 // The three failure modes that are otherwise invisible: the election switching master
@@ -301,16 +287,9 @@ static const double LOCK_WANDER_US = 1500;  // "locked": smoothed track stable
 //            master, but each has its own clock error; if one sender sits 5ms off
 //            the others, the "noise" is really inter-device disagreement and the
 //            estimator should weight or exclude per sender, not average blindly.
-static struct AwdlSrcTable g_srcs;
 // The AW-cycle gauge. Self-contained, dependency-free, and compiled unchanged into
 // tools/test-gauge.sh so it can be scored against a recorded trace on a laptop.
-static ga_t g_gauge;
-
-// Find (or allocate) this sender's row. Eviction takes the stalest row, so an
-// active sender is never displaced. Caller holds g_mux.
-/* The table, its eviction rule and the statistics are in awdl_src.h, host-tested there.
-   This wrapper binds them to the one instance this firmware has. */
-static struct AwdlSrc* src_row(const uint8_t* mac, uint32_t nowms) { return awdl_src_row(&g_srcs, mac, nowms); }
+static ga_t* g_gauge = nullptr;  // PSRAM, per session (awdl_begin)
 // THE MEASURED ch6 WINDOW, which is the independent check on the chanseq-derived one.
 // A raw phase sample, (rx_ts - phy_tx) mod AWC, is our clock offset to THAT SENDER's TSF:
 // each sender is individually precise to ~30us, but different senders sit at different TSF
@@ -331,8 +310,9 @@ static const float SRCHIST_THRESH = 0.35f;  // ch6 above 35% of (peak - backgrou
 // Lock-free SPSC ring: WiFi callback (core0, producer) -> proc task (core1)
 // (RawFrame / RING_SLOTS / SNAP_LEN defined in awdl_sync.h)
 // ============================================================================
-// Reserved only while AWDL is active. Keep callback storage in internal RAM;
-// release it only after both workers and the Wi-Fi producer have stopped.
+// Reserved only while AWDL is active, in PSRAM: the Wi-Fi task never runs with the cache
+// off, and the S3 data cache is shared by both cores. Released only after both workers and
+// the Wi-Fi producer have stopped.
 static RawFrame* g_ring = nullptr;
 static struct AwdlRing g_ring_cur;  // cursors + drop count (awdl_ring.h)
 static_assert(AWDL_RING_POW2(RING_SLOTS), "RING_SLOTS must be a power of two");
@@ -369,6 +349,7 @@ static void sniffer_cb(void* buf, wifi_promiscuous_pkt_type_t type) {
     f->len = L;
     memcpy(f->data, pl, L);
     awdl_ring_commit(&g_ring_cur);
+    if (g_proc_task) xTaskNotifyGive(g_proc_task);
   }
 }
 
@@ -378,7 +359,7 @@ static void sniffer_cb(void* buf, wifi_promiscuous_pkt_type_t type) {
 
 /* The table and its eviction rule are in awdl_peer.h, host-tested there. This wrapper
    just binds them to the one instance this firmware has. */
-static struct AwdlPeer* master_row(const uint8_t* addr) { return awdl_peer_row(&g_peers, addr); }
+static struct AwdlPeer* master_row(const uint8_t* addr) { return awdl_peer_row(g_peers, addr); }
 
 // Store EVERY sample; robustness is applied at read time in phase_stats. An insert-time
 // outlier gate starves the ring instead.
@@ -478,12 +459,6 @@ static void handle_sync(const struct AwdlActionHdr* h, const struct AwdlSyncPara
   // it. Same trace, same scorer: 99.1% fed, ZERO samples a whole AW wrong, worst error
   // 0.199 AW (5.03x margin to the cliff), gauge locked 1.14s after the first frame.
   const uint8_t* src = h->src;
-  struct AwdlSrc* sp = src_row(src, nowms);
-
-  // The TSF-re-base fast path lives inside the gauge now (GA_REBASE_US), where the
-  // per-sender clock offset it needs already is. Nothing here to do but keep the row
-  // fresh for the ESRC/MSTR lines.
-  sp->last_ms = nowms;
 
   // Only PSFs drive the gauge. There is no PSF-vs-MIF offset to correct for: measured
   // across the two subtypes, the bias is -9us.
@@ -492,18 +467,14 @@ static void handle_sync(const struct AwdlActionHdr* h, const struct AwdlSyncPara
     return;
   }
 
-  uint32_t gph = ga_on_frame(&g_gauge, src, rx_ts, phy_tx, aw_seq_raw);
+  uint32_t gph = ga_on_frame(g_gauge, src, rx_ts, phy_tx, aw_seq_raw);
   if (gph == GA_NONE) {  // gauge not locked, stale, or this sender
     taskEXIT_CRITICAL(&g_mux);
     return;
   }
   offset = (int64_t)gph;
 
-  double e = 0;
-  int pll_r = awdl_pll_feed(&g_pll, offset, rx_ts, &e);
-  if (pll_r != AWDL_PLL_SEEDED) {
-    awdl_src_add(sp, e);
-  }
+  awdl_pll_feed(&g_pll, offset, rx_ts, nullptr);
   taskEXIT_CRITICAL(&g_mux);
 }
 
@@ -570,7 +541,7 @@ static uint16_t icmp6_checksum(const uint8_t* src, const uint8_t* dst, const uin
 // table" step that Apple's stack and OWL perform.
 static void seed_neighbor(const uint8_t* peer_mac, const uint8_t* peer_ll) {
   if (!g_awdl_netif) return;
-  uint8_t* f = (uint8_t*)malloc(14 + 40 + 32);  // esp_netif refs+frees via eb
+  uint8_t* f = (uint8_t*)heap_caps_malloc(14 + 40 + 32, MALLOC_CAP_SPIRAM);  // esp_netif refs+frees via eb
   if (!f) return;
   uint8_t* p = f;
   memcpy(p, g_awdl_mac, 6);
@@ -733,7 +704,7 @@ static void handle_data(const uint8_t* pl, uint16_t len) {
         // esp_netif REFERENCES this buffer (PBUF_REF) and frees it later via
         // awdl_netif_rx_free(eb) -- so give it its own heap buffer, never a reused
         // static (which lwIP could hold past our next frame).
-        uint8_t* rxb = (uint8_t*)malloc(14 + iplen);
+        uint8_t* rxb = (uint8_t*)heap_caps_malloc(14 + iplen, MALLOC_CAP_SPIRAM);  // lwIP may hold it; keep internal RAM for TLS
         if (rxb) {
           memcpy(rxb, &pl[4], 6);       // dst (us / multicast)
           memcpy(rxb + 6, &pl[10], 6);  // src = peer
@@ -753,10 +724,12 @@ static void handle_data(const uint8_t* pl, uint16_t len) {
   //
   // It runs ON THE FRAME TASK, so invariant (a) is the tap's contract too: no Serial, no
   // lwIP, no blocking. Immediate TX is guarded by g_in_tap.
-  if (g_rx_tap && iplen > 0) {
+  awdl_rx_tap_fn tap = g_rx_tap;
+  if (tap && iplen > 0) {
+    const bool was = g_in_tap;  // this task can preempt the cadence's announce callback
     g_in_tap = true;
-    g_rx_tap(g_rx_tap_ctx, &pl[10], ip, (size_t)iplen);
-    g_in_tap = false;
+    tap(g_rx_tap_ctx, &pl[10], ip, (size_t)iplen);
+    g_in_tap = was;
   }
 }
 
@@ -835,15 +808,13 @@ static void proc_task(void*) {
        ring slot half-processed or g_mux held. */
     if (g_awdl_stop) {
       g_proc_stopped = true;
-      vTaskDeleteWithCaps(nullptr);
+      vTaskSuspend(nullptr);  // awdl_end() deletes it once nothing can notify it
     }
-    bool did = false;
     for (int slot; (slot = awdl_ring_peek(&g_ring_cur)) >= 0;) {
       process_frame(&g_ring[slot]);
       awdl_ring_release(&g_ring_cur);
-      did = true;
     }
-    if (!did) vTaskDelay(1);  // ~1 tick idle; bursts drain immediately
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // sniffer_cb or awdl_end() wakes us
   }
 }
 
@@ -863,7 +834,7 @@ static bool src_untrusted(const uint8_t* mac) {
   // replayed alone the trace's two chronic re-basers feed 410 and 1486 phase samples
   // with zero errors. Whether a re-baser's *chanseq* is equally trustworthy is not
   // something I have measured, so this exclusion stays until it is.
-  return ga_rebase_of(&g_gauge, mac) >= 4;
+  return ga_rebase_of(g_gauge, mac) >= 4;
 }
 
 static uint8_t s_win_state = AWDL_WS_VOID;  // publisher-private: never read g_win unlocked
@@ -879,20 +850,21 @@ static Selection awdl_elect_and_publish() {
   awdl_win_read(&nw);  // start from what is live; each branch
                        // then overwrites what it owns
   // snapshot rings under a short lock
-  int64_t off[AWDL_PEERS][16];
+  int32_t off[AWDL_PEERS][16];
   int n[AWDL_PEERS];
   uint32_t metric[AWDL_PEERS], last[AWDL_PEERS], gapavg[AWDL_PEERS];
   uint8_t addr[AWDL_PEERS][6];
-  bool used[AWDL_PEERS];
+  bool used[AWDL_PEERS], untrusted[AWDL_PEERS];
   taskENTER_CRITICAL(&g_mux);
   for (int i = 0; i < AWDL_PEERS; i++) {
-    used[i] = g_peers.row[i].used;
-    n[i] = g_peers.row[i].n;
-    metric[i] = g_peers.row[i].metric;
-    last[i] = g_peers.row[i].last_ms;
-    gapavg[i] = g_peers.row[i].gap_n ? g_peers.row[i].gap_sum / g_peers.row[i].gap_n : 0xffffffff;
-    memcpy(addr[i], g_peers.row[i].addr, 6);
-    memcpy(off[i], g_peers.row[i].off, sizeof(off[i]));
+    used[i] = g_peers->row[i].used;
+    n[i] = g_peers->row[i].n;
+    metric[i] = g_peers->row[i].metric;
+    last[i] = g_peers->row[i].last_ms;
+    gapavg[i] = g_peers->row[i].gap_n ? g_peers->row[i].gap_sum / g_peers->row[i].gap_n : 0xffffffff;
+    memcpy(addr[i], g_peers->row[i].addr, 6);
+    memcpy(off[i], g_peers->row[i].off, sizeof(off[i]));
+    untrusted[i] = used[i] && src_untrusted(addr[i]);  // the frame task rewrites gauge rows under g_mux
   }
   taskEXIT_CRITICAL(&g_mux);
 
@@ -913,16 +885,9 @@ static Selection awdl_elect_and_publish() {
   Selection s;
   s.idx = -1;
   s.mean = 0;
-  s.stdev = 0;
   s.metric = 0;
-  s.count = 0;
-  s.wander = 0;
-  s.resid_rms = 0;
-  s.drift_ppm = 0;
-  s.pll_n = 0;
   s.cur_aw_seq = 0;
   s.master_counter = 0;
-  s.have_election = false;
   memset(s.addr, 0, 6);
   // The choice itself lives in awdl_elect.h as a pure function over a candidate
   // array, so the rules that twice took this badge off the air can be exercised on
@@ -940,11 +905,10 @@ static Selection awdl_elect_and_publish() {
     float mean_i, std_i;
     phase_stats_raw(off[i], n[i], &mean_i, &std_i);
     cnd[i].stdev = std_i;
-    cnd[i].untrusted = src_untrusted(addr[i]);
+    cnd[i].untrusted = untrusted[i];
   }
   struct ElectResult er = elect_choose(cnd, AWDL_PEERS, now, g_awdl_mac, g_sel, g_have_sel);
   int chosen = er.chosen;
-  s.count = er.count;
   if (chosen < 0) {
     // No candidate. The GATE is untouched -- it keeps whatever window it last had, exactly
     // as it did when these were six separate globals -- but the state decays so the time
@@ -956,33 +920,24 @@ static Selection awdl_elect_and_publish() {
   if (chosen >= 0) {
     memcpy(g_sel, addr[chosen], 6);
     g_have_sel = true;
-    float mean, stdev;
-    phase_stats_raw(off[chosen], n[chosen], &mean, &stdev);
     s.idx = chosen;
-    s.stdev = stdev;
-    s.metric = metric[chosen];  // stdev = raw, info only
+    s.metric = metric[chosen];
     memcpy(s.addr, addr[chosen], 6);
     // Window phase from the GLOBAL PLL (continuous across master switches); the
     // aw_seq base still comes from the chosen master (for our advertised counter).
-    double phase, freq, wander, resid;
-    uint32_t tlast, pn, aw_ts;
+    double phase, freq;
+    uint32_t tlast, aw_ts;
     uint16_t aw_base;
     uint32_t mcnt;
-    bool hel;
     taskENTER_CRITICAL(&g_mux);
     phase = g_pll.phase;
     freq = g_pll.freq;
     tlast = g_pll.tlast;
-    wander = g_pll.wander;
-    resid = g_pll.resid;
-    pn = g_pll.n;
-    aw_base = g_peers.row[chosen].last_aw_seq;
-    aw_ts = g_peers.row[chosen].last_aw_ts;
-    mcnt = g_peers.row[chosen].master_counter;
-    hel = g_peers.row[chosen].have_election;
+    aw_base = g_peers->row[chosen].last_aw_seq;
+    aw_ts = g_peers->row[chosen].last_aw_ts;
+    mcnt = g_peers->row[chosen].master_counter;
     taskEXIT_CRITICAL(&g_mux);
     s.master_counter = mcnt;
-    s.have_election = hel;
     uint32_t rx_now = (uint32_t)(esp_timer_get_time() - g_ts_off32);
     double predicted = phase + freq * (double)(uint32_t)(rx_now - tlast);
     predicted = fmod(predicted, (double)AWC_US);
@@ -1038,16 +993,8 @@ static Selection awdl_elect_and_publish() {
     // could never expire.
     s_win_state = awdl_winstate_next(s_win_state, nw.ch6_mask != 0, nw.ch6_mask, rx_now, nw.lock_rx, AWDL_COAST_MAX_US);
     nw.state = s_win_state;
-    s.wander = (float)wander;
-    s.resid_rms = (float)sqrt(resid);
-    s.drift_ppm = (float)(freq * 1e6);
-    s.pll_n = pn;
   }
-  // ONE publish, at the end, with BOTH objects complete. Publishing mid-function sends
-  // the Selection out four fields short, because wander / resid_rms / drift_ppm / pll_n
-  // are assigned after the window is decided -- and the RETURNED value would still be
-  // right while the PUBLISHED one was wrong, which is exactly the kind of difference that
-  // survives a soak and surfaces as a display disagreeing with itself.
+  // ONE publish, at the end, with BOTH objects complete.
   taskENTER_CRITICAL(&g_win_mux);
   g_win = nw;
   g_sel_pub = s;
@@ -1102,7 +1049,7 @@ static uint16_t ch6_mask_measured(int* peak) {
 static int ch6_slot_of(const uint8_t* addr) {
   int idx = -1;
   taskENTER_CRITICAL(&g_mux);
-  const struct AwdlPeer* m = awdl_peer_find(&g_peers, addr);
+  const struct AwdlPeer* m = awdl_peer_find(g_peers, addr);
   if (m && m->have_chseq) idx = awdl_chanseq_first_of(m->chseq, PROBE_CHANNEL);
   taskEXIT_CRITICAL(&g_mux);
   return idx;
@@ -1115,7 +1062,7 @@ static int ch6_slot_of(const uint8_t* addr) {
 static uint16_t ch6_mask_of(const uint8_t* addr) {
   uint16_t mask = 0;
   taskENTER_CRITICAL(&g_mux);
-  const struct AwdlPeer* m = awdl_peer_find(&g_peers, addr);
+  const struct AwdlPeer* m = awdl_peer_find(g_peers, addr);
   if (m && m->have_chseq) mask = awdl_chanseq_mask_of(m->chseq, PROBE_CHANNEL);
   taskEXIT_CRITICAL(&g_mux);
   return mask;
@@ -1168,11 +1115,7 @@ static void send_mif(const Selection& s) {
   uint8_t master[6];
   memcpy(master, s.addr, 6);
   size_t n = build_mif(buf, g_awdl_mac, master, s);
-  esp_err_t mtx = esp_wifi_80211_tx(WIFI_IF_AP, buf, n, true);
-  if (mtx == ESP_OK) {
-    g_last_mif_ms = (uint32_t)(esp_timer_get_time() / 1000);
-    g_mif_seen = true;
-  }
+  (void)esp_wifi_80211_tx(WIFI_IF_AP, buf, n, true);
 }
 
 /* --- surface B/G: inject one complete IPv6 packet ---------------------------------
@@ -1301,7 +1244,7 @@ static const uint8_t NETIF_TX_RETRY_SLOTS = 64;  // > queue depth + one full dra
    twice or skipped, which shifts the 7-retry bound by one. Not worth a lock. */
 static volatile uint16_t g_retry_seq[NETIF_TX_RETRY_SLOTS];
 static volatile uint8_t g_retry_n[NETIF_TX_RETRY_SLOTS];
-static NetifTxFrame* g_retry_frame = nullptr;
+static NetifTxFrame* g_retry_frame = nullptr;  // [0] Wi-Fi task retry copy, [1] tcpip-thread staging
 
 /* esp_wifi_80211_tx() accepts work asynchronously. A time check around that call only
  * bounds when a frame ENTERS the driver; it does not bound when the driver's own retries
@@ -1321,14 +1264,12 @@ static_assert(AWDL_NETIF_INFLIGHT_MAX >= 1 && AWDL_NETIF_INFLIGHT_MAX <= 16,
 static portMUX_TYPE g_netif_tx_mux = portMUX_INITIALIZER_UNLOCKED;
 static volatile uint8_t g_netif_inflight = 0;
 static AwdlAck g_latest_ack{};  // Published only after successful queue admission.
-static uint32_t g_ack_skipped = 0, g_tx_queue_drops = 0;
 
 static bool netif_ack_obsolete(const uint8_t* frame, size_t len) {
   AwdlAck ack;
   if (len < AWDL_TX_HEADROOM || !awdl_ack_parse(frame + AWDL_TX_HEADROOM, len - AWDL_TX_HEADROOM, &ack)) return false;
   portENTER_CRITICAL(&g_netif_tx_mux);
   const bool obsolete = awdl_ack_supersedes(&g_latest_ack, &ack);
-  if (obsolete) ++g_ack_skipped;
   portEXIT_CRITICAL(&g_netif_tx_mux);
   return obsolete;
 }
@@ -1487,29 +1428,27 @@ static esp_err_t awdl_netif_transmit(void* h, void* buffer, size_t len) {
   int iplen = (int)len - 14;
   /* 1460, not 1500: build_awdl_data adds AWDL_TX_HEADROOM, and esp_wifi_80211_tx refuses
      the result over 1500. At the shipped MTU nothing reaches this, but a raised knob or a
-     future path would otherwise hand the driver a frame it silently drops. Counted, because
-     the queue above promises never to drop one silently. */
+     future path would otherwise hand the driver a frame it silently drops. */
   if (iplen <= 0) return ESP_OK;
   /* The same constant NetifTxFrame is sized from, so the buffer provably cannot overflow.
-     lwIP will not hand down more than the link MTU it was given, so this counts something
-     that should never happen rather than something expected -- and ovsz= in the STAT line
-     is where it would show up. */
+     lwIP will not hand down more than the link MTU it was given. */
   if (iplen > AWDL_NETIF_MTU) {
     return ESP_OK;
   }
-  static NetifTxFrame tf;  // tcpip thread is single -> safe
-  const uint16_t seq = g_awdl_data_seq++;
+  NetifTxFrame& tf = g_retry_frame[1];  // tcpip thread is single -> safe; xQueueSend copies it
+  uint16_t seq = g_awdl_data_seq++;
+  if (!seq) seq = g_awdl_data_seq++;  // seq 0 is the RX-tap path's; its TX-done must not match a queued frame
   tf.len = build_awdl_data(tf.buf, e, ethertype, e + 14, iplen, seq);
   const uint8_t retry_slot = (uint8_t)(seq & (NETIF_TX_RETRY_SLOTS - 1));
   g_retry_seq[retry_slot] = seq;
   g_retry_n[retry_slot] = 0;
   const bool queued = xQueueSend(g_netif_txq, &tf, 0) == pdTRUE;
   AwdlAck ack;
-  const bool plainAck = queued && awdl_ack_parse(e + 14, iplen, &ack);
-  portENTER_CRITICAL(&g_netif_tx_mux);
-  if (!queued) ++g_tx_queue_drops;
-  if (plainAck) g_latest_ack = ack;
-  portEXIT_CRITICAL(&g_netif_tx_mux);
+  if (queued && awdl_ack_parse(e + 14, iplen, &ack)) {
+    portENTER_CRITICAL(&g_netif_tx_mux);
+    g_latest_ack = ack;
+    portEXIT_CRITICAL(&g_netif_tx_mux);
+  }
   // Wake the cadence so a queued frame does not wait for the next scheduled instant.
   // Guarded: lwIP transmits ND6/MLD the moment the netif comes up, and an
   // AWDL_CADENCE_TASK=0 build has no task to notify -- an unguarded xTaskNotifyGive(NULL)
@@ -1595,19 +1534,16 @@ static esp_err_t awdl_netif_init(void) {
                                                                             // ServerHello flight burst between
                                                                             // ch6 windows without dropping frames
   if (!g_netif_txq) return ESP_ERR_NO_MEM;
-  /* A failed-frame copy is cold diagnostic/recovery storage, not timing-critical working
-     memory. Prefer PSRAM so the extra reliability does not take another frame-sized bite
-     out of the contiguous internal arena mbedTLS needs; fall back for ESP32 boards with
-     no PSRAM. The queue operation copies it before the callback returns. */
-  g_retry_frame = (NetifTxFrame*)heap_caps_malloc(sizeof(NetifTxFrame), MALLOC_CAP_SPIRAM);
-  if (!g_retry_frame) g_retry_frame = (NetifTxFrame*)malloc(sizeof(NetifTxFrame));
+  /* The failed-frame copy and the transmit staging frame never reach the driver (the queue
+     copies them), so both live in PSRAM, out of the internal arena TLS needs. */
+  g_retry_frame = (NetifTxFrame*)heap_caps_malloc(2 * sizeof(NetifTxFrame), MALLOC_CAP_SPIRAM);
+  if (!g_retry_frame) return ESP_ERR_NO_MEM;  // the transmit path stages through [1]
   memset((void*)g_retry_seq, 0, sizeof g_retry_seq);
   memset((void*)g_retry_n, 0, sizeof g_retry_n);
   memset((void*)g_netif_inflight_seq, 0, sizeof g_netif_inflight_seq);
   memset((void*)g_netif_inflight_used, 0, sizeof g_netif_inflight_used);
   g_netif_inflight = 0;
   g_latest_ack = {};
-  g_ack_skipped = g_tx_queue_drops = 0;
   static esp_netif_inherent_config_t base = {};
   base.flags =
       (esp_netif_flags_t)(ESP_NETIF_FLAG_AUTOUP | ESP_NETIF_FLAG_MLDV6_REPORT | ESP_NETIF_FLAG_EVENT_IP_MODIFIED);
@@ -1756,17 +1692,6 @@ void awdl_cadence_pass(void) {
   Selection sel;
   awdl_pub_read(&w, &sel);
 
-  /* The CURRENT isolation episode, not a lifetime total. Tracked here rather than inside
-     awdl_status_read() because a status accessor that only measures while somebody is
-     asking is not measuring. */
-  if (sel.idx < 0) {
-    if (!g_no_master) {
-      g_no_master = true;
-      g_no_master_since_ms = (uint32_t)(now_us / 1000);
-    }
-  } else
-    g_no_master = false;
-
   struct AwdlTickIn in;
   in.now_us = now_us;
   in.have_lock = w.have_lock;
@@ -1812,7 +1737,7 @@ static void awdl_cadence_task_fn(void*) {
     /* BEFORE the pass, never during it: a pass is what puts a frame on the air. */
     if (g_awdl_stop) {
       g_cad_stopped = true;
-      vTaskDeleteWithCaps(nullptr);
+      vTaskSuspend(nullptr);  // awdl_end() deletes it once nothing can notify it
     }
     awdl_cadence_pass();
     int64_t dt = g_cadence_wake_us - esp_timer_get_time();
@@ -1832,8 +1757,6 @@ static void awdl_cadence_task_fn(void*) {
  * accessors, fifty-six file-scope symbols would cross this line instead.
  * ========================================================================== */
 
-esp_netif_t* awdl_netif(void) { return g_awdl_netif; }
-
 void awdl_identity(struct AwdlIdentity* out) {
   memcpy(out->mac, g_awdl_mac, 6);
   memcpy(out->ll, g_ll, 16);
@@ -1841,9 +1764,6 @@ void awdl_identity(struct AwdlIdentity* out) {
   strlcpy(out->pair_sid, g_pair_sid, sizeof(out->pair_sid));
 }
 
-uint32_t awdl_cadence_stack_free_words(void) {
-  return g_cadence_task ? (uint32_t)uxTaskGetStackHighWaterMark(g_cadence_task) : 0;
-}
 
 /* --- bring-up -------------------------------------------------------------
  *
@@ -1856,14 +1776,23 @@ uint32_t awdl_cadence_stack_free_words(void) {
  * Every step returns rather than aborting. ESP_ERROR_CHECK panics the chip: a defensible
  * choice for a project's own firmware and an indefensible one for a library, because a
  * user's boot is not ours to end. */
-esp_err_t awdl_begin(void) {
-  esp_err_t e;
-  if (g_ring) return ESP_ERR_INVALID_STATE;
-  g_ring =
-      static_cast<RawFrame*>(heap_caps_malloc(sizeof(RawFrame) * RING_SLOTS, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-  if (!g_ring) return ESP_ERR_NO_MEM;
+// Per-session state in ONE zeroed PSRAM block, so every begin() starts from first-boot state.
+struct AwdlSession {
+  RawFrame ring[RING_SLOTS];  // first member: heap_caps_free(g_ring) frees the block
+  struct AwdlPeerTable peers;
+  ga_t gauge;
+};
+static_assert(offsetof(AwdlSession, ring) == 0, "awdl_end frees the session through g_ring");
 
+static esp_err_t awdl_start(void) {
+  esp_err_t e;
   awdl_ring_init(&g_ring_cur, RING_SLOTS);
+  awdl_pll_init(&g_pll);
+  memset(g_srchist, 0, sizeof g_srchist);
+  g_srchist_n = 0;
+  g_have_sel = false;
+  s_win_state = AWDL_WS_VOID;
+  g_ts_off32 = 0;
   awdl_winstate_init(&g_win);
   g_sel_pub.idx = -1;
   /* OUTSIDE any cadence-task guard, and that is the whole point: g_tick is BSS, so an
@@ -1892,7 +1821,7 @@ esp_err_t awdl_begin(void) {
   awdl_ll_of_mac(g_awdl_mac, g_ll);
 
   /* Frame path on core 1 at priority 3; the WiFi RX callback stays undisturbed on core 0. */
-  if (xTaskCreatePinnedToCoreWithCaps(proc_task, "awdl_proc", 8192, nullptr, 3, nullptr, 1,
+  if (xTaskCreatePinnedToCoreWithCaps(proc_task, "awdl_proc", 8192, nullptr, 3, &g_proc_task, 1,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS)
     return ESP_ERR_NO_MEM;
 
@@ -1906,6 +1835,18 @@ esp_err_t awdl_begin(void) {
 #endif
 
   return awdl_netif_init();
+}
+
+esp_err_t awdl_begin(void) {
+  if (g_ring) return ESP_ERR_INVALID_STATE;
+  AwdlSession* ss = static_cast<AwdlSession*>(heap_caps_calloc(1, sizeof(AwdlSession), MALLOC_CAP_SPIRAM));
+  if (!ss) return ESP_ERR_NO_MEM;
+  g_ring = ss->ring;
+  g_peers = &ss->peers;
+  g_gauge = &ss->gauge;
+  const esp_err_t e = awdl_start();
+  if (e != ESP_OK) (void)awdl_end();  // undo the partial start; a failure here is the caller's restart
+  return e;
 }
 
 /* Bring the link down and hand the memory back. The inverse of awdl_begin(), and a
@@ -1931,50 +1872,41 @@ esp_err_t awdl_begin(void) {
  * within the timeout -- in which case NOTHING is freed. A half-torn-down link that
  * reports success is the failure this whole function exists to avoid. */
 esp_err_t awdl_end(void) {
-  if (!g_awdl_netif) return ESP_ERR_INVALID_STATE;
+  if (!g_ring) return ESP_ERR_INVALID_STATE;
 
-  /* 1. Ask the tasks to leave, and wait for both. The cadence task sleeps on a
-   *    notification, so poke it rather than waiting out its timer. */
+  /* 1. Ask the tasks to park, and wait for both. Both sleep on a notification. */
   g_proc_stopped = g_cad_stopped = false;
   g_awdl_stop = true;
+  if (g_proc_task) xTaskNotifyGive(g_proc_task);
   if (g_cadence_task) xTaskNotifyGive(g_cadence_task);
-#if AWDL_CADENCE_TASK
-  const bool want_cad = true;
-#else
-  const bool want_cad = false;
-#endif
-  /* One availability window is 1,048,576 us and proc_task's own idle sleep is one tick,
-     so a second is two orders of magnitude of slack. If they have not answered by then
-     something is wrong that freeing memory would only make worse. */
-  for (int i = 0; i < 1000; i++) {
-    if (g_proc_stopped && (!want_cad || g_cad_stopped)) break;
-    vTaskDelay(1);
-  }
-  if (!g_proc_stopped || (want_cad && !g_cad_stopped)) {
-    g_awdl_stop = false; /* leave the link running rather than half-dead */
+  auto parked = [] { return (!g_proc_task || g_proc_stopped) && (!g_cadence_task || g_cad_stopped); };
+  /* One availability window is 1,048,576 us, so a second is ample slack. If they have not
+     answered by then something is wrong that freeing memory would only make worse. */
+  for (int i = 0; i < 1000 && !parked(); i++) vTaskDelay(1);
+  if (!parked()) {
+    g_awdl_stop = false;
     return ESP_ERR_INVALID_STATE;
   }
-  g_cadence_task = nullptr;
 
   /* 2. The radio. Promiscuous off FIRST: sniffer_cb writes into the frame ring from the
-   *    Wi-Fi task, and proc_task is already gone, so every frame after this point is work
-   *    nobody will ever collect. */
-  // A failure must retain callback storage; the caller performs recovery.
-  esp_err_t error;
-  if ((error = esp_wifi_set_promiscuous(false)) != ESP_OK) return error;
-  if ((error = esp_wifi_set_promiscuous_rx_cb(nullptr)) != ESP_OK) return error;
-  if ((error = esp_wifi_register_80211_tx_cb(nullptr)) != ESP_OK) return error;
-  if ((error = esp_wifi_stop()) != ESP_OK) return error;
-  if ((error = esp_wifi_deinit()) != ESP_OK) return error;
-  heap_caps_free(g_ring);
-  g_ring = nullptr;
+   *    Wi-Fi task. A failure must retain callback storage; the caller performs recovery. */
+  esp_err_t error = esp_wifi_set_promiscuous(false);
+  if (error != ESP_ERR_WIFI_NOT_INIT) {  // NOT_INIT: a failed begin() never started the radio
+    if (error != ESP_OK) return error;
+    if ((error = esp_wifi_set_promiscuous_rx_cb(nullptr)) != ESP_OK) return error;
+    if ((error = esp_wifi_register_80211_tx_cb(nullptr)) != ESP_OK) return error;
+    if ((error = esp_wifi_stop()) != ESP_OK) return error;
+    if ((error = esp_wifi_deinit()) != ESP_OK) return error;
+  }
 
   /* 3. The netif, then its queue. NetifTxFrame is stored BY VALUE, so vQueueDelete frees
    *    every queued frame with it -- there is nothing to drain. */
-  esp_netif_action_disconnected(g_awdl_netif, nullptr, 0, nullptr);
-  esp_netif_action_stop(g_awdl_netif, nullptr, 0, nullptr);
-  esp_netif_destroy(g_awdl_netif);
-  g_awdl_netif = nullptr;
+  if (g_awdl_netif) {
+    esp_netif_action_disconnected(g_awdl_netif, nullptr, 0, nullptr);
+    esp_netif_action_stop(g_awdl_netif, nullptr, 0, nullptr);
+    esp_netif_destroy(g_awdl_netif);
+    g_awdl_netif = nullptr;
+  }
   if (g_netif_txq) {
     vQueueDeleteWithCaps(g_netif_txq);
     g_netif_txq = nullptr;
@@ -1984,24 +1916,18 @@ esp_err_t awdl_end(void) {
     g_retry_frame = nullptr;
   }
 
-  /* 4. State a later begin() must not inherit. The rings, the window and the tick are
-   *    re-initialised by begin() itself; what it does NOT reset is the ND6 seed table,
-   *    whose entries name peers this link no longer has. */
+  /* 4. Nothing can notify the parked tasks any more: delete them, then their memory. */
+  if (g_proc_task) vTaskDeleteWithCaps(g_proc_task);
+  if (g_cadence_task) vTaskDeleteWithCaps(g_cadence_task);
+  g_proc_task = g_cadence_task = nullptr;
+  heap_caps_free(g_ring);  // the whole AwdlSession
+  g_ring = nullptr;
+  g_peers = nullptr;
+  g_gauge = nullptr;
+
+  /* 5. State a later begin() must not inherit and does not reset itself: the ND6 seed
+   *    table, whose entries name peers this link no longer has. */
   g_nseeded = 0;
   g_awdl_stop = false;
   return ESP_OK;
-}
-
-void awdl_transport_stats(AwdlTransportStats* out) {
-  AwdlWinState window;
-  awdl_win_read(&window);
-  out->locked = window.have_lock;
-  out->channelMask = window.ch6_mask;
-  out->ringDrops = g_ring_cur.drops;
-  out->queued = g_netif_txq ? uxQueueMessagesWaiting(g_netif_txq) : 0;
-  portENTER_CRITICAL(&g_netif_tx_mux);
-  out->inflight = g_netif_inflight;
-  out->acksSkipped = g_ack_skipped;
-  out->txQueueDrops = g_tx_queue_drops;
-  portEXIT_CRITICAL(&g_netif_tx_mux);
 }

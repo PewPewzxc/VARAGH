@@ -82,21 +82,6 @@ static inline uint32_t ad_dvzip_reclen(uint32_t hdr) { return hdr & ~AD_DVZIP_FL
 /* True when bit 31 is set: the payload is stored verbatim rather than deflated. */
 static inline bool ad_dvzip_is_flagged(uint32_t hdr) { return (hdr & AD_DVZIP_FLAG) != 0; }
 
-static inline const char* ad_dvzip_end_name(int e) {
-  switch (e) {
-    case AD_DVZIP_END_RECORD:
-      return "end-record";
-    case AD_DVZIP_END_EXACT:
-      return "exact";
-    case AD_DVZIP_END_CUT:
-      return "cut";
-    case AD_DVZIP_END_STRAND:
-      return "strand";
-    default:
-      return "running";
-  }
-}
-
 /* True when a walk finished on a boundary rather than in the middle of a record. Only
    AD_DVZIP_END_RECORD is certainty; AD_DVZIP_END_EXACT is a maybe, because a compressor
    that flushes per record makes every boundary look like the last one. */
@@ -194,17 +179,6 @@ static inline uint32_t ad_dvzip_drain(const uint8_t* buf, uint32_t len, bool fin
   }
   if (end) *end = it.end; /* RUNNING iff this call stopped the walk, not the stream */
   return consumed;
-}
-
-/* Cheap shape test, used to tell a DvZip body from a gzip or a bare cpio. Deliberately
-   only looks at the FIRST record: a body whose later records we cannot interpret is still
-   a DvZip body, and calling it "not a cpio/gzip" instead would be a worse diagnosis. */
-static inline bool ad_dvzip_looks_like(const uint8_t* in, uint32_t len) {
-  if (len < 10) return false;
-  uint32_t first = ((uint32_t)in[0] << 24) | ((uint32_t)in[1] << 16) | ((uint32_t)in[2] << 8) | (uint32_t)in[3];
-  if (first == 0 || first > len - 4) return false;
-  if (in[4] != 0x78) return false;                     /* zlib CMF */
-  return ((((uint32_t)in[4] << 8) | in[5]) % 31) == 0; /* CMF/FLG check value */
 }
 
 #endif /* AD_DVZIP_H */

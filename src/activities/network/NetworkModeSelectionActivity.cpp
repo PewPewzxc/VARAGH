@@ -10,6 +10,9 @@
 #include "components/UIThemeTokens.h"
 #include "components/icons/listIcons.h"
 #include "components/icons/readingStatsIcons.h"
+#if CROSSPOINT_AIRDROP
+#include "components/icons/airdrop.h"
+#endif
 #include "fontIds.h"
 
 namespace fui = freeink::ui;
@@ -18,19 +21,30 @@ namespace {
 constexpr fui::ActionId ACTION_ROW = 1;
 
 #if CROSSINK_APP_CAP_USB_DRIVE
-constexpr NetworkMode menuModes[] = {NetworkMode::JOIN_NETWORK,        NetworkMode::CONNECT_CALIBRE,
-                                     NetworkMode::CREATE_HOTSPOT,      NetworkMode::USB_DRIVE,
+// AirDrop opens the nearby section (index 4); Sync Stats must stay last (menuItemCount drops it).
+constexpr NetworkMode menuModes[] = {NetworkMode::JOIN_NETWORK, NetworkMode::CONNECT_CALIBRE, NetworkMode::CREATE_HOTSPOT,
+                                     NetworkMode::USB_DRIVE,
+#if CROSSPOINT_AIRDROP
+                                     NetworkMode::AIRDROP,
+#endif
                                      NetworkMode::NEARBY_BOOK_RECEIVE, NetworkMode::NEARBY_STATS_SYNC};
-constexpr StrId menuItems[] = {StrId::STR_JOIN_NETWORK, StrId::STR_CALIBRE_WIRELESS,    StrId::STR_CREATE_HOTSPOT,
-                               StrId::STR_USB_DRIVE,    StrId::STR_RECEIVE_NEARBY_BOOK, StrId::STR_NEARBY_STATS_SYNC};
-constexpr StrId menuDescs[] = {StrId::STR_JOIN_DESC,
-                               StrId::STR_CALIBRE_DESC,
-                               StrId::STR_HOTSPOT_DESC,
+constexpr StrId menuItems[] = {StrId::STR_JOIN_NETWORK, StrId::STR_CALIBRE_WIRELESS, StrId::STR_CREATE_HOTSPOT,
+                               StrId::STR_USB_DRIVE,
+#if CROSSPOINT_AIRDROP
+                               StrId::STR_AIRDROP,
+#endif
+                               StrId::STR_RECEIVE_NEARBY_BOOK, StrId::STR_NEARBY_STATS_SYNC};
+constexpr StrId menuDescs[] = {StrId::STR_JOIN_DESC,     StrId::STR_CALIBRE_DESC, StrId::STR_HOTSPOT_DESC,
                                StrId::STR_USB_DRIVE_DESC,
-                               StrId::STR_RECEIVE_NEARBY_BOOK_DESC,
-                               StrId::STR_NEARBY_STATS_SYNC_DESC};
-constexpr UIIcon menuIcons[] = {UIIcon::Wifi,     UIIcon::Library,  UIIcon::Hotspot,
-                                UIIcon::Transfer, UIIcon::Transfer, UIIcon::Transfer};
+#if CROSSPOINT_AIRDROP
+                               StrId::STR_AIRDROP_DESC,
+#endif
+                               StrId::STR_RECEIVE_NEARBY_BOOK_DESC, StrId::STR_NEARBY_STATS_SYNC_DESC};
+constexpr UIIcon menuIcons[] = {UIIcon::Wifi,     UIIcon::Library, UIIcon::Hotspot, UIIcon::Transfer,
+#if CROSSPOINT_AIRDROP
+                                UIIcon::Transfer,
+#endif
+                                UIIcon::Transfer, UIIcon::Transfer};
 #else
 constexpr NetworkMode menuModes[] = {NetworkMode::JOIN_NETWORK, NetworkMode::CONNECT_CALIBRE,
                                      NetworkMode::CREATE_HOTSPOT, NetworkMode::NEARBY_BOOK_RECEIVE,
@@ -192,6 +206,10 @@ void NetworkModeSelectionActivity::buildListScreen(UiApp::ScreenType& screen) {
     item.subtitle = I18N.get(menuDescs[i]);
     if (menuModes[i] == NetworkMode::USB_DRIVE) {
       item.icon = fui::bitmapFromIcon(icon_usb_32);
+#if CROSSPOINT_AIRDROP
+    } else if (menuModes[i] == NetworkMode::AIRDROP) {
+      item.icon = fui::bitmapFromIcon(icon_airdrop_32);
+#endif
     } else if (menuModes[i] == NetworkMode::NEARBY_BOOK_RECEIVE) {
       item.icon = fui::bitmapFromIcon(icon_chevrons_left_right_ellipsis_32);
     } else if (menuModes[i] == NetworkMode::NEARBY_STATS_SYNC) {

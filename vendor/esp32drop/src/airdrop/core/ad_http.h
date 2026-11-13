@@ -177,14 +177,6 @@ static bool http_drain_body(struct HttpRdr* r, bool chunked, int clen) {
   return true;
 }
 
-// A request line is by definition "<VERB> <PATH> HTTP/x.y". Anything else means we
-// are not at a request boundary -- we are reading the middle of a body -- and every
-// byte after it is garbage. Detected here so it can never be answered into.
-static bool http_reqline_ok(const char* s) {
-  if (strncmp(s, "POST /", 6) != 0 && strncmp(s, "GET /", 5) != 0) return false;
-  return strstr(s, " HTTP/1.") != 0;
-}
-
 // ---------------------------------------------------------------------------
 // DvZip completion
 // ---------------------------------------------------------------------------
@@ -240,6 +232,10 @@ struct HttpSink {
    * empty -- dvzip_complete below judges the residue, and its verdict equals its verdict
    * on the whole body only under those three. */
   void (*progress)(struct HttpSink* s);
+  /* Optional. True while the sender has announced more bytes than have arrived: a
+     boundary-aligned stall is then a pause, not the end. Measured pauses (3004 ms,
+     4104 ms) outlast settle_ms, so without this a big file is cut at a record edge. */
+  bool (*more_expected)(struct HttpSink* s);
 };
 
 enum {
@@ -311,7 +307,7 @@ static int http_recv_chunked(struct HttpRdr* r, struct HttpSink* sink, uint32_t 
     // Boundary-aligned: only the sender's silence can distinguish "done" from
     // "flushed a record". If something does arrive, keep its header and process it
     // through the normal path above rather than duplicating that path here.
-    if (set_timeout) set_timeout(r, settle_ms);
+    if (set_timeout) set_timeout(r, sink->more_expected && sink->more_expected(sink) ? body_ms : settle_ms);
     int lr = hr_line(r, ln, sizeof(ln));
     if (lr < 0) return HTTP_RECV_OK_SILENCE;
     if (r->poisoned) return HTTP_RECV_POISONED;

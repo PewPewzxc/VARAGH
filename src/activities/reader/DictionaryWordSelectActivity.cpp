@@ -165,8 +165,9 @@ void DictionaryWordSelectActivity::onEnter() {
   ignoreInitialBackRelease_ = mappedInput.isPressed(MappedInputManager::Button::Back);
   const bool consumeInitialConfirm = mappedInput.isPressed(MappedInputManager::Button::Confirm);
   if (!buildWorkingSet(consumeInitialConfirm)) {
-    if (workingSetMemoryError_) {
-      GUI.drawPopup(renderer, tr(STR_MEMORY_ERROR));
+    if (workingSetFailed_) {
+      // Only a failed allocation is a memory error; a page the working set cannot hold is not.
+      GUI.drawPopup(renderer, workingSetOutOfMemory_ ? tr(STR_MEMORY_ERROR) : tr(STR_PAGE_LOAD_ERROR));
       renderer.displayBuffer();
       delay(1000);
     }
@@ -181,7 +182,8 @@ void DictionaryWordSelectActivity::onEnter() {
 }
 
 bool DictionaryWordSelectActivity::buildWorkingSet(const bool consumeInitialConfirm) {
-  workingSetMemoryError_ = false;
+  workingSetFailed_ = false;
+  workingSetOutOfMemory_ = false;
   if (!page) {
     LOG_ERR("DICT", "Cannot build word selection without a reader page");
     return false;
@@ -189,12 +191,12 @@ bool DictionaryWordSelectActivity::buildWorkingSet(const bool consumeInitialConf
   navigator.releaseWorkingSet();
   workingSet_.clear();
   if (!allocateWorkingSet()) {
-    workingSetMemoryError_ = true;
+    workingSetFailed_ = true;
     return false;
   }
   prebuildAdvanceTable();
   if (!extractWords() || !mergeHyphenatedWords()) {
-    workingSetMemoryError_ = true;
+    workingSetFailed_ = true;
     navigator.releaseWorkingSet();
     workingSet_.clear();
     return false;
@@ -380,7 +382,7 @@ bool DictionaryWordSelectActivity::allocateWorkingSet() {
                                    const bool stripLeadingSecond) {
     if (first.length == 0 || first.text[first.length - 1] != '-' || first.text[0] == '-') return;
     const size_t secondSkip = stripLeadingSecond && second.length > 0 && second.text[0] == '-' ? 1 : 0;
-    const size_t mergedLength = first.length - 1 + second.length - secondSkip;
+    const size_t mergedLength = mergedLookupLength(first.length, second.length - secondSkip, /*keepHyphen=*/true);
     if (mergedLength > UINT16_MAX || !addBudgetBytes(budget.textBytes, mergedLength + 1)) valid = false;
   };
 
@@ -473,6 +475,7 @@ bool DictionaryWordSelectActivity::allocateWorkingSet() {
       heap = MemoryBudget::snapshot();
       LOG_ERR("DICT", "OOM allocating word metadata (%u bytes, free=%u maxAlloc=%u)", static_cast<unsigned>(wordBytes),
               heap.freeHeap, heap.maxAllocHeap);
+      workingSetOutOfMemory_ = true;
       workingSet_.clear();
       return false;
     }
@@ -483,6 +486,7 @@ bool DictionaryWordSelectActivity::allocateWorkingSet() {
       heap = MemoryBudget::snapshot();
       LOG_ERR("DICT", "OOM allocating word text arena (%u bytes, free=%u maxAlloc=%u)",
               static_cast<unsigned>(budget.textBytes), heap.freeHeap, heap.maxAllocHeap);
+      workingSetOutOfMemory_ = true;
       workingSet_.clear();
       return false;
     }
@@ -493,6 +497,7 @@ bool DictionaryWordSelectActivity::allocateWorkingSet() {
       heap = MemoryBudget::snapshot();
       LOG_ERR("DICT", "OOM allocating row metadata (%u bytes, free=%u maxAlloc=%u)", static_cast<unsigned>(rowBytes),
               heap.freeHeap, heap.maxAllocHeap);
+      workingSetOutOfMemory_ = true;
       workingSet_.clear();
       return false;
     }
@@ -503,6 +508,7 @@ bool DictionaryWordSelectActivity::allocateWorkingSet() {
       heap = MemoryBudget::snapshot();
       LOG_ERR("DICT", "OOM allocating word measurement scratch (%u bytes, free=%u maxAlloc=%u)",
               static_cast<unsigned>(scratchBytes), heap.freeHeap, heap.maxAllocHeap);
+      workingSetOutOfMemory_ = true;
       workingSet_.clear();
       return false;
     }
@@ -1223,7 +1229,7 @@ bool DictionaryWordSelectActivity::mergeHyphenatedWords() {
     if (!appendMergedText(lastText, lastKeep, nextText + nextSkip, next.textLen - nextSkip, mergedOffset)) {
       return false;
     }
-    const size_t mergedLength = lastKeep + next.textLen - nextSkip;
+    const size_t mergedLength = mergedLookupLength(last.textLen, next.textLen - nextSkip, last.hasSourceHyphen);
     last.continuationIndex = static_cast<int>(nextWordIndex);
     next.continuationOf = static_cast<int>(lastWordIndex);
     last.lookupOffset = mergedOffset;

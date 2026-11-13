@@ -50,6 +50,7 @@ enum class SettingAction {
   Language,
   KeyboardLayouts,
   DownloadFonts,
+  ExtraFiles,
   TtfRendering,
   ClockSync,
 };

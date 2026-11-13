@@ -5,8 +5,8 @@
 class GfxRenderer;
 
 // The release codename's mark: a 21x17 pixel-art face shown after the version
-// and codename, e.g. "1.3.0 Lion" with a lion face (Settings > System footer and
-// the boot screen). VARAGH 1.1.0-1.2.1 were "Tiger" with a tiger face.
+// and codename, e.g. "1.4.0 Cheetah" with a cheetah face (Settings > System footer and
+// the boot screen). 1.1.0-1.2.1 were "Tiger", 1.3.x "Lion", each with its own face.
 // The full version string stays in CROSSINK_VERSION for
 // update checks, the update screen, the web portal and diagnostics.
 namespace CodenameMark {

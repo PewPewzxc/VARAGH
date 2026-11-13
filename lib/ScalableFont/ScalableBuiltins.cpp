@@ -5,6 +5,7 @@
 
 #include <optional>
 
+#include "../../src/BuiltinBitter.h"
 #include "../../src/ReaderFontSizeStep.h"
 #include "../../src/fontIds.h"
 #include "HalScalableFont.h"
@@ -17,13 +18,23 @@ std::optional<HalScalableFont> persianBoldFace;
 // VARAGH: pronunciation (IPA) letters and combining marks, the family's shared fallback.
 std::optional<HalScalableFont> ipaFace;
 bool ready[2] = {};
+// With CROSSINK_BUILTIN_BITTER=0 the Bitter outlines stay out of the firmware (~640 KB);
+// Bitter is then the SD family "Bitter" and built-in family 1 is never ready.
 const uint8_t* const assets[] = {lexenddeca_regularOutline,    lexenddeca_boldOutline,  lexenddeca_italicOutline,
-                                 lexenddeca_bolditalicOutline, bitter_regularOutline,   bitter_boldOutline,
-                                 bitter_italicOutline,         bitter_bolditalicOutline};
+                                 lexenddeca_bolditalicOutline,
+#if CROSSINK_BUILTIN_BITTER
+                                 bitter_regularOutline,        bitter_boldOutline,
+                                 bitter_italicOutline,         bitter_bolditalicOutline
+#endif
+};
 constexpr size_t lengths[] = {sizeof(lexenddeca_regularOutline), sizeof(lexenddeca_boldOutline),
                               sizeof(lexenddeca_italicOutline),  sizeof(lexenddeca_bolditalicOutline),
+#if CROSSINK_BUILTIN_BITTER
                               sizeof(bitter_regularOutline),     sizeof(bitter_boldOutline),
-                              sizeof(bitter_italicOutline),      sizeof(bitter_bolditalicOutline)};
+                              sizeof(bitter_italicOutline),      sizeof(bitter_bolditalicOutline)
+#endif
+};
+constexpr unsigned builtinFamilies = sizeof(lengths) / sizeof(lengths[0]) / 4;
 constexpr int ids[2][4] = {{LEXENDDECA_10_FONT_ID, LEXENDDECA_12_FONT_ID, LEXENDDECA_14_FONT_ID, LEXENDDECA_16_FONT_ID},
                            {BITTER_10_FONT_ID, BITTER_12_FONT_ID, BITTER_14_FONT_ID, BITTER_16_FONT_ID}};
 }  // namespace
@@ -43,7 +54,7 @@ int scalableBuiltinReaderFontId(unsigned family, unsigned points) {
 }
 void ensureScalableBuiltinFamily(GfxRenderer& renderer, unsigned family) {
   ScalableFontAccess access;
-  if (family >= 2 || ready[family]) return;
+  if (family >= builtinFamilies || ready[family]) return;
   bool ok = true;
   for (unsigned style = 0; style < 4; ++style) {
     unsigned i = family * 4 + style;

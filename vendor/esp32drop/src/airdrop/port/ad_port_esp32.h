@@ -26,4 +26,6 @@ bool ad_request_answer(bool accept);
 bool ad_request_info(AdAskInfo* out);
 void ad_reject_too_large();
 void ad_stats_read(AdStatus* out);
-uint32_t ad_listen_stack_min_free();
+// Diagnostic lines from either task; the main task saves them with ad_log_take().
+void ad_logf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+uint32_t ad_log_take(char* out, uint32_t cap);

@@ -1583,6 +1583,10 @@ inline std::vector<SettingInfo> buildGeneralSettingsList(const std::vector<Setti
     settings.push_back(SettingInfo::Action(StrId::STR_CLOCK_SYNC_NOW, SettingAction::ClockSync));
   }
   settings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
+#if defined(CROSSINK_HYPHENATION_SD) && CROSSINK_HYPHENATION_SD
+  // Readers whose firmware leaves Bitter and six hyphenation tables to the card.
+  settings.push_back(SettingInfo::Action(StrId::STR_EXTRA_FILES, SettingAction::ExtraFiles));
+#endif
   settings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
   return settings;
 }

@@ -41,6 +41,7 @@ static_assert(isNetworkBootTargetValue(static_cast<uint32_t>(NetworkBootTarget::
               "Every network boot target must pass RTC target validation");
 
 void silentRestart();                                            // home screen
+void silentRestartToAirDropFiles();                              // Files, opened at /AirDrop
 void silentRestartToReader(bool cleanImageBaseOnEntry = false);  // currently-open EPUB (APP_STATE.openEpubPath)
 // Reboots immediately after an activity releases exclusive raw storage.
 void restartToHomeAfterStorageHandoff();

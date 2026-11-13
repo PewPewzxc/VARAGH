@@ -392,6 +392,7 @@ RTC_NOINIT_ATTR uint32_t silentReaderPageBuildFlags;
 constexpr uint32_t SILENT_REBOOT_MAGIC = 0xC1EAB007;
 constexpr uint32_t SILENT_REBOOT_TARGET_HOME = 0;
 constexpr uint32_t SILENT_REBOOT_TARGET_READER = 1;
+constexpr uint32_t SILENT_REBOOT_HOME_AIRDROP_FILES = 1;  // home payload: open /AirDrop in Files
 constexpr uint32_t SILENT_REBOOT_READER_CLEAN_IMAGE_BASE = 1U << 0;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_MAGIC = 0xC1EAB017;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_AUTO_TURN = 1U << 0;
@@ -457,6 +458,7 @@ static void silentRestartToHome(const uint32_t payload, const char* const descri
 }
 
 void silentRestart() { silentRestartToHome(0, "target=home"); }
+void silentRestartToAirDropFiles() { silentRestartToHome(SILENT_REBOOT_HOME_AIRDROP_FILES, "target=home/airdrop-files"); }
 
 void restartToHomeAfterStorageHandoff() {
   // Keep this distinct from other callers: USB Drive has released raw SD
@@ -1712,7 +1714,12 @@ void setup() {
     // X4's HALF refresh is the same single-pass clean transition already used
     // by network screens. Keep X3's existing full refresh behavior unchanged.
     const auto homeRefreshMode = gpio.deviceIsX3() ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH;
-    activityManager.goHome(HomeMenuItem::NONE, homeRefreshMode);
+    // AirDrop's "Show files": the file list needs this full start, not the radio-only one.
+    if (snapshotPayload == SILENT_REBOOT_HOME_AIRDROP_FILES) {
+      activityManager.goToFileBrowser("/AirDrop");
+    } else {
+      activityManager.goHome(HomeMenuItem::NONE, homeRefreshMode);
+    }
   } else if (APP_STATE.lastSleepApp != 0 && !APP_STATE.lastSleepFromReader && gpio.hasTouch() &&
              !mappedInputManager.isPressed(MappedInputManager::Button::Back)) {
     // VARAGH: sleep began inside an app, so waking returns to it, as it does to

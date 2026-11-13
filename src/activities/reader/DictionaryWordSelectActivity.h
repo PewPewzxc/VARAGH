@@ -174,7 +174,8 @@ class DictionaryWordSelectActivity final : public Activity {
   uint16_t flashcardCategoryForLookup_ = UINT16_MAX;
   int activePageOffset_ = 0;
   bool workingSetSuspended_ = false;
-  bool workingSetMemoryError_ = false;
+  bool workingSetFailed_ = false;
+  bool workingSetOutOfMemory_ = false;
   DictionaryClippingRequest pendingClippingRequest_{};
   bool hasPendingClippingRequest_ = false;
   bool hasCrossPageSelection_ = false;

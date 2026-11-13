@@ -8,14 +8,13 @@
 
 #include "../core/awdl_peer.h"
 #include "../core/awdl_select.h"
-#include "../core/awdl_src.h"
 #include "../core/awdl_tick.h"
 #include "../core/awdl_window.h"
 #include "esp_err.h"
 #include "esp_netif.h"
 
 // Starts the radio, netif and workers. Returns the first failure without aborting.
-// Startup failure may leave partial resources; the caller must perform recovery.
+// On failure it tears down what it started; if that teardown also fails, recover by restart.
 esp_err_t awdl_begin(void);
 
 // Joins workers, stops Wi-Fi and releases session buffers. Returns an error if
@@ -52,14 +51,4 @@ void awdl_ll_of_mac(const uint8_t mac[6], uint8_t out_ll[16]);
 void awdl_seed_peer(const uint8_t mac[6]);
 // IPv6 socket scope ID; zero before startup.
 int awdl_netif_index(void);
-uint32_t awdl_cadence_stack_free_words(void);
 
-// Main-task diagnostic snapshot; never used to make transport decisions.
-struct AwdlTransportStats {
-  uint32_t ringDrops;
-  uint32_t acksSkipped, txQueueDrops;
-  uint16_t channelMask;
-  uint8_t queued, inflight;
-  bool locked;
-};
-void awdl_transport_stats(AwdlTransportStats* out);

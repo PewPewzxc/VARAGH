@@ -35,3 +35,5 @@ dist-publish/
 /sdkconfig.*
 
 lib/ScalableFont/*.generated.h
+
+/vendor/esp32drop/src/airdrop/core/ad_identity.h

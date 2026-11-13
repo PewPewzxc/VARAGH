@@ -1,7 +1,8 @@
 from pathlib import Path
 import subprocess, tempfile
+import os
 r=Path(__file__).resolve().parents[2]
-s=(r/'vendor/esp32drop/src/airdrop/port/ad_port_esp32.cpp').read_text()
+s=(r/'vendor/esp32drop/src/airdrop/port/ad_port_esp32.cpp').read_text(encoding='utf-8')
 mail=s[s.index('enum class StreamSlot'):s.index('// ---- /Upload receive + decode')]
 poll=s[s.index('  auto pending = StreamSlot::Pending;',s.index('void ad_poll(void)')):s.index('\n}',s.index('void ad_poll(void)'))]
 code='''#include <atomic>
@@ -18,7 +19,11 @@ static std::atomic<bool> g_stop{false};
 static std::atomic<uint32_t> clockMs{0};
 uint32_t millis(){return clockMs.load();}
 #define pdMS_TO_TICKS(x) (x)
-void vTaskDelay(int){std::this_thread::sleep_for(1ms);}
+typedef void* TaskHandle_t;
+#define pdTRUE 1
+static std::atomic<int> notified{0};
+uint32_t ulTaskNotifyTake(int,int){std::this_thread::sleep_for(1ms);return 0;}
+void xTaskNotifyGive(TaskHandle_t){notified++;}
 '''+mail+'\nvoid service(){\n'+poll+'}\n'+'''
 std::atomic<bool> entered{false},releaseCallback{false};
 bool result=true;
@@ -28,6 +33,7 @@ bool cb(void*,AdStreamEvent,const uint8_t* p,uint32_t n){
  assert(n==1 && *p==42);return result;
 }
 int main(){
+ g_listen_task=(TaskHandle_t)&notified;
  for(int mode=0;mode<6;++mode){
   g_stop=false;clockMs=0;entered=false;releaseCallback=false;result=mode!=1;
   ad_on_stream(cb,nullptr);
@@ -45,16 +51,17 @@ int main(){
   if(mode==4)g_stop=true;
   if(mode==5)clockMs=10001;
   assert(producer.wait_for(20ms)==std::future_status::timeout);
-  releaseCallback=true;consumer.get();
+  int before=notified.load();releaseCallback=true;consumer.get();
+  assert(notified.load()==before+1);
   assert(producer.get()==(mode==0));
   assert(g_stream_slot.load()==StreamSlot::Idle);
  }
- puts("actual stream mailbox: success, refusal, pending/processing Stop and timeout passed");
+ puts("actual stream mailbox: success, refusal, pending/processing Stop, timeout and producer wake passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='airdrop-test-') as td:
  source=Path(td)/'test.cpp'
  binary=Path(td)/'test'
- Path(str(source)).write_text(code)
- subprocess.run(['c++','-std=c++17','-pthread','-fsanitize=address,undefined','-g',str(source),'-o',str(binary)],check=True)
+ Path(str(source)).write_text(code, encoding='utf-8')
+ subprocess.run([*os.environ.get('CXX','c++').split(),'-std=c++17','-pthread',*os.environ.get('AIRDROP_CFLAGS','-fsanitize=address,undefined').split(),'-g',str(source),'-o',str(binary)],check=True)
  subprocess.run([str(binary)],check=True)

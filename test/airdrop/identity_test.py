@@ -24,9 +24,9 @@ int main(void) {
   fwrite(AD_ASK_BODY, 1, sizeof(AD_ASK_BODY), stdout);
 }
 ''')
-    for classic, name in [(0, 'CrossPoint X4 Pro'), (1, 'CrossPoint X4C')]:
+    for classic, name in [(0, 'VARAGH X4 Pro'), (1, 'VARAGH X4 Classic')]:
         exe = root / f'identity-{classic}'
-        subprocess.run(shlex.split(os.environ.get('CC', 'cc')) + ['-I' + str(ROOT), f'-DFREEINK_DEVICE_X4CLASSIC={classic}', str(source), '-o', str(exe)], check=True)
+        subprocess.run(shlex.split(os.environ.get('CC', 'cc')) + os.environ.get('AIRDROP_CFLAGS', '').split() + ['-I' + str(ROOT), f'-DFREEINK_DEVICE_X4CLASSIC={classic}', str(source), '-o', str(exe)], check=True)
         data = subprocess.check_output([str(exe)])
         disc_len, ask_len = struct.unpack('!HH', data[:4])
         assert len(data) == 4 + disc_len + ask_len

@@ -10,9 +10,11 @@ Two lists come out of it:
   scripts/wordle/answer_candidates.txt that are headwords with a substantial
   entry, without plain plurals and -ed forms.
 
-Guesses are stored two bytes a word: the words are sorted, grouped by their
-first two letters (kBucketStart) and each keeps only its last three letters as
-a base-26 number (kTail). Answers are indices into that list.
+Guesses are stored in about 11 bits a word: the words are sorted, grouped by
+their first two letters (kBucketStart) and each keeps only its last three
+letters as a base-26 number. Inside a bucket those numbers rise, so only the
+gap to the previous one is stored, Rice-coded (kTailBits, kBucketBit). Answers
+are indices into that list.
 
 Usage:
     python scripts/build_wordle_words.py --dict <folder with the .idx and .syn>
@@ -91,6 +93,23 @@ def main() -> None:
         bucket_start[bucket + 1] += bucket_start[bucket]
     tails = [((ord(w[2]) - 97) * 26 + (ord(w[3]) - 97)) * 26 + (ord(w[4]) - 97) for w in guesses]
 
+    def rice(k):
+        bits, bucket_bit = [], []
+        for bucket in range(676):
+            bucket_bit.append(len(bits))
+            previous = -1
+            for tail in tails[bucket_start[bucket] : bucket_start[bucket + 1]]:
+                gap = tail - previous - 1
+                previous = tail
+                bits += [1] * (gap >> k) + [0] + [(gap >> i) & 1 for i in range(k - 1, -1, -1)]
+        bucket_bit.append(len(bits))
+        bits += [0] * (-len(bits) % 8)
+        packed = [int("".join(map(str, bits[i : i + 8])), 2) for i in range(0, len(bits), 8)]
+        return packed, bucket_bit
+
+    rice_k = min(range(4, 13), key=lambda k: len(rice(k)[0]))
+    tail_bits, bucket_bit = rice(rice_k)
+
     def rows(values, per_row=16):
         lines = []
         for start in range(0, len(values), per_row):
@@ -108,8 +127,12 @@ def main() -> None:
 //
 // Guesses are sorted and grouped by their first two letters: kBucketStart[b] is
 // the index of the first word whose first two letters are bucket b
-// (letter0 * 26 + letter1). kTail holds the last three letters of each word as
-// a base-26 number. kAnswers indexes kTail.
+// (letter0 * 26 + letter1). The last three letters of a word are a base-26
+// number; within a bucket these rise, and kTailBits stores each gap to the
+// previous one (minus one; the first counts from -1) as a Rice code, most
+// significant bit first: gap >> kRiceBits one-bits, a zero bit, then the low
+// kRiceBits bits. kBucketBit[b] is the bit where bucket b starts. kAnswers
+// holds word indices.
 
 namespace wordle_words {{
 
@@ -120,8 +143,14 @@ static const uint16_t kBucketStart[677] = {{
 {rows(bucket_start)}
 }};
 
-static const uint16_t kTail[kWordCount] = {{
-{rows(tails)}
+constexpr unsigned kRiceBits = {rice_k};
+
+static const uint32_t kBucketBit[677] = {{
+{rows(bucket_bit)}
+}};
+
+static const uint8_t kTailBits[{len(tail_bits)}] = {{
+{rows(tail_bits, 24)}
 }};
 
 static const uint16_t kAnswers[kAnswerCount] = {{
@@ -133,7 +162,8 @@ static const uint16_t kAnswers[kAnswerCount] = {{
         encoding="utf-8",
         newline="\n",
     )
-    print(f"{OUTPUT.relative_to(REPO)}: {len(guesses)} guesses, {len(answers)} answers")
+    print(f"{OUTPUT.relative_to(REPO)}: {len(guesses)} guesses, {len(answers)} answers, "
+          f"{len(tail_bits)} bytes of tails (Rice k={rice_k})")
     print("sample answers:", " ".join(answers[:: max(1, len(answers) // 40)]))
 
 

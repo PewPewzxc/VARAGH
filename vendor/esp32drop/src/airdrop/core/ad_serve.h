@@ -6,7 +6,7 @@
 // Same contract as awdl_http.h: dependency-free integer C over the abstract
 // HttpRdr, so the SAME code compiles into the firmware and into a host test
 // (tools/test-serve.sh) that scripts both the bytes and their arrival times. The
-// budgets in here (10000 / 800 / 3000 / 400 / 300+1500) each encode a measured
+// budgets in here (10000 / 800 / 3000 / 400) each encode a measured
 // failure; the comments at each site say which. Do not retune one without a test.
 //
 // What stays OUT of this file, on purpose:
@@ -17,10 +17,6 @@
 //   - firmware side effects (counters, UI flips, the upload pipeline) -- those
 //     are pointer-fields and hooks so the .ino keeps owning its globals
 #pragma once
-/* G2 measurement hook -- see AD_G2_READ_BODIES below. Off unless the build asks. */
-#ifndef AD_G2_BODY_MS
-#define AD_G2_BODY_MS 20000
-#endif
 #include <stdio.h>
 
 #include "ad_http.h"
@@ -33,11 +29,6 @@ typedef void (*http_logline_fn)(struct HttpServe* s, const char* line);
 typedef void (*http_upload_fn)(struct HttpServe* s, bool chunked, int clen);
 typedef void (*http_hook_fn)(struct HttpServe* s);
 typedef const char* (*http_ask_fn)(struct HttpServe*, bool chunked, int clen);
-/* "Has the sender come back for /Upload yet?" -- a zero-timeout look at the listening
-   socket. Optional; NULL falls back to a bounded wait. It is the signal that the /Ask
-   drain below is finished, and it is exact: sharingd opens the upload connection the
-   moment it has read our 200, on the very next ephemeral port (ask_port+1 in all twelve
-   captured successes). */
 typedef bool (*http_pred_fn)(struct HttpServe* s);
 
 struct HttpServe {
@@ -66,7 +57,6 @@ struct HttpServe {
   http_pred_fn cancelled;        // optional stop signal while reading metadata
   http_pred_fn approve;          // optional user approval before /Ask succeeds
   http_pred_fn authorized;       // optional peer-bound authorization for /Upload
-  http_pred_fn peer_waiting;     // optional: a connection is pending on the listener
   http_upload_fn upload;         // the /Upload body pipeline (firmware: rx_upload)
 
   uint32_t enter_ms;  // when the HTTP phase began (for http_idle_end)
@@ -273,31 +263,6 @@ static void serve_http_run(struct HttpServe* sv) {
       break;                          // /Upload is the last request; close after
     }
 
-#ifdef AD_G2_READ_BODIES
-    /* G2 ONLY, and it deliberately breaks the shipping trade-off.
-     *
-     * /Discover and /Ask are answered WITHOUT reading their bodies, for reasons measured
-     * and written out below and at the /Ask drain: the response does not depend on the
-     * body, and waiting for it cost a measured 10,005 ms once. The consequence is stated
-     * in the /Ask comment: "we have never read a single byte of this body, in the whole
-     * life of the project" -- ask_linger binned=0 in all fifteen captured occurrences.
-     *
-     * That is measurement G2, and the send path cannot be written without it: a sender
-     * has to PRODUCE these bodies, and airdrop_cert.h's blobs are receiver-shaped.
-     * So this build reads them first and lets the port's HTTP_TRACE tap see them.
-     *
-     * NOT SHIPPABLE, and the default is off. Reading /Ask means pulling ~129 KB through a
-     * 6.25 %-duty link before the transfer can start, which is exactly the cost the
-     * shipping path exists to avoid, and it may push sharingd into its 45 s ASK timeout.
-     * A measurement build may pay that; a user's badge may not. */
-    if (is_disc || is_ask) {
-      sv->set_timeout(r, AD_G2_BODY_MS);
-      SV_LOG(sv, "G2: reading the body before answering (clen=%d chunk=%d)", clen, chunked);
-      http_drain_body(r, chunked, clen);
-      SV_LOG(sv, "G2: body read done poisoned=%d eof=%d to=%d", r->poisoned, r->eof, r->timed_out);
-    }
-#endif
-
     if (is_disc) {
       // Answer FIRST, drain afterwards. Draining first cost a measured 10,005ms on
       // one exchange: sharingd sends /Discover with Transfer-Encoding: chunked, and
@@ -330,8 +295,8 @@ static void serve_http_run(struct HttpServe* sv) {
         http_send_response(sv, "403 Forbidden", NULL, 0, true);
         break;
       }
-      // Metadata-aware receivers consumed the body before consent. Legacy users
-      // still use the bounded post-response drain below. Upload uses a new connection.
+      // prepare_ask read the whole body before consent (the firmware always sets it), so
+      // closing after the 200 cannot RST unread data. Upload uses a new connection.
       if (!http_send_response(sv, "200 OK", sv->ask_body, sv->ask_len, true)) {
         if (sv->response_failed) sv->response_failed(sv);
         break;
@@ -341,71 +306,7 @@ static void serve_http_run(struct HttpServe* sv) {
       if (sv->on_ask_sent) sv->on_ask_sent(sv);  // firmware: flip to "Receiving" UI
       SV_LOG(sv, "ask_ok since_disc=%lu ms_since_req=%lu conn=close",
              (unsigned long)(*sv->disc_ms ? (sv->now(sv) - *sv->disc_ms) : 0), (unsigned long)(sv->now(sv) - t_req));
-      /* DRAIN UNTIL THE SENDER COMES BACK, not for a fixed 1500 ms.
-       *
-       * Measured on hardware, and this is the whole reason the drain exists:
-       *
-       *   a 2.4 MB photo -> /Ask body 122,543 B -> transfers
-       *   a 3.9 MB photo -> /Ask body 214,480 B -> silently never starts
-       *   macOS net.inet.tcp.sendspace on the sending Mac = 131,072 B
-       *
-       * 131,072 lies between them, and that is not a coincidence about file size. sharingd
-       * hands the whole /Ask request to one send() and posts its receive only when the
-       * LAST byte has been queued. If the request fits in its own socket send buffer the
-       * send completes against local memory, it reads the 200 that has been waiting since
-       * millisecond three, and opens /Upload -- then our close throws away the ~110 KB it
-       * never transmitted. If the request does NOT fit, the send never completes, our 200
-       * is delivered and ACKed but never read, and sharingd dies on its own 45 s timer:
-       * "E [AirDropNW] ASK request timeout" in the Mac's log, and on our side nothing at
-       * all -- ask_ok, binned=0, badge on "Receiving". That is the silent failure.
-       *
-       * So the old design worked by relying on the SENDER to abandon its own body, and the
-       * working transfer had 8,529 bytes of margin. What decides the size is the preview
-       * image, which tracks how detailed the picture is -- not how many bytes the file has.
-       * An ordinary small file with a busy preview reaches the same cliff.
-       *
-       * We do NOT need to read the body. We need to read (body - sendspace), which is zero
-       * for everything that works today. peer_waiting() is exactly that stopping point: it
-       * goes true when sharingd has read our 200 and opened the upload connection. So a
-       * transfer that never needed the drain pays one syscall for it.
-       *
-       * Nothing is PARSED here, so nothing can desynchronise. And reading before closing
-       * still serves its original purpose: closing with unread data makes lwIP emit a RST,
-       * and a RST can destroy data the peer has not yet handed to its application
-       * (RFC 2525 2.17) -- including the 200 we just sent. */
-      if (sv->prepare_ask) break;  // metadata reader consumed all framing
-      sv->set_timeout(r, 300);
-      {
-        unsigned char scrap[512];
-        uint32_t t0 = sv->now(sv), binned = 0;
-        int tmo = 0;
-        const char* why = "cap";
-        for (;;) {
-          if (sv->peer_waiting && sv->peer_waiting(sv)) {
-            why = "peer";
-            break;
-          }
-          if (r->eof) {
-            why = "eof";
-            break;
-          }
-          /* 30 s covers the worst case measured -- 83,408 bytes still to drain at the
-             5.5 KB/s this link's 5,760-byte receive window allows, about 15 s -- with room
-             to spare. It is a backstop, not the expected exit: peer_waiting ends it. */
-          if ((uint32_t)(sv->now(sv) - t0) >= 30000) {
-            why = "cap";
-            break;
-          }
-          int g = hr_read(r, scrap, sizeof(scrap));
-          if (g > 0)
-            binned += (uint32_t)g;
-          else
-            tmo++; /* a timeout is not the end of anything on a 6.25%-duty link */
-        }
-        SV_LOG(sv, "ask_drain binned=%lu why=%s tmo=%d eof=%d ms=%lu", (unsigned long)binned, why, tmo, r->eof,
-               (unsigned long)(sv->now(sv) - t0));
-      }
-      break;  // /Upload arrives on a fresh connection
+      break;  // prepare_ask consumed the body; /Upload arrives on a fresh connection
     }
 
     http_drain_body(r, chunked, clen);  // consume the request body (chunked or CL)

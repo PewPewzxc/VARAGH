@@ -72,7 +72,10 @@ class AdCpioStream {
           if (regular) {
             const char* base = strrchr(name, '/');
             base = base ? base + 1 : name;
-            if (!*base || strlen(base) > 255 || !sink.begin(sink.ctx, base, size)) return fail();
+            // The sink gets a leaf name only: never empty, ".", ".." or a path.
+            if (!*base || !strcmp(base, ".") || !strcmp(base, "..") || strlen(base) > 255 ||
+                !sink.begin(sink.ctx, base, size))
+              return fail();
           }
           remaining = size;
           padding = aligned ? (4 - (offset & 3)) & 3 : 0;

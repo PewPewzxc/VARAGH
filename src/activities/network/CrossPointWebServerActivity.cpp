@@ -162,6 +162,13 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
     activityManager.goToUsbDrive();
     return;
   }
+#if CROSSPOINT_AIRDROP
+  if (mode == NetworkMode::AIRDROP) {
+    // AirDrop needs the clean heap of a network boot (ActivityManager::resumeFileTransferFromNetworkBoot).
+    silentRestartToNetwork(NetworkBootTarget::FILE_TRANSFER, static_cast<uint32_t>(NetworkMode::AIRDROP));
+    return;
+  }
+#endif
 
   networkMode = mode;
   isApMode = (mode == NetworkMode::CREATE_HOTSPOT);
@@ -191,6 +198,7 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
         break;
       case NetworkMode::NEARBY_STATS_SYNC:
       case NetworkMode::NEARBY_BOOK_RECEIVE:
+      case NetworkMode::AIRDROP:
         break;
     }
     return;

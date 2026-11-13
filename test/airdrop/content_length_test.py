@@ -2,8 +2,9 @@
 # The progress stub models a bounded consuming decoder; parser/codec tests are separate.
 from pathlib import Path
 import subprocess, tempfile
+import os
 root=Path(__file__).resolve().parents[2]
-s=(root/'vendor/esp32drop/src/airdrop/port/ad_port_esp32.cpp').read_text()
+s=(root/'vendor/esp32drop/src/airdrop/port/ad_port_esp32.cpp').read_text(encoding='utf-8')
 a=s.index('    HttpSink sk{};',s.index('} else if (clen > 0) {',s.index('static void rx_upload')))
 b=s.index('\n  }\n\n  /* STREAMED BODIES',a)
 loop=s[a:b]
@@ -53,6 +54,6 @@ int main(){
 with tempfile.TemporaryDirectory(prefix='airdrop-test-') as td:
  source=Path(td)/'test.cpp'
  binary=Path(td)/'test'
- Path(str(source)).write_text(code)
- subprocess.run(['c++','-std=c++17','-fsanitize=address,undefined','-g','-I'+str(root/'vendor/esp32drop/src'),str(source),'-o',str(binary)],check=True)
+ Path(str(source)).write_text(code, encoding='utf-8')
+ subprocess.run([*os.environ.get('CXX','c++').split(),'-std=c++17',*os.environ.get('AIRDROP_CFLAGS','-fsanitize=address,undefined').split(),'-g','-I'+str(root/'vendor/esp32drop/src'),str(source),'-o',str(binary)],check=True)
  subprocess.run([str(binary)],check=True)

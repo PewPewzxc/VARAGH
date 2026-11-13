@@ -479,9 +479,9 @@ static bool awdl_parse_action(const uint8_t* pl, size_t len, struct AwdlActionHd
    peer stops parsing at the first bad length either way. */
 static bool awdl_tlv_next(const uint8_t** cur, const uint8_t* end, struct AwdlTlv* o) {
   const uint8_t* t = *cur;
-  if (t + 3 > end) return false;
+  if (end - t < 3) return false;  // compare lengths, never form a pointer past the frame
   uint16_t len = awdl_get16le(&t[1]);
-  if (t + 3 + len > end) return false;
+  if (len > end - t - 3) return false;
   o->tag = t[0];
   o->len = len;
   o->val = t + 3;

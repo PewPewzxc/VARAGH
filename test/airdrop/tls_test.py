@@ -22,7 +22,7 @@ repo = Path(__file__).resolve().parents[2]
 lib = args.wolfssl_source.resolve()
 if not (lib / 'wolfssl/ssl.h').is_file():
     parser.error('wolfSSL source directory does not contain wolfssl/ssl.h')
-s = (repo / 'vendor/esp32drop/src/airdrop/port/ad_port_esp32.cpp').read_text()
+s = (repo / 'vendor/esp32drop/src/airdrop/port/ad_port_esp32.cpp').read_text(encoding='utf-8')
 a = s.index('// wolfSSL is already')
 b = s.index('static void http_set_timeout', a)
 prefix = r'''
@@ -38,6 +38,7 @@ prefix = r'''
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 
@@ -45,12 +46,12 @@ prefix = r'''
 #include "airdrop/core/airdrop_cert.h"
 static WOLFSSL_CTX* g_tlsconf = nullptr;
 static WOLFSSL* g_ssl = nullptr;
-static int g_tls_fd = -1, g_ec_crt_err, g_ec_key_err;
-static const char* g_tls_alg;
+static int g_tls_fd = -1;
 static bool g_tls_ready = false;
 static std::atomic<bool> g_stop{false}, g_listener_running{false};
-static std::atomic<uint32_t> g_socket_rx_bytes{0};
-static std::atomic<int> g_last_tls_error{0};
+#define MALLOC_CAP_SPIRAM 0
+static void* heap_caps_malloc(size_t n, int) { return malloc(n); }
+static void* heap_caps_realloc(void* p, size_t n, int) { return realloc(p, n); }
 uint32_t millis() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
       .count();

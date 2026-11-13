@@ -68,6 +68,13 @@ inline int dictionaryWordPartVisualOffset(const int wordWidth, const int logical
   return isRtl ? wordWidth - logicalPrefixWidth - partWidth : logicalPrefixWidth;
 }
 
+// Bytes (without the terminator) of a word joined across a line break. A hyphen the layout
+// inserted is dropped ("exter-" + "nity"); a hyphen from the book is kept ("internet-" + "capable").
+// Size buffers with keepHyphen = true: the working set is sized before it is known which it is.
+inline size_t mergedLookupLength(const size_t firstLength, const size_t secondLength, const bool keepHyphen) {
+  return firstLength - (keepHyphen ? 0 : 1) + secondLength;
+}
+
 template <typename Sink>
 void forEachDictionaryWordPart(const char* text, const size_t length, Sink&& sink) {
   if (!text) return;
